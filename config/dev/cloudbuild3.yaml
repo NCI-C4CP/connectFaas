@@ -7,7 +7,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'add-iam-policy-binding', 'participantsEligibleForIncentive', '--member=allUsers', '--role=${_ROLE}']
 substitutions:
-  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_episphere_connectfaas/moveable-aliases/dev
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
   _RUNTIME: nodejs20
   _ROLE: roles/cloudfunctions.invoker
   _ENV_FILE: config/dev/.env.yaml
