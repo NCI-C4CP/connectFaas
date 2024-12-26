@@ -8,14 +8,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/episphere/connectFaas.git"
+    "url": "git+https://github.com/nci-c4cp/connectFaas.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/episphere/connectFaas/issues"
+    "url": "https://github.com/nci-c4cp/connectFaas/issues"
   },
-  "homepage": "https://github.com/episphere/connectFaas#readme",
+  "homepage": "https://github.com/nci-c4cp/connectFaas#readme",
   "dependencies": {
     "@google-cloud/bigquery": "^7.3.0",
     "@google-cloud/firestore": "^7.1.0",
