@@ -1,7 +1,7 @@
 const { getResponseJSON, setHeadersDomainRestricted, getUserProfile } = require('./shared');
-const { recruitSubmit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
+const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
-const { validateToken, generateToken, updateParticipantFirebaseAuthentication, validateUsersEmailPhone } = require('./validation');
+const { validateToken, generateToken, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation } = require('./validation');
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -37,9 +37,23 @@ const connectApp = async (req, res) => {
     console.log(`PWA API: ${api}, called from uid: ${uid}`);
 
   try {
-    if (api === 'submit') return await recruitSubmit(req, res, uid);
+    if (api === 'submit') {
 
-    if (api === 'submitSocial') return submitSocial(req, res, uid);
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const body = req.body;
+
+      if (!body || Object.keys(body).length === 0) {
+        return res.status(400).json(getResponseJSON('Bad request!', 400));
+      }
+
+      // all 'submit' paths return res.status(code).json({ message, code });
+      return await submit(res, body, uid);
+    }
+
+    else if (api === 'submitSocial') return submitSocial(req, res, uid);
 
     else if (api === 'getUserProfile') return getUserProfile(req, res, uid);
 
@@ -56,6 +70,8 @@ const connectApp = async (req, res) => {
     else if (api === 'updateParticipantFirebaseAuthentication') return await updateParticipantFirebaseAuthentication(req, res);
 
     else if (api === 'validateEmailOrPhone') return validateUsersEmailPhone(req, res);
+
+    else if (api === 'emailAddressValidation') return await emailAddressValidation(req, res);
 
     else if (api === 'getModuleSHA') {
       if (req.method !== 'GET') {

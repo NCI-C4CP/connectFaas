@@ -141,40 +141,50 @@ const dashboard = async (req, res) => {
         else {
           return res.status(403).json(getResponseJSON('Operation only permitted on dev environment', 403));
         }
-      } else if (api === 'getUserJSON') {
-        if (req.method !== 'GET') {
-            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+    } else if (api === 'resetParticipantSurvey') {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
         }
+        let body = req.body;
+        const { connectId, survey } = body;
 
-        // Only permit for dev apps
-        if (process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-dev') {
-            let body = req.body;
-            if (!body.uid) {
-                return res.status(405).json(getResponseJSON('Missing UID!', 405));
-            }
-            if(!req.query.connect_id) {
-                return res.status(500).json(getResponseJSON('No query parameter connect_id provided', 500));
-            }
-            const { getParticipantDataByConnectID } = require('./firestore');
-            try {
-              const data = await getParticipantDataByConnectID(req.query.connect_id)  ;
-              if (!data) {
-                  return res.status(404).json(getResponseJSON('Participant not found', 404));
-              }
-              return res.status(200).json({data: data, code: 200});
-            }
-            catch(err) {
-              console.error('error', err);
-              return res.status(500).json({data: 'Error: ' + (err && err.toString ? err.toString() : err), code: 500});
-            }
-            
-          }
-          else {
-            return res.status(403).json(getResponseJSON('Operation only permitted on dev environment', 403));
-          }
+        if (!connectId) return res.status(405).json(getResponseJSON('Missing participant\'s Connect ID!', 405));
+        if (!body.survey) return res.status(405).json(getResponseJSON('Missing survey name to be reset!', 405));
 
-      }
-    else {
+        try {
+            const { resetParticipantSurvey } = require('./firestore');            
+            const data = await resetParticipantSurvey(connectId, survey);
+            return res.status(200).json({data: data, message: 'The participant\'s survey was sucessfully reset', code: 200});
+        } catch (err) {
+            console.error('error', err);
+            if (err.code) {
+                return res.status(err.code).json(getResponseJSON(err.message, err.code));
+            }
+            return res.status(500).getResponseJSON.json(err.message, code);
+        }
+    } else if (api === `updateParticipantIncentiveEligibility`) {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+        let body = req.body;
+        const { connectId, currentPaymentRound, dateOfEligibilityInput } = body;
+
+        if (!connectId) return res.status(405).json(getResponseJSON('Missing participant\'s Connect ID!', 405));
+        if (!currentPaymentRound) return res.status(405).json(getResponseJSON('Missing current payment round information!', 405));
+        if (!dateOfEligibilityInput) return res.status(405).json(getResponseJSON('Missing date of eligibility!', 405));
+
+        try {
+            const { updateParticipantIncentiveEligibility } = require('./firestore');
+            const data = await updateParticipantIncentiveEligibility(connectId, currentPaymentRound, dateOfEligibilityInput);
+            return res.status(200).json({data: data, message:"Participant Eligibility Sucessfully Updated!" ,code: 200});
+        } catch (err) {
+            console.error('error', err);
+            if (err.code) {
+                return res.status(err.code).json(getResponseJSON(err.message, err.code));
+            }
+            return res.status(500).json(getResponseJSON(err.message, 500));
+        }
+    } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
 };

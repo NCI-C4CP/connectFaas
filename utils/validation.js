@@ -1,5 +1,6 @@
-const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const conceptIds = require('./fieldToConceptIdMapping')
+const { getResponseJSON, setHeaders, logIPAddress, getSecret } = require('./shared');
+const conceptIds = require('./fieldToConceptIdMapping');
+
 
 const generateToken = async (req, res, uid) => {
 
@@ -476,7 +477,6 @@ const checkSamplesDonated = (data) => {
 }
 
 const checkRefusalWithdrawals = (data) => {
-
     const anyRefusalWithdrawal = (
         data['685002411']['194410742'] === 353358909 ||
         data['685002411']['217367618'] === 353358909 ||
@@ -489,6 +489,7 @@ const checkRefusalWithdrawals = (data) => {
         data['685002411']['525277409'] === 353358909 ||
         data['685002411']['936015433'] === 353358909 ||
         data['685002411']['688142378'] === 353358909 ||
+        data['685002411']['671903816'] === 353358909 ||
         data['726389747'] === 353358909 ||
         data['747006172'] === 353358909 ||
         data['773707518'] === 353358909 ||
@@ -498,7 +499,7 @@ const checkRefusalWithdrawals = (data) => {
     ); 
 
     return anyRefusalWithdrawal;
-}
+};
 
 const validateUsersEmailPhone = async (req, res) => {
     logIPAddress(req);
@@ -512,6 +513,55 @@ const validateUsersEmailPhone = async (req, res) => {
     if (result) return res.status(200).json({data: {accountExists: true}, code: 200})
     else return res.status(200).json({data: {accountExists: false}, code: 200})
 }
+
+const emailAddressValidation = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+
+    if (req.method !== "POST") {
+        return res
+            .status(405)
+            .json(getResponseJSON("Only POST requests are accepted!", 405));
+    }
+
+    if (!req.body) {
+        return res.status(400).json(getResponseJSON("Bad Request", 400));
+    }
+    
+    const secret = await getSecret(process.env.GCLOUD_SENDGRID_EMAIL_VALIDATION_SECRET);
+    const sgClient = require('@sendgrid/client');
+    sgClient.setApiKey(secret);
+
+    const { emails } = JSON.parse(req.body);
+    const result = {};
+    try {
+        // Prepare the list of validation requests
+        const validationPromises = Object.keys(emails).map(async (key) => {
+            const email = emails[key];
+            if (!email) return { key, result: null }; // Skip if email is empty
+
+            const [_, body] = await sgClient.request({
+                url: "/v3/validations/email",
+                method: "POST",
+                body: { email },
+            });
+            return { key, result: body.result };
+        });
+
+        // Await all validation promises
+        const validationResults = await Promise.all(validationPromises);
+
+        // Populate the result object with the outcomes
+        validationResults.forEach(({ key, result: validationResult }) => {
+            if (validationResult) result[key] = validationResult;
+        });
+
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error("Unexpected error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
 
 const updateParticipantFirebaseAuthentication = async (req, res) => {
     if(req.method !== 'POST') {
@@ -613,6 +663,7 @@ module.exports = {
     processMouthwashEligibility,
     checkDerivedVariables,
     validateUsersEmailPhone,
+    emailAddressValidation,
     updateParticipantFirebaseAuthentication,
     isIsoDate,
     validateIso8601Timestamp,
