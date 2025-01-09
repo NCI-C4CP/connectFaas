@@ -214,21 +214,30 @@ const updateParticipantData = async (req, res, authObj) => {
 
     const dataArray = req.body.data;
     let responseArray = [];
-    let error = false;
+
+    // Track errors across all participants in request (multi-participant requests sent through the API)
+    let batchError = false;
+
     let docCount = 0;
 
     for(let dataObj of dataArray) {
+
+        // Track errors for each dataObj in the batch.
+        let dataObjError = false;
+
         if(dataObj.token === undefined) {
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({'Invalid Request': {'Token': 'UNDEFINED', 'Errors': 'Token not defined in data object.'}});
             continue;
-        } 
+        }
 
         const participantToken = dataObj.token;
         const record = await getParticipantData(participantToken, siteCodes, isParent);
 
         if(!record) {
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': 'Token does not exist.'}});
             continue;
         }
@@ -239,7 +248,8 @@ const updateParticipantData = async (req, res, authObj) => {
         // Reject if participant has opted for data descruction.
         const dataHasBeenDestroyed = fieldMapping.participantMap.dataHasBeenDestroyed.toString();
         if (docData[dataHasBeenDestroyed] === fieldMapping.yes) {
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': 'Data Destroyed'}});
             continue;
         }
@@ -249,7 +259,8 @@ const updateParticipantData = async (req, res, authObj) => {
         const withdrawConsent = refusalWithdrawalConcepts.withdrewConsent.toString();
         const revokeHIPAA = refusalWithdrawalConcepts.revokeHIPAA.toString();
         if (!internalCall && docData[withdrawConsent] === fieldMapping.yes && docData[revokeHIPAA] === fieldMapping.yes) {       
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': 'Particpant Withdrawn'}});
             continue;
         }
@@ -264,16 +275,18 @@ const updateParticipantData = async (req, res, authObj) => {
 
             )
         ) {
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({ 'Invalid Request': { 'Token': participantToken, 'Errors': 'The participant is verified or has used a pin to sign in' }});
             continue;
         }
 
         // Reject if query key is included. Those values are derived.
         if (dataObj['query']) {
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': '\'Query\' variables not accepted. The expected values will be derived automatically.'}});
-                continue;
+            continue;
         }
 
         // Handle site notifications
@@ -305,7 +318,8 @@ const updateParticipantData = async (req, res, authObj) => {
         if(!authObj) {
             const errors = flatValidationHandler(flatUpdateObj, flatDocData, rules, validateUpdateParticipantData);
             if(errors.length !== 0) {
-                error = true;
+                dataObjError = true;
+                batchError = true;
                 responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': errors}});
                 continue;
             }
@@ -350,7 +364,8 @@ const updateParticipantData = async (req, res, authObj) => {
             const participantConnectId = docData['Connect_ID'];
             const occurrenceResult = await handleCancerOccurrences(incomingCancerOccurrenceArray, requiredOccurrenceRules, participantToken, participantConnectId);
             if (occurrenceResult.error) {
-                error = true;
+                dataObjError = true;
+                batchError = true;
                 responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': occurrenceResult.message}});
                 continue;
             }
@@ -374,8 +389,10 @@ const updateParticipantData = async (req, res, authObj) => {
             const birthdayCardResult = await handleNorcBirthdayCard(norcBirthdayCardData, requiredNorcBirthdayCardRules, participantToken, participantConnectId, participantProfileHistory);
 
             if (birthdayCardResult.error) {
-                error = true;
+                dataObjError = true;
+                batchError = true;
                 responseArray.push({'Invalid Request': {'Token': participantToken, 'Errors': birthdayCardResult.message}});
+                continue;
             } else {
                 [finalizedBirthdayCardData, norcParticipantUpdateData, birthdayCardWriteDetails] = birthdayCardResult.data;                
                 if (Object.keys(norcParticipantUpdateData).length > 0) {
@@ -401,7 +418,7 @@ const updateParticipantData = async (req, res, authObj) => {
         }
         
         try {
-            if (!error) {
+            if (!dataObjError) {
                 const promises = [];
                 if (Object.keys(flatUpdateObj).length > 0) promises.push(updateParticipantDataFirestore(docID, flatUpdateObj));
                 if (finalizedCancerOccurrenceArray.length > 0) promises.push(writeCancerOccurrences(finalizedCancerOccurrenceArray));
@@ -416,14 +433,15 @@ const updateParticipantData = async (req, res, authObj) => {
         } catch (e) {
             // Alert the user about the error for this participant but continue to process the rest of the participants.
             console.error(`Server error updating participant at updateParticipantData & checkDerivedVariables. ${e}`);
-            error = true;
+            dataObjError = true;
+            batchError = true;
             responseArray.push({'Server Error': {'Token': participantToken, 'Errors': `Please retry this participant. Error: ${e}`}});
             continue;
         }
     }
 
     console.log(`Updated ${docCount} participant records.`);
-    return res.status(error ? 206 : 200).json({code: error ? 206 : 200, results: responseArray});
+    return res.status(batchError ? 206 : 200).json({code: batchError ? 206 : 200, results: responseArray});
 }
 
 /**
