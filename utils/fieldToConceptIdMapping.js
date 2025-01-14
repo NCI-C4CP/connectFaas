@@ -1,3 +1,5 @@
+const { physicalActivity } = require("./reports");
+
 module.exports = {
     siteLoginMap: {
         kaiserPermanenteGeorgia: 327912200,
@@ -484,4 +486,11 @@ module.exports = {
         mailDate: 768313785,
         returnDate: 902078073,
     },
+
+    // Return of Information
+    physicalActivity: 686238347,
+    physicalActivityStatus: 446235715,
+    reportStatus: {
+        unread: 702641611,
+    }
 };

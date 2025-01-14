@@ -11,6 +11,7 @@ const { importToBigQuery, firestoreExport, exportNotificationsToBucket, importNo
 const { participantDataCleanup } = require('./utils/participantDataCleanup');
 const { webhook } = require('./utils/webhook');
 const { heartbeat } = require('./utils/heartbeat');
+const { physicalActivity } = require('./utils/reports');
 
 // API End-Points for Sites
 
@@ -76,3 +77,7 @@ exports.webhook = webhook;
 // End-Points for Public Heartbeat
 
 exports.heartbeat = heartbeat;
+
+// End-Points for Return of Information
+
+exports.physicalActivity = physicalActivity;
