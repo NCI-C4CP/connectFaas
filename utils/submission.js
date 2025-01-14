@@ -358,13 +358,13 @@ const getFilteredParticipants = async (req, res, authObj) => {
     const isParent = obj.isParent ?? false;
     const siteCodes = obj.siteCodes ?? obj.siteCode;
 
+    if (req.query.type) return res.status(404).json(getResponseJSON(`The 'type' parameter is not used in this API. ${helpMessage}`, 400));
+    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+
     const filterableParams = ['firstName', 'lastName', 'email', 'phone', 'dob', 'connectId', 'token', 'studyId', 'checkedIn'];
     const helpMessage = "Filterable params include: 'firstName', 'lastName', 'email', 'phone', 'dob', 'connectId', 'token', 'studyId', and 'checkedIn'. The optional 'selectedFields' " +
     "param narrows results to specific fields. Omit selectedFields to return all data. Use dot notation to query nested data with selectedFields. Ex: 'selectedFields=399159511,996038075,130371375.266600170' " +
     "returns firstName, lastName, and data nested in payment round -> baseline. Connect ID is always returned. Typos are ignored. | API notes & documentation: https://github.com/episphere/connect/issues/817#issuecomment-1883893946"
-
-    if (req.query.type) return res.status(400).json(getResponseJSON(`The 'type' parameter is not used in this API. ${helpMessage}`, 400));
-    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
 
     const queries = req.query;
     const source = queries.source;
