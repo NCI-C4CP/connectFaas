@@ -1307,13 +1307,6 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
     const { checkDerivedVariables, processMouthwashEligibility } = require('./validation');
     const { buildStreckPlaceholderData, updateBaselineData } = require('./shared');
 
-    // Code Scanning Alert Fix: Prototype-polluting Assignment
-    // https://github.com/NCI-C4CP/connectFaas/security/code-scanning/1
-    const visit = biospecimenData[fieldMapping.collectionSelectedVisit];
-    if (visit === '__proto__' || visit === 'constructor' || visit === 'prototype') {
-        throw new Error('Validation to prevent prototype pollution failed.');
-    }
-
     // Get the existing participant data (necessary for data reconciliation purposes)
     const participantUid = participantData.state.uid;
     if (!participantUid) throw new Error('Missing participant UID!');

@@ -794,6 +794,13 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
     let participantUpdates = {};
     let settings = {};
     let visit = biospecimenData[fieldMapping.collectionSelectedVisit];
+
+    // Code Scanning Alert Fix: Prototype-polluting Assignment
+    // https://github.com/NCI-C4CP/connectFaas/security/code-scanning/1
+    if (visit === '__proto__' || visit === 'constructor' || visit === 'prototype') {
+        throw new Error('Validation to prevent prototype pollution failed.');
+    }
+
     // Now we potentially need to updateBaselineData
     const baselineVisit = (biospecimenData[fieldMapping.collectionSelectedVisit] === fieldMapping.baseline);
     const clinicalResearchSetting = (biospecimenData[fieldMapping.collectionSetting] === fieldMapping.research || biospecimenData[fieldMapping.collectionSetting] === fieldMapping.clinical);
