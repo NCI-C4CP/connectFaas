@@ -221,13 +221,11 @@ const getParticipants = async (req, res, authObj) => {
 
     if (!req.query.type) return res.status(404).json(getResponseJSON('Resource not found!', 404));
     if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if (req.query.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
 
     let queryType = '';
     const limit = req.query.limit ? parseInt(req.query.limit) : 100;
     const cursor = req.query.cursor ?? null;
-
-    const { getRestrictedFields } = require('./firestore')
-    const restriectedFields = await getRestrictedFields();
 
     if (req.query.type === 'verified') queryType = req.query.type;
     else if (req.query.type === 'notyetverified') queryType = req.query.type;
@@ -248,9 +246,8 @@ const getParticipants = async (req, res, authObj) => {
 
             if(!response) return res.status(404).json(getResponseJSON('Resource not found!', 404));
             if(response instanceof Error) res.status(500).json(getResponseJSON(response.message, 500));
-
-            if(response.length > 0) response = removeRestrictedFields(response, restriectedFields, isParent);
-            if(response) return res.status(200).json({data: response, code: 200})
+            
+            return res.status(200).json({data: response, code: 200})
         }
         else{
             return res.status(400).json(getResponseJSON('Bad request!', 400));
@@ -281,13 +278,10 @@ const getParticipants = async (req, res, authObj) => {
         }
 
         const { retrieveRefusalWithdrawalParticipants } = require('./firestore');
+
         let result = await retrieveRefusalWithdrawalParticipants(siteCodes, isParent, concept, limit, cursor);
 
-        if(result instanceof Error){
-            return res.status(400).json(getResponseJSON(result.message, 400));
-        }
-
-        // remove restricted fields
+        if (result instanceof Error) return res.status(500).json(getResponseJSON(result.message, 500));
 
         return res.status(200).json({data: result, code: 200});
     }
@@ -309,21 +303,7 @@ const getParticipants = async (req, res, authObj) => {
 
     let docs = data.docs;
 
-    if(docs.length > 0) {
-        docs = await removeRestrictedFields(docs, restriectedFields, isParent);
-    }
-
     return res.status(200).json({data: docs, code: 200, cursor: data.cursor});
-}
-
-const removeRestrictedFields = (data, restriectedFields, isParent) => {
-    if(restriectedFields && !isParent) {
-        return data.filter(dt => {
-            restriectedFields.forEach(field => delete dt[field]);
-            return dt;
-        })
-    }
-    else return data;
 }
 
 /**

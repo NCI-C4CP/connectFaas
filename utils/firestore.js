@@ -3553,12 +3553,6 @@ const processQueryDailyReportParticipants = async (document) => {
     }
 };
 
-const getRestrictedFields = async () => {
-    const snapshot = await db.collection('siteDetails').where('coordinatingCenter', '==', true).get();
-    printDocsCount(snapshot, "getRestrictedFields");
-    return snapshot.docs[0].data().restrictedFields;
-}
-
 /**
  * This is for managing received boxes in BPTL only.
  * @param {string} receivedTimestamp - Timestamp of received date in format 'YYYY-MM-DDT00:00:00.000Z'. Ex: '2023-08-30T00:00:00.000Z'.
@@ -4125,7 +4119,6 @@ module.exports = {
     storePackageReceipt,
     getBptlMetrics,
     getBptlMetricsForShipped,
-    getRestrictedFields,
     sendClientEmail,
     verifyUsersEmailOrPhone,
     retrieveRefusalWithdrawalParticipants,
