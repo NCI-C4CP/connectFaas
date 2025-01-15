@@ -458,7 +458,7 @@ const checkDerivedVariables = async (token, siteCode) => {
 
     if(Object.keys(updates).length > 0) {
         const { updateParticipantData } = require('./firestore');
-        updateParticipantData(doc, updates);
+        await updateParticipantData(doc, updates);
     }
 }
 
