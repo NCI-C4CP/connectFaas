@@ -636,7 +636,7 @@ describe('biospecimen', async () => {
     });
 
     describe('processParticipantHomeMouthwashKitData', () => {
-        const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, address1, address2, city, state, zip } = fieldToConceptIdMapping;
+        const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, yes } = fieldToConceptIdMapping;
         it('Should return null for PO boxes', () => {
             const result1 = firestore.processParticipantHomeMouthwashKitData({
                 [address1]: 'PO Box 1033'
@@ -753,6 +753,82 @@ describe('biospecimen', async () => {
             assert.equal(result.state, record[state]);
             assert.equal(result.zip_code, record[zip]);
             assert.equal(result.connect_id, record['Connect_ID']);
+        });
+
+        it('Should use physical address if primary address is marked as PO box', () => {
+            const result1 = firestore.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [isPOBox]: yes,
+                [address1]: 'Pno Box 1033',
+                [physicalAddress1]: '123 Fake St',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.deepEqual(result1, {
+                first_name: 'First',
+                last_name: 'Last',
+                connect_id: 123456789,
+                address_1: '123 Fake St',
+                address_2: '',
+                city: 'City',
+                state: 'PA',
+                zip_code: '19104'
+              });
+        });
+
+        it('Should use physical address if primary address is not marked as PO box but matches pattern', () => {
+            const result1 = firestore.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [address1]: 'PO Box 1033',
+                [physicalAddress1]: '123 Fake St',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.deepEqual(result1, {
+                first_name: 'First',
+                last_name: 'Last',
+                connect_id: 123456789,
+                address_1: '123 Fake St',
+                address_2: '',
+                city: 'City',
+                state: 'PA',
+                zip_code: '19104'
+              });
+        });
+
+        it('Should return null if physical address is a PO Box', () => {
+            const result1 = firestore.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [address1]: 'PO Box 1033',
+                [physicalAddress1]: 'PO Box 1033',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.equal(result1, null);
         });
         
     });
@@ -948,8 +1024,221 @@ describe('biospecimen', async () => {
         ];
     });
 
+    describe('updateBaselineData', async () => {
+        const {updateBaselineData} = require('../utils/shared.js');
+        it('Should not update if visit is neither baseline nor clinical', () => {
+            const biospecimenData = {};
+            const participantData = {};
+            const siteTubesList = [];
+            const participantUpdates = updateBaselineData(biospecimenData, participantData, siteTubesList)
+            assert.deepEqual(participantUpdates, {});
+        });
+        it('Should not update if visit is baseline but not clinical', () => {
+            const biospecimenData = {
+                [fieldToConceptIdMapping.collectionSelectedVisit]: fieldToConceptIdMapping.baseline
+            };
+            const participantData = {};
+            const siteTubesList = [];
+            const participantUpdates = updateBaselineData(biospecimenData, participantData, siteTubesList)
+            assert.deepEqual(participantUpdates, {});
+        });
+        it('Should not update if visit is clinical but not baseline', () => {
+            const biospecimenData = {
+                [fieldToConceptIdMapping.collectionSetting]: fieldToConceptIdMapping.clinical
+            };
+            const participantData = {};
+            const siteTubesList = [];
+            const participantUpdates = updateBaselineData(biospecimenData, participantData, siteTubesList)
+            assert.deepEqual(participantUpdates, {});
+        });
+        it.skip('Should update if visit is clinical baseline visit', () => {
+            const biospecimenData = {
+                [fieldToConceptIdMapping.collectionSelectedVisit]: fieldToConceptIdMapping.baseline,
+                [fieldToConceptIdMapping.collectionSetting]: fieldToConceptIdMapping.clinical
+            };
+
+            const siteTubesList = [
+                {}, // blood tube
+                {}, // urine tube
+                {}, // mouthwash tube
+            ];
+
+        });
+    })
+
+    describe.only('checkDerivedVariables with beforeEach', async () => {
+        let i = 0;
+        const testInfo = [{
+            label: 'incentiveEligible only, no blood and urine refusal',
+            expected: {
+                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+            }
+        }, {
+            label: 'incentiveEligible only, no blood and urine refusal',
+            expected: {
+                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+            }
+        }];
+        const participants = [
+            {
+                [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.baseline]: {
+                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                    }
+                },
+                // bloodUrine refusal updates
+                [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                },
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
+                state: {
+                    uid: uuid.v4()
+                }
+            },
+            {
+                [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.baseline]: {
+                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                    }
+                },
+                // no bloodUrine refusal updates
+                [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
+                },
+                // Interestingly, this only works if this is explicitly set to no
+                // If it is undefined it is treated as yes
+                // and if it is yes it is never changed
+                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
+                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
+                state: {
+                    uid: uuid.v4()
+                }
+            }
+        ];
+        const specimens = [[], []];
+        const surveysArr = [[], []];
+        const updatesHolder = [];
+        beforeEach(async () => {
+            sinon.replace(firestore, 'getParticipantData', () => {
+                console.log('getParticipantData called with i', i);
+                return {data: participants[i], id: participants[i].state.uid};
+            });
+            sinon.replace(firestore, 'getSpecimenCollections', () => {
+                console.log('getSpecimenCollections called');
+                return specimens[i];
+            });
+            sinon.replace(firestore, 'retrieveUserSurveys', () => {
+                console.log('retrieveUserSurveys called');
+                return surveysArr[i];
+            })
+            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder[i] = updates);
+        });
+
+        for(let j = 0; j < testInfo.length; j++) {
+            let thisTest = testInfo[j];
+            it(thisTest.label, async () => {
+                try {
+                    await validation.checkDerivedVariables('fake', 'fake');
+                } catch(err) {
+                    console.error('Error', err);
+                }
+
+                assert.isDefined(updatesHolder[j]);
+                const clonedUpdatesHolder = Object.assign({}, updatesHolder[j]);
+                // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
+                delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
+                console.log('clonedUpdatesHolder',clonedUpdatesHolder);
+                assert.deepEqual({
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+                }, clonedUpdatesHolder);
+                assert.closeTo(+new Date(updatesHolder[j][`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
+            });
+        }
+
+        /*
+        it('incentiveEligible only, no blood and urine refusal', async () => {
+            try {
+                await validation.checkDerivedVariables('fake', 'fake');
+                console.log('updatesHolder', updatesHolder);
+            } catch(err) {
+                console.error('Error', err);
+            }
+
+            assert.isDefined(updatesHolder[0]);
+            const clonedUpdatesHolder = Object.assign({}, updatesHolder[0]);
+            assert.sameMembers(Object.keys(updatesHolder[0]), [
+                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
+                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
+                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
+                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
+            ]);
+            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
+            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
+            assert.deepEqual({
+                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+            }, clonedUpdatesHolder);
+            assert.closeTo(+new Date(updatesHolder[0][`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
+            
+        });
+
+        it('incentiveEligible only, no blood and urine refusal', async () => {
+
+            try {
+                await validation.checkDerivedVariables('fake', 'fake');
+                console.log('updatesHolder', updatesHolder);
+            } catch(err) {
+                console.error('Error', err);
+            }
+
+            assert.isDefined(updatesHolder[1]);
+            const clonedUpdatesHolder = Object.assign({}, updatesHolder[1]);
+            assert.sameMembers(Object.keys(updatesHolder[1]), [
+                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
+                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
+                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
+                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
+            ]);
+            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
+            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
+            assert.deepEqual({
+                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+            }, clonedUpdatesHolder);
+            assert.closeTo(+new Date(updatesHolder[1][`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
+            
+        });
+        */
+
+        afterEach(async() => {
+            sinon.restore();
+            i++;
+        })
+    });
+
     describe('checkDerivedVariables', async () => {
 
+        beforeEach(async (args) => {
+            console.log('Before hook called with args', args);
+        })
         it('incentiveEligible only, blood and urine refusal', async () => {
             // dummy data inputs and outputs for reference
             const participantUid = uuid.v4();
@@ -1864,7 +2153,7 @@ describe('biospecimen', async () => {
             sinon.restore();
         });
 
-        it.only('calculateBaselineOrderPlaced, blood order placed', async () => {
+        it('calculateBaselineOrderPlaced, blood order placed', async () => {
         // dummy data inputs and outputs for reference
             const participantUid = uuid.v4();
             const participantData = {
@@ -1922,7 +2211,7 @@ describe('biospecimen', async () => {
             sinon.restore();
         });
 
-        it.only('calculateBaselineOrderPlaced, scenario 1', async () => {
+        it('calculateBaselineOrderPlaced, scenario 1', async () => {
             // dummy data inputs and outputs for reference
                 const participantUid = uuid.v4();
                 const participantData = {
@@ -1980,7 +2269,7 @@ describe('biospecimen', async () => {
                 sinon.restore();
         });
 
-        it.only('calculateBaselineOrderPlaced, scenario 2', async () => {
+        it('calculateBaselineOrderPlaced, scenario 2', async () => {
             // dummy data inputs and outputs for reference
                 const participantUid = uuid.v4();
                 const participantData = {
@@ -2037,7 +2326,7 @@ describe('biospecimen', async () => {
                 sinon.restore();
         });
 
-        it.only('calculateBaselineOrderPlaced, scenario 3', async () => {
+        it('calculateBaselineOrderPlaced, scenario 3', async () => {
             // dummy data inputs and outputs for reference
                 const participantUid = uuid.v4();
                 const participantData = {
@@ -2093,6 +2382,190 @@ describe('biospecimen', async () => {
     
                 sinon.restore();
         });
+    });
+
+    describe('resetParticipantHelper', async () => {
+        it('resetParticipantHelper test for live user', async () => {
+            
+            // Not saving to DB
+
+            // Currently using an existing participant ID but not saving changes to DB
+        
+
+            const uid = 'Iw37pmEJUWWjRhTaH7A32DH384n1';
+            const db = admin.firestore();
+            const snapshot = await db.collection('participants').where('state.uid', '==', uid).get();
+            assert.isAbove(snapshot.size, 0, 'Participant found');
+            const prevUserData = snapshot.docs[0].data();
+
+            let keysToPreserve = [
+                fieldToConceptIdMapping.iDoNotHaveAPIN.toString(),
+                fieldToConceptIdMapping.healthCareProvider.toString(),
+                fieldToConceptIdMapping.heardAboutStudyFrom.toString(),
+                fieldToConceptIdMapping.dataDestruction.consentFirstName.toString(),
+                fieldToConceptIdMapping.dataDestruction.consentMiddleName.toString(),
+                fieldToConceptIdMapping.dataDestruction.consentLastName.toString(),
+                fieldToConceptIdMapping.dataDestruction.consentSuffixName.toString(),
+                fieldToConceptIdMapping.dataDestruction.userProfileNameFirstName.toString(),
+                fieldToConceptIdMapping.dataDestruction.userProfileNameMiddleName.toString(),
+                fieldToConceptIdMapping.dataDestruction.userProfileNameLastName.toString(),
+                fieldToConceptIdMapping.dataDestruction.userProfileNameSuffixName.toString(),
+                'query',
+                fieldToConceptIdMapping.autogeneratedConsentDate.toString(),
+                fieldToConceptIdMapping.participantMap.consentFormSubmitted.toString(),
+                fieldToConceptIdMapping.dataDestruction.informedConsentDateSigned.toString(),
+                fieldToConceptIdMapping.dataDestruction.informedConsentVersion.toString(),
+                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationDateSigned.toString(),
+                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationFlag.toString(),
+                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationVersion.toString(),
+                fieldToConceptIdMapping.dataDestruction.firebaseAuthenticationEmail.toString(),
+                fieldToConceptIdMapping.firebaseAuthenticationFirstAndLastName.toString(),
+                fieldToConceptIdMapping.authenticationPhone.toString(),
+                fieldToConceptIdMapping.signInMechanism.toString(),
+                fieldToConceptIdMapping.preferredLanguage.toString(),
+                fieldToConceptIdMapping.preferredName.toString(),
+                fieldToConceptIdMapping.dataDestruction.birthMonth.toString(),
+                fieldToConceptIdMapping.dataDestruction.birthDay.toString(),
+                fieldToConceptIdMapping.dataDestruction.birthYear.toString(),
+                fieldToConceptIdMapping.dataDestruction.dateOfBirth.toString(),
+                fieldToConceptIdMapping.cellPhone.toString(),
+                fieldToConceptIdMapping.homePhone.toString(),
+                fieldToConceptIdMapping.otherPhone.toString(),
+                fieldToConceptIdMapping.prefEmail.toString(),
+                fieldToConceptIdMapping.additionalEmail1.toString(),
+                fieldToConceptIdMapping.additionalEmail2.toString(),
+                fieldToConceptIdMapping.additionalEmail3.toString(),
+                fieldToConceptIdMapping.address1.toString(),
+                fieldToConceptIdMapping.address2.toString(),
+                fieldToConceptIdMapping.city.toString(),
+                fieldToConceptIdMapping.state.toString(),
+                fieldToConceptIdMapping.zip.toString(),
+                fieldToConceptIdMapping.canWeVoicemailMobile.toString(),
+                fieldToConceptIdMapping.canWeVoicemailHome.toString(),
+                fieldToConceptIdMapping.canWeVoicemailOther.toString(),
+                fieldToConceptIdMapping.canWeText.toString(),
+                fieldToConceptIdMapping.prefContactMethod.toString(),
+                fieldToConceptIdMapping.haveYouEverBeenDiagnosedWithCancer.toString(),
+                fieldToConceptIdMapping.whatYearWereYouDiagnosed.toString(),
+                fieldToConceptIdMapping.whatTypeOfCancer.toString(),
+                fieldToConceptIdMapping.anyCommentsAboutYourCancerDiagnosis.toString(),
+                fieldToConceptIdMapping.derivedAge.toString(),
+                fieldToConceptIdMapping.dataDestruction.userProfileSubmittedFlag.toString(),
+                fieldToConceptIdMapping.autogeneratedProfileSubmittedTime.toString(),
+                fieldToConceptIdMapping.participantMap.consentFormSubmitted.toString(),
+                fieldToConceptIdMapping.verificationStatus.toString(),
+                fieldToConceptIdMapping.autogeneratedSignedInTime.toString(),
+                fieldToConceptIdMapping.autogeneratedVerificationStatusUpdatedTime.toString(),
+                // These are deprecated but left in to ensure data consistency
+                '983784715', 
+                '700668490',
+                '430184574',
+                '507120821',
+                '383945929'
+            ];
+
+            let results;
+
+            try {
+                results = await firestore.resetParticipantHelper(uid, false);
+            } catch(err) {
+                console.error('Error', err);
+            }
+
+            const {data, deleted} = results;
+
+            assert.equal(
+                data[fieldToConceptIdMapping.verificationStatus], fieldToConceptIdMapping.verified,
+                'Status is verified'
+            );
+            assert.equal(
+                prevUserData[fieldToConceptIdMapping.autogeneratedVerificationStatusUpdatedTime],
+                data[fieldToConceptIdMapping.autogeneratedVerificationStatusUpdatedTime],
+                'Original verification date is retained if present'
+            );
+
+            // All surveys deleted, and survey flags and dates reset not started and null respectively
+            // All notifications deleted
+            // All refusal and withdrawal and data destruction reversed and reset to null/default status
+            // All biospecimens deleted from the Biospecimens table
+            // All Kit assembly data deleted from the Kit Assembly table
+            // All biospecimen data deleted from the Participants table and default variables related to biospecimens reset to default/null settings
+
+            // All incentive data reset to default/null settings
+            const {incentiveFlags, withdrawalConcepts, defaultFlags, moduleConceptsToCollections} = require('../utils/shared.js');
+            Object.keys(incentiveFlags).forEach(flag => {
+                if(keysToPreserve.indexOf(flag) > -1) {
+                    return;
+                }
+                Object.keys(incentiveFlags[flag]).forEach(subflag => {
+                    assert.equal(
+                        data[flag][subflag],
+                        incentiveFlags[flag][subflag],
+                        `${flag}.${subflag} matches`
+                    );
+                })
+            });
+
+
+            // They should still be consented and user profile completed, consent form and HIPAA form signed
+            Object.keys(withdrawalConcepts).forEach(key => {
+                if(keysToPreserve.indexOf(key.toString()) > -1) {
+                    return;
+                }
+                if(typeof withdrawalConcepts[key] === 'object') {
+                    Object.keys(withdrawalConcepts[key]).forEach(subkey => {
+                        assert.equal(
+                            data[key][subkey],
+                            withdrawalConcepts[key][subkey],
+                            `${key}.${subkey} matches`
+                        );
+                    });
+                } else {
+                    assert.equal(
+                        data[key],
+                        withdrawalConcepts[key],
+                        `${key} matches`
+                    );
+                }
+            });
+
+            Object.keys(defaultFlags).forEach(key => {
+                
+                // Ignore any keys already checked
+                if(incentiveFlags[key] || withdrawalConcepts[key] || keysToPreserve.indexOf(key.toString()) > -1) {
+                    return;
+                }
+
+                assert.equal(
+                    data[key],
+                    defaultFlags[key],
+                    `${key} matches`
+                );
+            });
+
+            // Assert that keys marked as keysToPreserve match the live object
+            // and are not overwritten
+            keysToPreserve.forEach(key => {
+                if(typeof data[key] === 'object') {
+                    assert.deepEqual(prevUserData[key], data[key], `${key} matches`);
+                } else {
+                    assert.equal(prevUserData[key], data[key], `${key} matches`);
+                }
+            });
+
+            // Because this test does not have control over this data and it could change,
+            //  right now we are just ensuring that values are found for each of these categories
+            Object.keys(moduleConceptsToCollections).forEach(concept => {
+                assert.exists(deleted[moduleConceptsToCollections[concept]], `${concept} exists in deleted`);
+            });
+
+            assert.exists(deleted.notifications);
+            assert.exists(deleted.biospecimen);
+            assert.exists(deleted.cancerOccurrence);
+            assert.exists(deleted.kitAssembly);
+
+        });
+        
     });
 });
 

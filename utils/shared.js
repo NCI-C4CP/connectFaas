@@ -2045,6 +2045,7 @@ module.exports = {
     cleanSurveyData,
     updateBaselineData,
     refusalWithdrawalConcepts,
+    withdrawalConcepts,
     convertSiteLoginToNumber,
     swapObjKeysAndValues,
     batchLimit,
