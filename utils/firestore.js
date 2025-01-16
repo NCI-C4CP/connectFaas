@@ -1,8 +1,7 @@
 const admin = require('firebase-admin');
 const { Transaction, FieldPath } = require('firebase-admin/firestore');
-const serviceAccount = require('../nih-nci-dceg-connect-dev-4a660d0c674e'); 
-admin.initializeApp({credential: admin.credential.cert(serviceAccount)}); 
-// admin.initializeApp(functions.config().firebase);
+
+admin.initializeApp(functions.config().firebase);
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, conceptMappings } = require('./shared');

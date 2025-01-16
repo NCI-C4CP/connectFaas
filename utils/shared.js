@@ -853,6 +853,11 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 }
             });
         }
+        // This section has been commented out as a part of implementing 1169 and 1062
+        // according to the understanding that these values should not be changed once finalized,
+        // and are now set only on finalization.
+        // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        /*
         else if (settings[visit][fieldMapping.baselineBloodCollectedTime] !== '' ||  settings[visit][fieldMapping.clinicalBloodCollectedTime] !== ''){
             const participantBloodCollected = participantData[fieldMapping.baselineBloodSampleCollected] === fieldMapping.yes;
             const totalBloodTubesAvail = bloodTubes.filter((tube) => biospecimenData[tube.concept][fieldMapping.tubeIsCollected] === fieldMapping.yes);
@@ -876,6 +881,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 bloodTubesLength = totalBloodTubesAvail.length;
             }
         }
+        */
 
         if (!settings[visit][fieldMapping.urineCollectionSetting]) {
             urineTubes.forEach(tube => {
@@ -899,6 +905,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 }
             });
         }
+        /*
         else if (settings[visit][fieldMapping.baselineUrineCollectedTime] !== '' ||  settings[visit][fieldMapping.clinicalUrineCollectedTime] !== '') {
             const participantUrineCollected = participantData[fieldMapping.baselineUrineCollected] === fieldMapping.yes;
             const totalUrineTubesAvail = urineTubes.filter((tube) => biospecimenData[tube.concept][fieldMapping.tubeIsCollected] === fieldMapping.yes);
@@ -922,6 +929,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 urineTubesLength = totalUrineTubesAvail.length;
             }  
         }
+        */
 
         if (!settings[visit][fieldMapping.mouthwashCollectionSetting]) {
             mouthwashTubes.forEach(tube => {
@@ -935,6 +943,11 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 }
             });
         }
+        // This section has been commented out as a part of implementing 1169 and 1062
+        // according to the understanding that these values should not be changed once finalized,
+        // and are now set only on finalization.
+        // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        /*
         else if (settings[visit][fieldMapping.baselineMouthwashCollectedTime] !== '' && participantData[fieldMapping.baselineMouthwashCollected] === fieldMapping.yes) {
             const isParticipantMouthwashCollected = participantData[fieldMapping.baselineMouthwashCollected] === fieldMapping.yes;
             const totalMouthwasTubesAvail = mouthwashTubes.filter((tube) => biospecimenData[tube.concept][fieldMapping.tubeIsCollected] === fieldMapping.yes);
@@ -947,6 +960,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 mouthwashTubesLength = totalMouthwasTubesAvail.length;
             }
         }
+        */
 
         participantUpdates[fieldMapping.collectionDetails] = settings;
 

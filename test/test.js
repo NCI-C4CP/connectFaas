@@ -15,16 +15,11 @@ const httpMocks = require('node-mocks-http');
 const conceptIds = require('../utils/fieldToConceptIdMapping.js');
 const fieldToConceptIdMapping = require('../utils/fieldToConceptIdMapping.js');
 const { profileEnd } = require('console');
-// admin.initializeApp({credential: admin.credential.cert(serviceAccount)}); 
-// admin.auth().createUser() // Create a temporary user
 
-// @TODO: Can I use sinon to mock out validateIDToken with something that will validate my fake  tokens and just skip this?
-// That would just make my life so much easier.
-
-// Set FIREBASE_AUTH_EMULATOR_HOST="127.0.0.1:9099" (or port used) environment variable to connect to running auth emulator
-// Set export FIREBASE_DATABASE_EMULATOR_HOST="127.0.0.1:9000" (or port used) environment variable to connect to running FireStore DB emulator
-// Set export FIRESTORE_EMULATOR_HOST="127.0.0.1:8080" (or port used) enviroment variable to connect to running Cloud Firestore emulator
-// Set 
+// NOTE: Some of these tests will only work when you are running connectFaas locally connected to the dev environment
+// Tests may be disabled using test.skip
+// You may also pick and choose a few specific tests to run using test.only
+// Credentials including localtesting-key.json are not included and must be manually configured if you use the tests which include them
 
 async function getOauthToken() {
     const {google} = require("googleapis");
@@ -1066,1155 +1061,469 @@ describe('biospecimen', async () => {
         });
     })
 
-    describe.only('checkDerivedVariables with beforeEach', async () => {
+    describe('checkDerivedVariables with beforeEach', async () => {
         let i = 0;
-        const testInfo = [{
-            label: 'incentiveEligible only, no blood and urine refusal',
-            expected: {
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }
-        }, {
-            label: 'incentiveEligible only, no blood and urine refusal',
-            expected: {
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }
-        }];
-        const participants = [
+        const testInfo = [
             {
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                label: 'incentiveEligible only, blood and urine refusal',
+                participantInfo: {
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                        }
+                    },
+                    // bloodUrine refusal updates
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                    [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                // bloodUrine refusal updates
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
-                state: {
-                    uid: uuid.v4()
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
                 }
-            },
+            }, 
             {
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                label: 'incentiveEligible only, no blood and urine refusal',
+                participantInfo: {
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                        }
+                    },
+                    // no bloodUrine refusal updates
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
+                    },
+                    // Interestingly, this only works if this is explicitly set to no
+                    // If it is undefined it is treated as yes
+                    // and if it is yes it is never changed
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                    [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                // no bloodUrine refusal updates
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
-                },
-                // Interestingly, this only works if this is explicitly set to no
-                // If it is undefined it is treated as yes
-                // and if it is yes it is never changed
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
-                state: {
-                    uid: uuid.v4()
-                }
-            }
-        ];
-        const specimens = [[], []];
-        const surveysArr = [[], []];
-        const updatesHolder = [];
-        beforeEach(async () => {
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called with i', i);
-                return {data: participants[i], id: participants[i].state.uid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimens[i];
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveysArr[i];
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder[i] = updates);
-        });
-
-        for(let j = 0; j < testInfo.length; j++) {
-            let thisTest = testInfo[j];
-            it(thisTest.label, async () => {
-                try {
-                    await validation.checkDerivedVariables('fake', 'fake');
-                } catch(err) {
-                    console.error('Error', err);
-                }
-
-                assert.isDefined(updatesHolder[j]);
-                const clonedUpdatesHolder = Object.assign({}, updatesHolder[j]);
-                // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-                delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-                console.log('clonedUpdatesHolder',clonedUpdatesHolder);
-                assert.deepEqual({
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                expected: {
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
                     [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-                }, clonedUpdatesHolder);
-                assert.closeTo(+new Date(updatesHolder[j][`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            });
-        }
-
-        /*
-        it('incentiveEligible only, no blood and urine refusal', async () => {
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder[0]);
-            const clonedUpdatesHolder = Object.assign({}, updatesHolder[0]);
-            assert.sameMembers(Object.keys(updatesHolder[0]), [
-                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            ]);
-            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }, clonedUpdatesHolder);
-            assert.closeTo(+new Date(updatesHolder[0][`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            
-        });
-
-        it('incentiveEligible only, no blood and urine refusal', async () => {
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder[1]);
-            const clonedUpdatesHolder = Object.assign({}, updatesHolder[1]);
-            assert.sameMembers(Object.keys(updatesHolder[1]), [
-                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            ]);
-            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }, clonedUpdatesHolder);
-            assert.closeTo(+new Date(updatesHolder[1][`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            
-        });
-        */
-
-        afterEach(async() => {
-            sinon.restore();
-            i++;
-        })
-    });
-
-    describe('checkDerivedVariables', async () => {
-
-        beforeEach(async (args) => {
-            console.log('Before hook called with args', args);
-        })
-        it('incentiveEligible only, blood and urine refusal', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                }
+            },
+            {
+                label: 'incentiveEligible only, clinical blood collection case, blood and urine refusal',
+                participantInfo: {
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                        }
+                    },
+                    // bloodUrine refusal updates
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                    // Second bloodCollected case
+                    // This also triggers the calculateBaselineOrderPlaced case, resulting in additional update keys
+                    // This combination will result in calculateBaselineOrderPlaced of true
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.clinicalSiteBloodCollected]: fieldToConceptIdMapping.yes
+                        }
+                    },
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                // bloodUrine refusal updates
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes,
+                    '173836415.266600170.880794013': 104430631,
+                    '173836415.266600170.156605577': fieldToConceptIdMapping.yes
                 }
-            };
-            const specimenArray = [];
-            const surveys = [];
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            const clonedUpdatesHolder = Object.assign({}, updatesHolder);
-            assert.sameMembers(Object.keys(updatesHolder), [
-                `${fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal}`,
-                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            ]);
-            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }, clonedUpdatesHolder);
-            assert.closeTo(+new Date(updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            
-            // assert.sameMembers(Object.keys(updatesHolder))
-            
-
-            sinon.restore();
-            // await firestore.createRecord({
-            //     // @TODO: Participant data here
-            // });
-            // We also need specimen data and user survey data for some scenarios
-            
-        });
-
-        it('incentiveEligible only, no blood and urine refusal', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+            },
+            {
+                label: 'bloodCollected values not set, but research blood specimen for participant submitted',
+                participantInfo: {
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                        }
+                    },
+                    // bloodUrine refusal updates
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                // no bloodUrine refusal updates
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
-                },
-                // Interestingly, this only works if this is explicitly set to no
-                // If it is undefined it is treated as yes
-                // and if it is yes it is never changed
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
-                state: {
-                    uid: participantUid
+                specimens: [{
+                    ['331584571']:  266600170,
+                    ['650516960']: 534621077,
+                    ['299553921']: {
+                        [883732523]: 'not 681745422'
+                    }
+                }],
+                surveys: {},
+                updatesHolder: undefined,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
                 }
-            };
-            const specimenArray = [];
-            const surveys = [];
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            const clonedUpdatesHolder = Object.assign({}, updatesHolder);
-            assert.sameMembers(Object.keys(updatesHolder), [
-                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            ]);
-            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }, clonedUpdatesHolder);
-            assert.closeTo(+new Date(updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            
-            // assert.sameMembers(Object.keys(updatesHolder))
-            
-
-            sinon.restore();
-            // await firestore.createRecord({
-            //     // @TODO: Participant data here
-            // });
-            // We also need specimen data and user survey data for some scenarios
-            
-        });
-
-        it('incentiveEligible only, clinical blood collection case, blood and urine refusal', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+            },
+            {
+                label: 'menstrualCycleSurveyEligible only, first if case',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                // bloodUrine refusal updates
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                // Second bloodCollected case
-                // This also triggers the calculateBaselineOrderPlaced case, resulting in additional update keys
-                // This combination will result in calculateBaselineOrderPlaced of true
-                [fieldToConceptIdMapping.collectionDetails]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.clinicalSiteBloodCollected]: fieldToConceptIdMapping.yes
+                specimens: [],
+                surveys: {
+                    ['D_299215535']: {
+                        ['D_112151599']: fieldToConceptIdMapping.yes
                     }
                 },
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [];
-            const surveys = [];
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            const clonedUpdatesHolder = Object.assign({}, updatesHolder);
-            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes,
-                '173836415.266600170.880794013': 104430631,
-                '173836415.266600170.156605577': fieldToConceptIdMapping.yes
-            }, clonedUpdatesHolder);
-            assert.closeTo(+new Date(updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-
-            // assert.sameMembers(Object.keys(updatesHolder))
-
-
-            sinon.restore();
-        });
-
-        it('bloodCollected values not set, but research blood specimen for participant submitted', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
+                  }
+            },
+            {
+                label: 'menstrualCycleSurveyEligible only, second if case',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                // bloodUrine refusal updates
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [{
-                ['331584571']:  266600170,
-                ['650516960']: 534621077,
-                ['299553921']: {
-                    [883732523]: 'not 681745422'
-                }
-            }];
-            const surveys = [];
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            const clonedUpdatesHolder = Object.assign({}, updatesHolder);
-            assert.sameMembers(Object.keys(updatesHolder), [
-                `${fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal}`,
-                `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-                `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            ]);
-            // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
-            }, clonedUpdatesHolder);
-            assert.closeTo(+new Date(updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-
-            // assert.sameMembers(Object.keys(updatesHolder))
-
-
-            sinon.restore();
-        });
-
-
-        it('menstrualCycleSurveyEligible only, first if case', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                specimens: [],
+                surveys: {
+                    ['D_299215535']: {
+                        ['D_112151599']: fieldToConceptIdMapping.yes
                     }
                 },
-                [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                ['D_299215535']: {
-                    ['D_112151599']: fieldToConceptIdMapping.yes
-                }
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            // const clonedUpdatesHolder = Object.assign({}, updatesHolder);
-            // assert.sameMembers(Object.keys(updatesHolder), [
-            //     `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-            //     `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-            //     `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-            //     `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            // ]);
-            // // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            // delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
-              }, updatesHolder);
-            // assert.closeTo(+new Date(updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            
-            // assert.sameMembers(Object.keys(updatesHolder))
-            
-
-            sinon.restore();
-            // await firestore.createRecord({
-            //     // @TODO: Participant data here
-            // });
-            // We also need specimen data and user survey data for some scenarios
-            
-        });
-
-        it('menstrualCycleSurveyEligible only, second if case', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
+                  }
+            },
+            {
+                label: 'allBaselineComplete only',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                ['D_299215535']: {
-                    ['D_112151599']: fieldToConceptIdMapping.yes
-                }
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            // const clonedUpdatesHolder = Object.assign({}, updatesHolder);
-            // assert.sameMembers(Object.keys(updatesHolder), [
-            //     `${fieldToConceptIdMapping.baselineBloodAndUrineIsRefused}`,
-            //     `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`,
-            //     `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`,
-            //     `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`
-            // ]);
-            // // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
-            // delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
-              }, updatesHolder);
-            // assert.closeTo(+new Date(updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
-            
-            // assert.sameMembers(Object.keys(updatesHolder))
-            
-
-            sinon.restore();
-            // await firestore.createRecord({
-            //     // @TODO: Participant data here
-            // });
-            // We also need specimen data and user survey data for some scenarios
-            
-        });
-
-        it('allBaselineComplete only', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
+                  }
+            },
+            {
+                label: 'only some baseline complete',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.notStarted,
+                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.notStarted,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
-              }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('only some baseline complete', async () => {
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
+                  }
+            },
+            {
+                label: 'bloodUrineNotRefused - baseline blood and urine refused',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted,
-                [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.notStarted,
-                [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.notStarted,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                console.log('getParticipantData called');
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                console.log('getSpecimenCollections called');
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                console.log('retrieveUserSurveys called');
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
-              }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('bloodUrineNotRefused - baseline blood and urine refused', async () => {
-            // This is existing behavior, and this is being treated as a legacy function
-            // so this test ensures consistent behavior
-            // but honestly it doesn't look like it's the right outputs and should be reviewed.
-
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+            },
+            {
+                label: 'bloodUrineNotRefused - neither baseline blood nor urine refused',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
-            }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('bloodUrineNotRefused - neither baseline blood nor urine refused', async () => {
-
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+            },
+            {
+                label: 'bloodUrineNotRefused - baseline blood refused but not urine',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
-            }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('bloodUrineNotRefused - baseline blood refused but not urine', async () => {
-
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+            },
+            {
+                label: 'bloodUrineNotRefused - baseline urine refused but not blood',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
-            }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('bloodUrineNotRefused - baseline urine refused but not blood', async () => {
-
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+            },
+            {
+                label: 'bloodUrineNotRefused - baselineBloodAndUrineIsRefused already marked as yes, both baseline blood and urine refused',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
-            }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('bloodUrineNotRefused - baselineBloodAndUrineIsRefused already marked as yes, both baseline blood and urine refused', async () => {
-
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+            },
+            {
+                label: 'bloodUrineNotRefused - baselineBloodAndUrineIsRefused already marked as yes, neither baseline blood nor urine refused',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                        [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
+                        [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
-            }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('bloodUrineNotRefused - baselineBloodAndUrineIsRefused already marked as yes, neither baseline blood nor urine refused', async () => {
-
-            // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+            },
+            {
+                label: 'calculateBaselineOrderPlaced, blood order placed',
+                participantInfo: {
+                    // This path must be set or else it will cause an error trying to read the property
+                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                        }
+                    },
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced]: fieldToConceptIdMapping.no,
+                            [fieldToConceptIdMapping.bloodOrderPlaced]: fieldToConceptIdMapping.yes
+                        }
+                    },
+                    [fieldToConceptIdMapping.activityParticipantRefusal]: {},
+                    state: {
+                        uid: uuid.v4()
                     }
                 },
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {
-                    [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.no
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
-            }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('calculateBaselineOrderPlaced, blood order placed', async () => {
-        // dummy data inputs and outputs for reference
-            const participantUid = uuid.v4();
-            const participantData = {
-                // This path must be set or else it will cause an error trying to read the property
-                [fieldToConceptIdMapping.dataDestruction.incentive]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
-                    }
-                },
-                [fieldToConceptIdMapping.collectionDetails]: {
-                    [fieldToConceptIdMapping.baseline]: {
-                        [fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced]: fieldToConceptIdMapping.no,
-                        [fieldToConceptIdMapping.bloodOrderPlaced]: fieldToConceptIdMapping.yes
-                    }
-                },
-                [fieldToConceptIdMapping.activityParticipantRefusal]: {},
-                state: {
-                    uid: participantUid
-                }
-            };
-            const specimenArray = [];
-            // Currently hardcoded b/c these IDs are not available for ready dict access
-            const surveys = {
-                
-            };
-            let updatesHolder;
-
-            sinon.replace(firestore, 'getParticipantData', () => {
-                return {data: participantData, id: participantUid};
-            });
-            sinon.replace(firestore, 'getSpecimenCollections', () => {
-                return specimenArray;
-            });
-            sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                return surveys;
-            })
-            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-
-            try {
-                await validation.checkDerivedVariables('fake', 'fake');
-                console.log('updatesHolder', updatesHolder);
-            } catch(err) {
-                console.error('Error', err);
-            }
-
-            assert.isDefined(updatesHolder);
-            
-            assert.deepEqual({
-                [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.yes,
-                [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
-              }, updatesHolder);
-
-            sinon.restore();
-        });
-
-        it('calculateBaselineOrderPlaced, scenario 1', async () => {
-            // dummy data inputs and outputs for reference
-                const participantUid = uuid.v4();
-                const participantData = {
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
+                  }
+            },
+            {
+                label: 'calculateBaselineOrderPlaced, scenario 1',
+                participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
                     [fieldToConceptIdMapping.dataDestruction.incentive]: {
                         [fieldToConceptIdMapping.baseline]: {
@@ -2229,50 +1538,23 @@ describe('biospecimen', async () => {
                     },
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
-                        uid: participantUid
+                        uid: uuid.v4()
                     }
-                };
-                const specimenArray = [];
-                // Currently hardcoded b/c these IDs are not available for ready dict access
-                const surveys = {
-                    
-                };
-                let updatesHolder;
-    
-                sinon.replace(firestore, 'getParticipantData', () => {
-                    return {data: participantData, id: participantUid};
-                });
-                sinon.replace(firestore, 'getSpecimenCollections', () => {
-                    return specimenArray;
-                });
-                sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                    return surveys;
-                })
-                sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-    
-                try {
-                    await validation.checkDerivedVariables('fake', 'fake');
-                    console.log('updatesHolder', updatesHolder);
-                } catch(err) {
-                    console.error('Error', err);
-                }
-    
-                assert.isDefined(updatesHolder);
-                
-                assert.deepEqual({
+                },
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
                     [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
-                  }, updatesHolder);
-    
-                sinon.restore();
-        });
-
-        it('calculateBaselineOrderPlaced, scenario 2', async () => {
-            // dummy data inputs and outputs for reference
-                const participantUid = uuid.v4();
-                const participantData = {
+                  }
+            },
+            {
+                label: 'calculateBaselineOrderPlaced, scenario 2',
+                participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
                     [fieldToConceptIdMapping.dataDestruction.incentive]: {
                         [fieldToConceptIdMapping.baseline]: {
@@ -2286,50 +1568,23 @@ describe('biospecimen', async () => {
                     },
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
-                        uid: participantUid
+                        uid: uuid.v4()
                     }
-                };
-                const specimenArray = [];
-                // Currently hardcoded b/c these IDs are not available for ready dict access
-                const surveys = {
-                    
-                };
-                let updatesHolder;
-    
-                sinon.replace(firestore, 'getParticipantData', () => {
-                    return {data: participantData, id: participantUid};
-                });
-                sinon.replace(firestore, 'getSpecimenCollections', () => {
-                    return specimenArray;
-                });
-                sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                    return surveys;
-                })
-                sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-    
-                try {
-                    await validation.checkDerivedVariables('fake', 'fake');
-                    console.log('updatesHolder', updatesHolder);
-                } catch(err) {
-                    console.error('Error', err);
-                }
-    
-                assert.isDefined(updatesHolder);
-                
-                assert.deepEqual({
+                },
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
                     [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
-                  }, updatesHolder);
-    
-                sinon.restore();
-        });
-
-        it('calculateBaselineOrderPlaced, scenario 3', async () => {
-            // dummy data inputs and outputs for reference
-                const participantUid = uuid.v4();
-                const participantData = {
+                  }
+            },
+            {
+                label: 'calculateBaselineOrderPlaced, scenario 3',
+                participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
                     [fieldToConceptIdMapping.dataDestruction.incentive]: {
                         [fieldToConceptIdMapping.baseline]: {
@@ -2343,44 +1598,70 @@ describe('biospecimen', async () => {
                     },
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
-                        uid: participantUid
+                        uid: uuid.v4()
                     }
-                };
-                const specimenArray = [];
-                // Currently hardcoded b/c these IDs are not available for ready dict access
-                const surveys = {
-                    
-                };
-                let updatesHolder;
-    
-                sinon.replace(firestore, 'getParticipantData', () => {
-                    return {data: participantData, id: participantUid};
-                });
-                sinon.replace(firestore, 'getSpecimenCollections', () => {
-                    return specimenArray;
-                });
-                sinon.replace(firestore, 'retrieveUserSurveys', () => {
-                    return surveys;
-                })
-                sinon.replace(firestore, 'updateParticipantData', (doc, updates) => updatesHolder = updates);
-    
+                },
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: true,
+                expected: {
+                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.no,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
+                  }
+            },
+            /*
+            {
+                label: '',
+                participantInfo: {},
+                specimens: [],
+                surveys: {},
+                updatesHolder: undefined,
+                skipDateComparison: false,
+                expected: {}
+            },
+            */
+        ];
+        beforeEach(async () => {
+            sinon.replace(firestore, 'getParticipantData', () => {
+                return {data: testInfo[i].participantInfo, id: testInfo[i].participantInfo.state.uid};
+            });
+            sinon.replace(firestore, 'getSpecimenCollections', () => {
+                return testInfo[i].specimens;
+            });
+            sinon.replace(firestore, 'retrieveUserSurveys', () => {
+                return testInfo[i].surveys;
+            })
+            sinon.replace(firestore, 'updateParticipantData', (doc, updates) => testInfo[i].updatesHolder = updates);
+        });
+
+        for(let j = 0; j < testInfo.length; j++) {
+            let thisTest = testInfo[j];
+            it(j + ': ' + thisTest.label, async () => {
                 try {
                     await validation.checkDerivedVariables('fake', 'fake');
-                    console.log('updatesHolder', updatesHolder);
                 } catch(err) {
                     console.error('Error', err);
                 }
-    
-                assert.isDefined(updatesHolder);
+
+                assert.isDefined(thisTest.updatesHolder);
                 
-                assert.deepEqual({
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
-                  }, updatesHolder);
-    
-                sinon.restore();
+                const clonedUpdatesHolder = Object.assign({}, thisTest.updatesHolder);
+                // Comparing without the timestamp, which will never match exactly and is checked for closeness elsewhere.
+                delete clonedUpdatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`];
+                // console.log('updatesHolder for %s', j, thisTest.updatesHolder);
+                assert.deepEqual(thisTest.expected, clonedUpdatesHolder);
+                if(!thisTest.skipDateComparison) {
+                    assert.closeTo(+new Date(thisTest.updatesHolder[`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`]), +new Date(), 60000, 'Date incentive eligible is within a minute of test completion');
+                }
+            });
+        }
+
+        afterEach(async() => {
+            sinon.restore();
+            i++;
         });
     });
 
