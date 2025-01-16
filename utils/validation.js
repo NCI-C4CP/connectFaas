@@ -136,8 +136,6 @@ const getToken = async (req, res) => {
             if(data[dt].studyId && data[dt].studyId.trim() !== ""){
                 const studyId = data[dt].studyId
                 const { recordExists } = require('./firestore');
-                console.log('studyId', studyId);
-                console.log('siteCode', siteCode);
                 const response = await recordExists(studyId, siteCode);
 
                 if(response === false){
