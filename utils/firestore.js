@@ -1,6 +1,5 @@
 const admin = require('firebase-admin');
 const { Transaction, FieldPath } = require('firebase-admin/firestore');
-
 admin.initializeApp(functions.config().firebase);
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
@@ -262,6 +261,12 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             fieldMapping.city,
             fieldMapping.state,
             fieldMapping.zip,
+            fieldMapping.isPOBox,
+            fieldMapping.physicalAddress1,
+            fieldMapping.physicalAddress2,
+            fieldMapping.physicalCity,
+            fieldMapping.physicalState,
+            fieldMapping.physicalZip,
             fieldMapping.canWeVoicemailMobile,
             fieldMapping.canWeVoicemailHome,
             fieldMapping.canWeVoicemailOther,
