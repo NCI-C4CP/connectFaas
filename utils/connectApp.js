@@ -1,7 +1,7 @@
-const { getResponseJSON, setHeadersDomainRestricted, getUserProfile } = require('./shared');
+const { getResponseJSON, setHeadersDomainRestricted, getUserProfile, safeJSONParse } = require('./shared');
 const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
-const { validateToken, generateToken, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation } = require('./validation');
+const { validateToken, generateToken, validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation } = require('./validation');
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -55,17 +55,56 @@ const connectApp = async (req, res) => {
 
     else if (api === 'submitSocial') return submitSocial(req, res, uid);
 
-    else if (api === 'getUserProfile') return getUserProfile(req, res, uid);
+    else if (api === 'getUserProfile') return await getUserProfile(req, res, uid);
 
     else if (api === 'getUserSurveys') return getUserSurveys(req, res, uid);
 
-    else if (api === 'getUserCollections') return getUserCollections(req, res, uid);
+    else if (api === 'getUserCollections') {
+      if (req.method !== 'GET') {
+        return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+      }
+
+      // all 'getUserCollections' paths return res.status(code).json({ message, code });
+      return await getUserCollections(req, res, uid);
+    }
 
     else if (api === 'retrieveNotifications') return retrieveNotifications(req, res, uid);
     
-    else if (api === 'validateToken') return validateToken(req, res, uid);
+    // @ deprecated. Retail until Feb 2025 release for backward MyConnect compatibility (caching on participant devices) mith MyConnect.
+    // This call has been removed from the MyConnect app as of the Jan 2025 release. OK to delete Feb 2025 once caching concerns are alleviated.
+    else if (api === 'validateToken') return await validateToken(req, res, uid);
+
+    // @ deprecated. Retail until Feb 2025 release for backward MyConnect compatibility (caching on participant devices) mith MyConnect.
+    // This call has been removed from the MyConnect app as of the Jan 2025 release. OK to delete Feb 2025 once caching concerns are alleviated.
+    else if (api === 'generateToken') return await generateToken(req, res, uid);
     
-    else if (api === 'generateToken') return generateToken(req, res, uid);
+    else if (api === 'validatePin') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const body = safeJSONParse(req.body);
+      if (!body || Object.keys(body).length === 0) {
+        return res.status(400).json(getResponseJSON('Bad request: empty submission', 400));
+      }
+
+      // all 'validatePin' paths return res.status(code).json({ message, code });
+      return await validatePin(res, body, uid);
+    }
+
+    else if (api === 'createParticipantRecord') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const body = safeJSONParse(req.body);
+      if (!body || Object.keys(body).length === 0) {
+        return res.status(400).json(getResponseJSON('Bad request: empty submission', 400));
+      }
+
+      // all 'createParticipantRecord' paths return res.status(code).json({ message, code });
+      return await createParticipantRecord(res, body, uid);
+    }
 
     else if (api === 'updateParticipantFirebaseAuthentication') return await updateParticipantFirebaseAuthentication(req, res);
 

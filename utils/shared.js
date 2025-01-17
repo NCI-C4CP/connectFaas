@@ -2039,6 +2039,15 @@ const getAdjustedTime = (inputTime, days = 0, hours = 0, minutes = 0) => {
   return adjustedTime;
 };
 
+const safeJSONParse = (str) => {
+    try {
+        return JSON.parse(str);
+    } catch (e) {
+        console.error(`Error parsing JSON: ${e}`);
+        return null;
+    }
+}
+
 /**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
@@ -2117,4 +2126,5 @@ module.exports = {
     delay,
     getAdjustedTime,
     handleNorcBirthdayCard,
+    safeJSONParse,
 };
