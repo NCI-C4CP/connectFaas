@@ -1,4 +1,3 @@
-// import {assert} from 'chai';
 const assert = require('chai').assert;
 const Supertest = require('supertest');
 const supertest = Supertest('http://localhost:5001/nih-nci-dceg-connect-dev/us-central1/app?api=');

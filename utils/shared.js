@@ -857,6 +857,8 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
         // according to the understanding that these values should not be changed once finalized,
         // and are now set only on finalization.
         // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        // 1169 - Update to when derived variables are set and preventing overwriting (Biospecimen): https://github.com/episphere/connect/issues/1169
+        // 1062 - Handling data from multiple baseline collections: https://github.com/episphere/connect/issues/1062
         /*
         else if (settings[visit][fieldMapping.baselineBloodCollectedTime] !== '' ||  settings[visit][fieldMapping.clinicalBloodCollectedTime] !== ''){
             const participantBloodCollected = participantData[fieldMapping.baselineBloodSampleCollected] === fieldMapping.yes;
@@ -905,6 +907,12 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 }
             });
         }
+         // This section has been commented out as a part of implementing 1169 and 1062
+        // according to the understanding that these values should not be changed once finalized,
+        // and are now set only on finalization.
+        // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        // 1169 - Update to when derived variables are set and preventing overwriting (Biospecimen): https://github.com/episphere/connect/issues/1169
+        // 1062 - Handling data from multiple baseline collections: https://github.com/episphere/connect/issues/1062
         /*
         else if (settings[visit][fieldMapping.baselineUrineCollectedTime] !== '' ||  settings[visit][fieldMapping.clinicalUrineCollectedTime] !== '') {
             const participantUrineCollected = participantData[fieldMapping.baselineUrineCollected] === fieldMapping.yes;
@@ -947,6 +955,8 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
         // according to the understanding that these values should not be changed once finalized,
         // and are now set only on finalization.
         // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        // 1169 - Update to when derived variables are set and preventing overwriting (Biospecimen): https://github.com/episphere/connect/issues/1169
+        // 1062 - Handling data from multiple baseline collections: https://github.com/episphere/connect/issues/1062
         /*
         else if (settings[visit][fieldMapping.baselineMouthwashCollectedTime] !== '' && participantData[fieldMapping.baselineMouthwashCollected] === fieldMapping.yes) {
             const isParticipantMouthwashCollected = participantData[fieldMapping.baselineMouthwashCollected] === fieldMapping.yes;

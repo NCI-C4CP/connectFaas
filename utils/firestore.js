@@ -166,6 +166,10 @@ const getParticipantDataByConnectID = async (connectId) => {
         .get();
     if (snapshot.size === 1) {
         return {id: snapshot.docs[0].id, data: snapshot.docs[0].data()};
+    } else if (snapshot.size === 0) {
+        return null;
+    } else {
+        throw new Error('Multiple participants found with connectId ' + connectId);
     }
 }
 
