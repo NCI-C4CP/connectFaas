@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
-const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore');
-admin.initializeApp();
+const { Transaction, FieldPath } = require('firebase-admin/firestore');
+admin.initializeApp(functions.config().firebase);
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, conceptMappings } = require('./shared');
@@ -160,6 +160,19 @@ const validateSiteSAEmail = async (saEmail) => {
     }
 }
 
+const getParticipantDataByConnectID = async (connectId) => {
+    const snapshot = await db.collection('participants')
+        .where('Connect_ID', '==', +connectId)
+        .get();
+    if (snapshot.size === 1) {
+        return {id: snapshot.docs[0].id, data: snapshot.docs[0].data()};
+    } else if (snapshot.size === 0) {
+        return null;
+    } else {
+        throw new Error('Multiple participants found with connectId ' + connectId);
+    }
+}
+
 const getParticipantData = async (token, siteCode, isParent) => {
     try{
         const operator = isParent ? 'in' : '==';
@@ -252,6 +265,12 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             fieldMapping.city,
             fieldMapping.state,
             fieldMapping.zip,
+            fieldMapping.isPOBox,
+            fieldMapping.physicalAddress1,
+            fieldMapping.physicalAddress2,
+            fieldMapping.physicalCity,
+            fieldMapping.physicalState,
+            fieldMapping.physicalZip,
             fieldMapping.canWeVoicemailMobile,
             fieldMapping.canWeVoicemailHome,
             fieldMapping.canWeVoicemailOther,
@@ -306,6 +325,8 @@ const resetParticipantHelper = async (uid, saveToDb) => {
         
                     if (docSnapshot.size > 0) {
                         toDelete[moduleConceptsToCollections[concept]] = docSnapshot.docs.map(doc => doc.id);
+                    } else {
+                        toDelete[moduleConceptsToCollections[concept]] = [];
                     }
                     return resolve();
                 } catch(err) {
@@ -2598,25 +2619,46 @@ const addKitStatusToParticipant = async (participantsCID) => {
 
 // Note: existing snake_casing follows through to BPTL CSV reporting. Do not update to camelCase without prior communication.
 const processParticipantHomeMouthwashKitData = (record, printLabel) => {
-    const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, address1, address2, city, state, zip } = fieldMapping;
+    const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, yes } = fieldMapping;
+
+    if(!record) {
+        return null;
+    }
 
     const addressLineOne = record?.[address1];
     const poBoxRegex = /^(?:P\.?O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
 
-    const isPOBoxMatch = poBoxRegex.test(addressLineOne);
+    const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
+    let addressObj = {
+        address_1: record[address1],
+        address_2: record[address2] || '',
+        city: record[city],
+        state: record[state],
+        zip_code: record[zip], 
+    };
     
-    if (isPOBoxMatch) return null;
+    if (isPOBoxMatch) {
+        // Handle physical address
+        const physicalAddressLineOne = record[physicalAddress1];
+        // If physical address is missing or also a PO Box, make this invalid
+        if(!physicalAddressLineOne || poBoxRegex.test(physicalAddressLineOne))
+            return null;
+
+        addressObj = {
+            address_1: record[physicalAddress1],
+            address_2: record[physicalAddress2] || '',
+            city: record[physicalCity],
+            state: record[physicalState],
+            zip_code: record[physicalZip], 
+        };
+    }
 
     const hasMouthwash = record[collectionDetails][baseline][bioKitMouthwash] !== undefined;    
     const processedRecord = {
-    first_name: record[firstName],
-    last_name: record[lastName],
-    address_1: record[address1],
-    address_2: record[address2] || '',
-    city: record[city],
-    state: record[state],
-    zip_code: record[zip], 
-    connect_id: record['Connect_ID'],
+        first_name: record[firstName],
+        last_name: record[lastName],
+        connect_id: record['Connect_ID'],
+        ...addressObj
     };
 
     return printLabel || hasMouthwash
@@ -4015,6 +4057,7 @@ module.exports = {
     getChildren,
     deleteFirestoreDocuments,
     getParticipantData,
+    getParticipantDataByConnectID,
     updateParticipantData,
     resetParticipantHelper,
     storeNotificationTokens,

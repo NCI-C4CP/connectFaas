@@ -207,7 +207,7 @@ const processMouthwashEligibility = (data) => {
         data[conceptIds.collectionDetails] &&
         data[conceptIds.collectionDetails][conceptIds.baseline] &&
         data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash] &&
-        data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash] == conceptIds.initialized
+        data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash][conceptIds.kitStatus] == conceptIds.initialized
     ) {
         // Conditions to remove initialized: status is initialized and processParticipantHomeMouthwashKitData fails
         const isEligible = !!processParticipantHomeMouthwashKitData(data, true);
@@ -223,7 +223,12 @@ const checkDerivedVariables = async (token, siteCode) => {
     const { getParticipantData, getSpecimenCollections, retrieveUserSurveys } = require('./firestore');
 
     const response = await getParticipantData(token, siteCode);
+    if(!response) {
+        return;
+    }
     const specimenArray = await getSpecimenCollections(token, siteCode);
+
+    
     
     const data = response.data;
     const doc = response.id;
@@ -448,8 +453,6 @@ const checkDerivedVariables = async (token, siteCode) => {
 
         updates = { ...updates, ...refusalUpdates};
     }
-
-    console.log('Participant data updates:', updates);
 
     if(Object.keys(updates).length > 0) {
         const { updateParticipantData } = require('./firestore');
