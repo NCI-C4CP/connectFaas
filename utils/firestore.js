@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
-const { Transaction, FieldPath } = require('firebase-admin/firestore');
-admin.initializeApp(functions.config().firebase);
+const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore');
+admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, conceptMappings } = require('./shared');
