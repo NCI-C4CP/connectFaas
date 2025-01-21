@@ -8,7 +8,7 @@ const connectApp = async (req, res) => {
 
     if(req.method === 'OPTIONS') return res.status(200).json({code: 200});
 
-    if (req.query.api === 'sendEmailLink') return sendEmailLink(req, res);
+    if (req.query.api === 'sendEmailLink') return await sendEmailLink(req, res);
 
     if(!req.headers.authorization || req.headers.authorization.trim() === ""){
         return res.status(401).json(getResponseJSON('Authorization failed!', 401));
@@ -31,7 +31,6 @@ const connectApp = async (req, res) => {
     const query = req.query;
     
     if(!query.api) return res.status(400).json(getResponseJSON('Bad request!', 400));
-    
     const api = query.api;
 
     console.log(`PWA API: ${api}, called from uid: ${uid}`);
@@ -53,11 +52,11 @@ const connectApp = async (req, res) => {
       return await submit(res, body, uid);
     }
 
-    else if (api === 'submitSocial') return submitSocial(req, res, uid);
+    else if (api === 'submitSocial') return await submitSocial(req, res, uid);
 
     else if (api === 'getUserProfile') return await getUserProfile(req, res, uid);
 
-    else if (api === 'getUserSurveys') return getUserSurveys(req, res, uid);
+    else if (api === 'getUserSurveys') return await getUserSurveys(req, res, uid);
 
     else if (api === 'getUserCollections') {
       if (req.method !== 'GET') {
@@ -68,7 +67,7 @@ const connectApp = async (req, res) => {
       return await getUserCollections(req, res, uid);
     }
 
-    else if (api === 'retrieveNotifications') return retrieveNotifications(req, res, uid);
+    else if (api === 'retrieveNotifications') return await retrieveNotifications(req, res, uid);
     
     // @ deprecated. Retail until Feb 2025 release for backward MyConnect compatibility (caching on participant devices) with MyConnect.
     // This call has been removed from the MyConnect app as of the Jan 2025 release. OK to delete Feb 2025 once caching concerns are alleviated.
@@ -108,7 +107,7 @@ const connectApp = async (req, res) => {
 
     else if (api === 'updateParticipantFirebaseAuthentication') return await updateParticipantFirebaseAuthentication(req, res);
 
-    else if (api === 'validateEmailOrPhone') return validateUsersEmailPhone(req, res);
+    else if (api === 'validateEmailOrPhone') return await validateUsersEmailPhone(req, res);
 
     else if (api === 'emailAddressValidation') return await emailAddressValidation(req, res);
 
