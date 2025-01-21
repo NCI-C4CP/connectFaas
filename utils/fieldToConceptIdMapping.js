@@ -26,6 +26,7 @@ module.exports = {
     shippingBoxId: 132929440,
     shipmentCourier: 666553960,
     shipperEmail: 948887825,
+    pinNumber: 379080287,
     iDoNotHaveAPIN: 828729648,
     pinMatch: 948195369,
     heardAboutStudyFrom: 142654897,
