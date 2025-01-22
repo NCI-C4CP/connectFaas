@@ -4163,8 +4163,6 @@ const processPhysicalActivity = async (dateExpression) => {
             await batch.commit();
         }
     }
-
-    return res.status(200);
 }
 
 module.exports = {

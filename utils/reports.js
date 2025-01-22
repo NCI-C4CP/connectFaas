@@ -1,4 +1,3 @@
-const { processPhysicalActivity } = require('./firestore');
 const { logIPAddress, setHeaders } = require('./shared');
 
 const physicalActivity = async (req, res) => {
@@ -19,7 +18,10 @@ const physicalActivity = async (req, res) => {
 
         if (year && month && day) dateExpression = `'${year}-${month}-${day}'`;
 
-        return await processPhysicalActivity(dateExpression);
+        const { processPhysicalActivity } = require('./firestore');
+        await processPhysicalActivity(dateExpression);
+
+        return res.status(200);
 
     } catch (error) {
         console.error(error);
