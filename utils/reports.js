@@ -1,9 +1,8 @@
 const shared = require('./shared');
 const { logIPAddress, setHeaders } = require('./shared');
 
-console.log(shared);
-
 const physicalActivity = async (req, res) => {
+    console.log(shared);
     logIPAddress(req);
     setHeaders(res);
 
