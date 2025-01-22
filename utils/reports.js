@@ -18,6 +18,7 @@ const physicalActivity = async (req, res) => {
 
         if (year && month && day) dateExpression = `'${year}-${month}-${day}'`;
 
+        const { processPhysicalActivity } = require('./firestore');
         return await processPhysicalActivity(dateExpression);
 
     } catch (error) {
