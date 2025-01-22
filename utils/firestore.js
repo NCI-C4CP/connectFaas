@@ -4114,6 +4114,7 @@ const processPhysicalActivity = async (dateExpression) => {
     console.log(rows.length);
 
     for (let i = 0; i < rows.length; i+= CHUNK_SIZE) {
+        console.log(i);
         const chunk = rows.slice(i, i + CHUNK_SIZE);
         const batch = db.batch();
         
@@ -4165,6 +4166,8 @@ const processPhysicalActivity = async (dateExpression) => {
             await batch.commit();
         }
     }
+
+    console.log("Done");
 
     return true;
 }
