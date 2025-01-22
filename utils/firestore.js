@@ -4105,16 +4105,10 @@ const firestoreWriteWithAutoRetry = async (asyncWriteFunction, operationName, ma
 
 const processPhysicalActivity = async (dateExpression) => {
     
-    const query = `
-        SELECT *
-        FROM \`${process.env.GCLOUD_PROJECT}.ROI.physical_activity\`
-        WHERE DATE(PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*SZ', d_416831581)) = ${dateExpression}
-    `;
+    const { getPhysicalActivityData } = require('./bigquery');
+    const rows = await getPhysicalActivityData(dateExpression);
 
-    const bigquery = new BigQuery();
-    const [rows] = await bigquery.query(query);
     const CHUNK_SIZE = 500;
-
     let updates = 0;
 
     for (let i = 0; i < rows.length; i+= CHUNK_SIZE) {
