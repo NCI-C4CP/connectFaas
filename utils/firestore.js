@@ -4133,7 +4133,7 @@ const processPhysicalActivity = async (dateExpression) => {
                 .where('Connect_ID', '==', parseInt(Connect_ID))
                 .select(  
                     'Connect_ID',  
-                    fieldMapping.physicalActivity
+                    `${fieldMapping.physicalActivity}`
                 )
                 .get();
 
