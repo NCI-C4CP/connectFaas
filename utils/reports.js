@@ -21,13 +21,13 @@ const physicalActivity = async (req, res) => {
         const { processPhysicalActivity } = require('./firestore');
         await processPhysicalActivity(dateExpression);
 
-        return res.status(200);
-
     } catch (error) {
         console.error(error);
     
         return res.status(500).json({ message: error.toString(), error });
     }
+
+    return res.status(200).json({ code: 200, message: 'Physical Activity data processed successfully!'});
 }
 
 module.exports = {
