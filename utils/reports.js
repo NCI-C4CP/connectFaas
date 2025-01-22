@@ -47,7 +47,14 @@ const physicalActivity = async (req, res) => {
                     return; 
                 }
 
-                const snapshot = await firestore.collection('participants').where('Connect_ID', '==', parseInt(Connect_ID)).get();
+                const snapshot = await firestore
+                    .collection('participants')
+                    .where('Connect_ID', '==', parseInt(Connect_ID))
+                    .select(  
+                        'Connect_ID',  
+                        fieldMapping.physicalActivity
+                    )
+                    .get();
 
                 if (snapshot.empty) {
                     console.error(`Firestore doc not found for Connect_ID: ${Connect_ID}`);
