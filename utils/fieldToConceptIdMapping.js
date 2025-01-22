@@ -1,5 +1,3 @@
-const { physicalActivity } = require("./reports");
-
 module.exports = {
     siteLoginMap: {
         kaiserPermanenteGeorgia: 327912200,
