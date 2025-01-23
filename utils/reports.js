@@ -1,6 +1,6 @@
 const { getBigQueryData } = require('./bigquery');
 const { retrieveConnectID } = require('./firestore');
-const { getResponseJSON } = require('./shared');
+const { getResponseJSON, logIPAddress, setHeaders } = require('./shared');
 
 const retrievePhysicalActivityReport = async (req, res, uid, connectId) => {
     if (req.method !== "GET") {
@@ -39,6 +39,37 @@ const retrievePhysicalActivityReport = async (req, res, uid, connectId) => {
     }
 };
 
+const physicalActivity = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+
+    if(req.method === 'OPTIONS') {
+        return res.status(200).json({code: 200});
+    }
+
+    if(req.method !== 'GET') {
+        return res.status(405).json({ code: 405, data: 'Only GET requests are accepted!'});
+    }
+
+    try {
+        let dateExpression = 'CURRENT_DATE()';
+        const { year, month, day } = req.query;
+
+        if (year && month && day) dateExpression = `'${year}-${month}-${day}'`;
+
+        const { processPhysicalActivity } = require('./firestore');
+        await processPhysicalActivity(dateExpression);
+
+    } catch (error) {
+        console.error(error);
+    
+        return res.status(500).json({ message: error.toString(), error });
+    }
+
+    return res.status(200).json({ code: 200, message: 'Physical Activity data processed successfully!'});
+}
+
 module.exports = {
+    physicalActivity,
     retrievePhysicalActivityReport
 };

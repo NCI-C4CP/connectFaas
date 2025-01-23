@@ -26,6 +26,7 @@ module.exports = {
     shippingBoxId: 132929440,
     shipmentCourier: 666553960,
     shipperEmail: 948887825,
+    pinNumber: 379080287,
     iDoNotHaveAPIN: 828729648,
     pinMatch: 948195369,
     heardAboutStudyFrom: 142654897,
@@ -496,4 +497,11 @@ module.exports = {
         mailDate: 768313785,
         returnDate: 902078073,
     },
+
+    // Return of Information
+    physicalActivity: 686238347,
+    physicalActivityStatus: 446235715,
+    reportStatus: {
+        unread: 702641611,
+    }
 };
