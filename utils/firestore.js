@@ -2694,31 +2694,33 @@ const processParticipantHomeMouthwashKitData = (record, printLabel) => {
         return null;
     }
 
-    const addressLineOne = record?.[address1];
     const poBoxRegex = /^(?:P\.?O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
 
-    const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
-    let addressObj = {
-        address_1: record[address1],
-        address_2: record[address2] || '',
-        city: record[city],
-        state: record[state],
-        zip_code: record[zip], 
-    };
-    
-    if (isPOBoxMatch) {
-        // Handle physical address
-        const physicalAddressLineOne = record[physicalAddress1];
-        // If physical address is missing or also a PO Box, make this invalid
-        if(!physicalAddressLineOne || poBoxRegex.test(physicalAddressLineOne))
-            return null;
+    const physicalAddressLineOne = record[physicalAddress1];
+    let addressObj = {};
 
+    // If there is a physical address, default to it unless it's a PO Box
+    // (Behavior clarified in the notes on [1174](https://github.com/episphere/connect/issues/1174))
+    if(physicalAddressLineOne && !poBoxRegex.test(physicalAddressLineOne)) {
         addressObj = {
             address_1: record[physicalAddress1],
             address_2: record[physicalAddress2] || '',
             city: record[physicalCity],
             state: record[physicalState],
             zip_code: record[physicalZip], 
+        };
+    } else {
+        const addressLineOne = record?.[address1];
+        const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
+        if(isPOBoxMatch) {
+            return null;
+        }
+        addressObj = {
+            address_1: record[address1],
+            address_2: record[address2] || '',
+            city: record[city],
+            state: record[state],
+            zip_code: record[zip], 
         };
     }
 
