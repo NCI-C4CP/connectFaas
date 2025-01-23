@@ -837,11 +837,17 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 if(tubeIsCollected) {
                     settings[visit][fieldMapping.bloodCollectionSetting] = collectionSetting;
                     if(isResearch) {
-                        settings[visit][fieldMapping.baselineBloodCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        // Prevent overwriting; always use the time from the first submission
+                        if(!settings[visit][fieldMapping.baselineBloodCollectedTime]) {
+                            settings[visit][fieldMapping.baselineBloodCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        }
                     }
                     else if(isClinical) {
                         settings[visit][fieldMapping.clinicalBloodCollected] = fieldMapping.yes;
-                        settings[visit][fieldMapping.clinicalBloodCollectedTime] = biospecimenData[fieldMapping.collectionScannedTime];
+                        if(!settings[visit][fieldMapping.clinicalBloodCollectedTime]) {
+                            // Prevent overwriting; always use the time from the first submission
+                            settings[visit][fieldMapping.clinicalBloodCollectedTime] = biospecimenData[fieldMapping.collectionScannedTime];
+                        }
 
                         settings[visit][fieldMapping.anySpecimenCollected] = fieldMapping.yes;
 
@@ -891,7 +897,10 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 if (tubeIsCollected) {
                     settings[visit][fieldMapping.urineCollectionSetting] = collectionSetting;
                     if (isResearch) {
-                        settings[visit][fieldMapping.baselineUrineCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        // Prevent overwriting; always use the time from the first submission
+                        if(!settings[visit][fieldMapping.baselineUrineCollectedTime]) {
+                            settings[visit][fieldMapping.baselineUrineCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        }
                     }
                     else if (isClinical) {
                         settings[visit][fieldMapping.clinicalUrineCollected] = fieldMapping.yes;
@@ -899,6 +908,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
 
                         settings[visit][fieldMapping.anySpecimenCollected] = fieldMapping.yes;
 
+                        // prevent overwriting; always use the time from the first submission
                         if (!(settings[visit][fieldMapping.anySpecimenCollectedTime])) {
                             settings[visit][fieldMapping.anySpecimenCollectedTime] = biospecimenData[fieldMapping.collectionScannedTime];
                         }
@@ -945,7 +955,10 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 if (isTubeCollected) {
                     settings[visit][fieldMapping.mouthwashCollectionSetting] = collectionSetting;
                     if (isResearch) {
-                        settings[visit][fieldMapping.baselineMouthwashCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        // Prevent overwriting; always use the time from the first submission
+                        if(!settings[visit][fieldMapping.baselineMouthwashCollectedTime]) {
+                            settings[visit][fieldMapping.baselineMouthwashCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        }
                     }
                 mouthwashTubesLength += 1
                 }
