@@ -630,7 +630,7 @@ describe('biospecimen', async () => {
     });
 
     describe('processParticipantHomeMouthwashKitData', () => {
-        const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, yes } = fieldToConceptIdMapping;
+        const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, yes, no } = fieldToConceptIdMapping;
         it('Should return null for PO boxes', () => {
             const result1 = firestore.processParticipantHomeMouthwashKitData({
                 [address1]: 'PO Box 1033'
@@ -749,6 +749,35 @@ describe('biospecimen', async () => {
             assert.equal(result.connect_id, record['Connect_ID']);
         });
 
+        it('Should use physical address if physical address is provided even if mailing address is not a PO Box', () => {
+            const result1 = firestore.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [isPOBox]: no,
+                [address1]: '321 Physical Street',
+                [physicalAddress1]: '123 Fake St',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.deepEqual(result1, {
+                first_name: 'First',
+                last_name: 'Last',
+                connect_id: 123456789,
+                address_1: '123 Fake St',
+                address_2: '',
+                city: 'City',
+                state: 'PA',
+                zip_code: '19104'
+              });
+        });
+
         it('Should use physical address if primary address is marked as PO box', () => {
             const result1 = firestore.processParticipantHomeMouthwashKitData({
                 [firstName]: 'First',
@@ -806,7 +835,39 @@ describe('biospecimen', async () => {
               });
         });
 
-        it('Should return null if physical address is a PO Box', () => {
+        it('Should use mailing address if physical address is a PO Box and mailing is not', () => {
+            const result1 = firestore.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [isPOBox]: no,
+                [address1]: '123 Fake St',
+                [city]: 'City',
+                [state]: 'PA',
+                [zip]: '19104',
+                [physicalAddress1]: 'PO Box 1033',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '17102',
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.deepEqual(result1, {
+                first_name: 'First',
+                last_name: 'Last',
+                connect_id: 123456789,
+                address_1: '123 Fake St',
+                address_2: '',
+                city: 'City',
+                state: 'PA',
+                zip_code: '19104'
+              });
+        });
+
+        it('Should return null if physical address and mailing addresses are PO Boxes', () => {
             const result1 = firestore.processParticipantHomeMouthwashKitData({
                 [firstName]: 'First',
                 [lastName]: 'Last',
@@ -822,7 +883,24 @@ describe('biospecimen', async () => {
                     }
                 }
             }, true);
+            const result2 = firestore.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [isPOBox]: yes,
+                [address1]: 'PznO Box 1033',
+                [physicalAddress1]: 'PO Box 1033',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
             assert.equal(result1, null);
+            assert.equal(result2, null);
         });
         
     });
