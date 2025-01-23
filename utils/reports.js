@@ -21,8 +21,6 @@ const retrievePhysicalActivityReport = async (req, res, uid, connectId) => {
         return res.status(400).json(getResponseJSON("Connect ID Not Passed", 400));
     }
 
-    connectId = '6759772253';
-
     try {
         let filters = [
             {
