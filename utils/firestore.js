@@ -2754,7 +2754,8 @@ const assignKitToParticipant = async (data) => {
         if(kitsWithDuplicateReturnTrackingNumbers.size > 0) {
             kitAssignmentResult = {
                 success: false,
-                message: "Duplicate return tracking number found: " + data[supplyKitTrackingNum]
+                logText: "Duplicate return tracking number found: " + data[supplyKitTrackingNum],
+                message: "This tracking number has already been used."
             };
             return;
         }
@@ -2767,7 +2768,8 @@ const assignKitToParticipant = async (data) => {
         if(otherKitsUsingSupplyKitTrackingNumber.size > 1) {
             kitAssignmentResult = {
                 success: false,
-                message: "Other kits using supply kit tracking number found: " + otherKitsUsingSupplyKitTrackingNumber.map(rec => rec.data()[supplyKitId]).join(', ')
+                logText: "Other kits using supply kit tracking number found: " + otherKitsUsingSupplyKitTrackingNumber.map(rec => rec.data()[supplyKitId]).join(', '),
+                message: "This tracking number has already been used."
             };
                 return;
         } else if (otherKitsUsingSupplyKitTrackingNumber.size === 1) {
@@ -2778,7 +2780,8 @@ const assignKitToParticipant = async (data) => {
             if(possibleDuplicateKitId !== data[supplyKitId]) {
                 kitAssignmentResult = {
                     success: false,
-                    message: "Other kit using supply kit tracking number found: " + possibleDuplicateKitId
+                    logText: "Other kit using supply kit tracking number found: " + possibleDuplicateKitId,
+                    message: "This tracking number has already been used."
                 };
                 return;
             }
