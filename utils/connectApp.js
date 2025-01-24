@@ -1,6 +1,7 @@
 const { getResponseJSON, setHeadersDomainRestricted, getUserProfile, safeJSONParse } = require('./shared');
 const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
+const { retrievePhysicalActivityReport } = require('./reports');
 const { validateToken, generateToken, validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation } = require('./validation');
 
 const connectApp = async (req, res) => {
@@ -110,6 +111,8 @@ const connectApp = async (req, res) => {
     else if (api === 'validateEmailOrPhone') return await validateUsersEmailPhone(req, res);
 
     else if (api === 'emailAddressValidation') return await emailAddressValidation(req, res);
+
+    else if (api === 'retrievePhysicalActivityReport') return await retrievePhysicalActivityReport(req, res, uid);
 
     else if (api === 'getModuleSHA') {
       if (req.method !== 'GET') {
