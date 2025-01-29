@@ -837,11 +837,17 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 if(tubeIsCollected) {
                     settings[visit][fieldMapping.bloodCollectionSetting] = collectionSetting;
                     if(isResearch) {
-                        settings[visit][fieldMapping.baselineBloodCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        // Prevent overwriting; always use the time from the first submission
+                        if(!settings[visit][fieldMapping.baselineBloodCollectedTime]) {
+                            settings[visit][fieldMapping.baselineBloodCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        }
                     }
                     else if(isClinical) {
                         settings[visit][fieldMapping.clinicalBloodCollected] = fieldMapping.yes;
-                        settings[visit][fieldMapping.clinicalBloodCollectedTime] = biospecimenData[fieldMapping.collectionScannedTime];
+                        if(!settings[visit][fieldMapping.clinicalBloodCollectedTime]) {
+                            // Prevent overwriting; always use the time from the first submission
+                            settings[visit][fieldMapping.clinicalBloodCollectedTime] = biospecimenData[fieldMapping.collectionScannedTime];
+                        }
 
                         settings[visit][fieldMapping.anySpecimenCollected] = fieldMapping.yes;
 
@@ -853,6 +859,13 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 }
             });
         }
+        // This section has been commented out as a part of implementing 1169 and 1062
+        // according to the understanding that these values should not be changed once finalized,
+        // and are now set only on finalization.
+        // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        // 1169 - Update to when derived variables are set and preventing overwriting (Biospecimen): https://github.com/episphere/connect/issues/1169
+        // 1062 - Handling data from multiple baseline collections: https://github.com/episphere/connect/issues/1062
+        /*
         else if (settings[visit][fieldMapping.baselineBloodCollectedTime] !== '' ||  settings[visit][fieldMapping.clinicalBloodCollectedTime] !== ''){
             const participantBloodCollected = participantData[fieldMapping.baselineBloodSampleCollected] === fieldMapping.yes;
             const totalBloodTubesAvail = bloodTubes.filter((tube) => biospecimenData[tube.concept][fieldMapping.tubeIsCollected] === fieldMapping.yes);
@@ -876,6 +889,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 bloodTubesLength = totalBloodTubesAvail.length;
             }
         }
+        */
 
         if (!settings[visit][fieldMapping.urineCollectionSetting]) {
             urineTubes.forEach(tube => {
@@ -883,7 +897,10 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 if (tubeIsCollected) {
                     settings[visit][fieldMapping.urineCollectionSetting] = collectionSetting;
                     if (isResearch) {
-                        settings[visit][fieldMapping.baselineUrineCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        // Prevent overwriting; always use the time from the first submission
+                        if(!settings[visit][fieldMapping.baselineUrineCollectedTime]) {
+                            settings[visit][fieldMapping.baselineUrineCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        }
                     }
                     else if (isClinical) {
                         settings[visit][fieldMapping.clinicalUrineCollected] = fieldMapping.yes;
@@ -891,6 +908,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
 
                         settings[visit][fieldMapping.anySpecimenCollected] = fieldMapping.yes;
 
+                        // prevent overwriting; always use the time from the first submission
                         if (!(settings[visit][fieldMapping.anySpecimenCollectedTime])) {
                             settings[visit][fieldMapping.anySpecimenCollectedTime] = biospecimenData[fieldMapping.collectionScannedTime];
                         }
@@ -899,6 +917,13 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 }
             });
         }
+         // This section has been commented out as a part of implementing 1169 and 1062
+        // according to the understanding that these values should not be changed once finalized,
+        // and are now set only on finalization.
+        // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        // 1169 - Update to when derived variables are set and preventing overwriting (Biospecimen): https://github.com/episphere/connect/issues/1169
+        // 1062 - Handling data from multiple baseline collections: https://github.com/episphere/connect/issues/1062
+        /*
         else if (settings[visit][fieldMapping.baselineUrineCollectedTime] !== '' ||  settings[visit][fieldMapping.clinicalUrineCollectedTime] !== '') {
             const participantUrineCollected = participantData[fieldMapping.baselineUrineCollected] === fieldMapping.yes;
             const totalUrineTubesAvail = urineTubes.filter((tube) => biospecimenData[tube.concept][fieldMapping.tubeIsCollected] === fieldMapping.yes);
@@ -922,6 +947,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 urineTubesLength = totalUrineTubesAvail.length;
             }  
         }
+        */
 
         if (!settings[visit][fieldMapping.mouthwashCollectionSetting]) {
             mouthwashTubes.forEach(tube => {
@@ -929,12 +955,22 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 if (isTubeCollected) {
                     settings[visit][fieldMapping.mouthwashCollectionSetting] = collectionSetting;
                     if (isResearch) {
-                        settings[visit][fieldMapping.baselineMouthwashCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        // Prevent overwriting; always use the time from the first submission
+                        if(!settings[visit][fieldMapping.baselineMouthwashCollectedTime]) {
+                            settings[visit][fieldMapping.baselineMouthwashCollectedTime] = biospecimenData[fieldMapping.collectionDateTimeStamp];
+                        }
                     }
                 mouthwashTubesLength += 1
                 }
             });
         }
+        // This section has been commented out as a part of implementing 1169 and 1062
+        // according to the understanding that these values should not be changed once finalized,
+        // and are now set only on finalization.
+        // If you need to restore this logic, please review 1169 and 1062 and find alternate implementations.
+        // 1169 - Update to when derived variables are set and preventing overwriting (Biospecimen): https://github.com/episphere/connect/issues/1169
+        // 1062 - Handling data from multiple baseline collections: https://github.com/episphere/connect/issues/1062
+        /*
         else if (settings[visit][fieldMapping.baselineMouthwashCollectedTime] !== '' && participantData[fieldMapping.baselineMouthwashCollected] === fieldMapping.yes) {
             const isParticipantMouthwashCollected = participantData[fieldMapping.baselineMouthwashCollected] === fieldMapping.yes;
             const totalMouthwasTubesAvail = mouthwashTubes.filter((tube) => biospecimenData[tube.concept][fieldMapping.tubeIsCollected] === fieldMapping.yes);
@@ -947,6 +983,7 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
                 mouthwashTubesLength = totalMouthwasTubesAvail.length;
             }
         }
+        */
 
         participantUpdates[fieldMapping.collectionDetails] = settings;
 
@@ -2015,6 +2052,15 @@ const getAdjustedTime = (inputTime, days = 0, hours = 0, minutes = 0) => {
   return adjustedTime;
 };
 
+const safeJSONParse = (str) => {
+    try {
+        return JSON.parse(str);
+    } catch (e) {
+        console.error(`Error parsing JSON: ${e}`);
+        return null;
+    }
+}
+
 /**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
@@ -2052,6 +2098,7 @@ module.exports = {
     cleanSurveyData,
     updateBaselineData,
     refusalWithdrawalConcepts,
+    withdrawalConcepts,
     convertSiteLoginToNumber,
     swapObjKeysAndValues,
     batchLimit,
@@ -2092,4 +2139,5 @@ module.exports = {
     delay,
     getAdjustedTime,
     handleNorcBirthdayCard,
+    safeJSONParse,
 };

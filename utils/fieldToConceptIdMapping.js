@@ -26,6 +26,7 @@ module.exports = {
     shippingBoxId: 132929440,
     shipmentCourier: 666553960,
     shipperEmail: 948887825,
+    pinNumber: 379080287,
     iDoNotHaveAPIN: 828729648,
     pinMatch: 948195369,
     heardAboutStudyFrom: 142654897,
@@ -97,6 +98,8 @@ module.exports = {
 
     // Specimen baselines
     baselineUrineCollected: 167958071,
+    baselineBloodSampleRefused: 194410742,
+    baselineUrineSampleRefused: 949501163,
     baselineBloodAndUrineIsRefused: 526455436,
     baselineMouthwashCollected: 684635302,
     baselineBloodSampleCollected: 878865966,
@@ -238,6 +241,9 @@ module.exports = {
      baselineMouthwashSample: 277479354,
      bloodOrUrineCollected: 156605577,
      bloodOrUrineCollectedTimestamp: 740582332,
+     baselineBloodOrUrineOrderPlaced: 880794013,
+     bloodOrderPlaced: 530173840,
+     urineOrderPlaced: 860477844,
      clinicalSiteBloodCollected: 693370086,
      baselineBloodSampleCollected: 878865966,
      collectionRound: 418571751,
@@ -268,6 +274,12 @@ module.exports = {
     city: 703385619,    
     state: 634434746,
     zip: 892050548,
+    isPOBox:250235523,
+    physicalAddress1: 207908218,
+    physicalAddress2: 224392018,
+    physicalCity: 451993790,    
+    physicalState: 187799450,
+    physicalZip: 449168732,
     canWeVoicemailMobile: 271757434,
     canWeVoicemailHome: 187894482,
     canWeVoicemailOther: 983278853,
@@ -430,6 +442,7 @@ module.exports = {
         participationStatus: 912301837,
         incentive: 130371375,
         incentiveEligible: 731498909,
+        menstrualSurveyEligible: 289750687,
         dateIncentiveEligible: 787567527,
         norcIncentiveEligible: 222373868,
         incentiveIssued: 648936790,
@@ -484,4 +497,11 @@ module.exports = {
         mailDate: 768313785,
         returnDate: 902078073,
     },
+
+    // Return of Information
+    physicalActivity: 686238347,
+    physicalActivityStatus: 446235715,
+    reportStatus: {
+        unread: 702641611,
+    }
 };

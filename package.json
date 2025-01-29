@@ -36,7 +36,10 @@
   },
   "devDependencies": {
     "@google-cloud/functions-framework": "^3.2.0",
+    "chai": "^4.5.0",
     "mocha": "^10.2.0",
+    "node-mocks-http": "^1.16.0",
+    "sinon": "^19.0.2",
     "supertest": "^6.3.3"
   }
 }

@@ -395,6 +395,17 @@ async function getBigQueryData(dataset, table, filters, fields) {
   return rows;
 }
 
+const getPhysicalActivityData = async (expression) => {
+  const query = `
+    SELECT *
+    FROM \`${process.env.GCLOUD_PROJECT}.ROI.physical_activity\`
+    WHERE DATE(PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*SZ', d_416831581)) = ${expression}
+  `;
+
+  const [rows] = await bigquery.query(query);
+  return rows;
+}
+
 module.exports = {
     getTable,
     getParticipantsForNotificationsBQ,
@@ -403,5 +414,6 @@ module.exports = {
     validateFields,
     validateFilters,
     validateTableAccess,
-    getBigQueryData
+    getBigQueryData,
+    getPhysicalActivityData
 };
