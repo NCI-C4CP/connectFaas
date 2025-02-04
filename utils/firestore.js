@@ -2472,7 +2472,7 @@ const getNotificationSpecByCategoryAndAttempt = async (category = "", attempt = 
   return snapshot.empty ? null : snapshot.docs[0].data();
 };
 
-const validateKitAssemblyData = (data) => {
+const validateKitAssemblyData = async (data) => {
     // Ensure that values are uppercase and that the appropriate values match
     if(data[fieldMapping.returnKitId]) {
         data[fieldMapping.returnKitId] = ('' + data[fieldMapping.returnKitId]).toUpperCase();
@@ -2492,13 +2492,19 @@ const validateKitAssemblyData = (data) => {
     if(data[fieldMapping.collectionCupId] !== data[fieldMapping.collectionCardId]) {
         throw new Error('Collection Cup ID and Collection Card ID do not match.');
     }
+    const uniquenessTest = await checkCollectionUniqueness(data[fieldMapping.supplyKitId], data[fieldMapping.collectionCardId], data[fieldMapping.returnKitTrackingNum], data[fieldMapping.uniqueKitID]);
+    if(uniquenessTest !== true) {
+        throw new Error(uniquenessTest);
+    }
+
     return data;
 }
 
 const addKitAssemblyData = async (data) => {
     try {
-        validateKitAssemblyData(data);
+        await validateKitAssemblyData(data);
         await db.collection('kitAssembly').add(data);
+        
         return true;
     }
     catch(error){
@@ -2510,20 +2516,21 @@ const addKitAssemblyData = async (data) => {
 
 const updateKitAssemblyData = async (data) => {
     try {
-        validateKitAssemblyData(data);
+        await validateKitAssemblyData(data);
         const snapshot = await db.collection('kitAssembly').where('687158491', '==', data['687158491']).get();
         printDocsCount(snapshot, "updateKitAssemblyData");
 
         if (snapshot.empty) return false
         const docId = snapshot.docs[0].id;
- 
+
         await db.collection('kitAssembly').doc(docId).update({
             '194252513': data[fieldMapping.returnKitId],
             '259846815': data[fieldMapping.collectionCupId],
             '972453354': data[fieldMapping.returnKitTrackingNum],
             '690210658': data[fieldMapping.supplyKitId],
             '786397882': data[fieldMapping.collectionCardId]
-        })
+        });
+        
         return true;
     }
     catch(error){
@@ -2532,7 +2539,7 @@ const updateKitAssemblyData = async (data) => {
     }
 }
 
-const checkCollectionUniqueness = async (supplyId, collectionId, returnKitTrackingNumber) => {
+const checkCollectionUniqueness = async (supplyId, collectionId, returnKitTrackingNumber, uniqueKitID) => {
     try {
         const supplySnapShot = await db.collection('kitAssembly').where('690210658', '==', supplyId).get();
         const collectionSnapShot = await db.collection('kitAssembly').where('259846815', '==', collectionId).get();
@@ -2548,15 +2555,20 @@ const checkCollectionUniqueness = async (supplyId, collectionId, returnKitTracki
         if (supplySnapShot.docs.length === 0 && collectionSnapShot.docs.length === 0
             && returnKitTrackingNumberSnapshot.docs.length === 0 && supplyKitTrackingNumberSnapshot.docs.length === 0) {
             return true;
-        } else if (supplySnapShot.docs.length !== 0) {
+        }
+
+        // If we've found any kits which aren't the current kit
+        // If no currentKit (uniqueKitID) is provided then finding any kits will cause an error
+        if(supplySnapShot.docs.filter(doc => doc.data()[fieldMapping.uniqueKitID] !== uniqueKitID).length > 0) {
             return 'duplicate supplykit id';
-        } else if (collectionSnapShot.docs.length !== 0) {
+        } else if (collectionSnapShot.docs.filter(doc => doc.data()[fieldMapping.uniqueKitID] !== uniqueKitID).length > 0) {
             return 'duplicate collection id';
-        } else if (returnKitTrackingNumberSnapshot.docs.length !== 0) {
+        } else if (returnKitTrackingNumberSnapshot.docs.filter(doc => doc.data()[fieldMapping.uniqueKitID] !== uniqueKitID).length > 0) {
             return 'duplicate return kit tracking number';
-        } else if (supplyKitTrackingNumberSnapshot.docs.length !== 0) {
+        } else if (supplyKitTrackingNumberSnapshot.docs.filter(doc => doc.data()[fieldMapping.uniqueKitID] !== uniqueKitID).length > 0) {
             return 'return kit tracking number is for supply kit';
         }
+        return true;
     } catch (error) {
         return new Error(error);
     }
@@ -2818,6 +2830,35 @@ const assignKitToParticipant = async (data) => {
 
         const kitDoc = kitSnapshot.docs[0];
         data[uniqueKitID] = kitDoc.data()[uniqueKitID];
+
+        // @TODO: How to handle replacement kits?
+        // See if this kit has already been assigned to any other participants
+        const otherParticipantsWithThisKit = await transaction.get(
+            db.collection('participants')
+                .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', data[uniqueKitID])
+                .select('Connect_ID')
+        );
+        // If multiple participants with this kit are found, the kit has definitely already been assigned
+        if(otherParticipantsWithThisKit.size > 1) {
+            kitAssignmentResult = {
+                success: false,
+                message: 'This kit has been assigned to another participant.'
+            };
+            return;
+        } else if (otherParticipantsWithThisKit.size === 1) {
+            // If only one participant is found, check if it's a different participant
+            if(otherParticipantsWithThisKit.docs[0].data()['Connect_ID'] !== parseInt(data['Connect_ID'])) {
+                kitAssignmentResult = {
+                    success: false,
+                    message: 'This kit has been assigned to another participant.'
+                };
+                return;
+            }
+        }
+
+
+
+        
         const kitData = {
             [supplyKitTrackingNum]: data[supplyKitTrackingNum],
             [kitStatus]: assigned,
