@@ -488,6 +488,10 @@ module.exports = {
         anyRefusalOrWithdrawal: 451953807,
         cancerScreeningHistorySurveyStatus: 176068627,
         cancerScreeningHistorySurveyCompletionTime: 389890053,
+        numberOfAvailableReports: 794047378,
+        physicalActivity: 686238347,
+        flagForReportUnreadViewedDeclined: 446235715,
+        dateRoiPaReportFirstViewed: 749055145,
     },
 
     norcBirthdayCard: 359309143,

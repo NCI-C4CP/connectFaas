@@ -714,8 +714,15 @@ const removeParticipantsDataDestruction = async () => {
             "Connect_ID",
         ];
 
-        // Sub stub records of "query" and "state".
-        const subStubFieldArray = ["firstName", "lastName", "studyId", "uid"];
+        // Sub stub records of "query" and "state" and physicalActivity(686238347)
+        const subStubFieldArray = [
+            "firstName",
+             "lastName",
+             "studyId",
+             "uid",
+             fieldMapping.dataDestruction.flagForReportUnreadViewedDeclined.toString(),
+             fieldMapping.dataDestruction.dateRoiPaReportFirstViewed.toString(),
+            ];
         // CID for participant's data destruction status.
         const dataHasBeenDestroyed =
             fieldMapping.participantMap.dataHasBeenDestroyed.toString();
@@ -759,7 +766,7 @@ const removeParticipantsDataDestruction = async () => {
                         updatedData[key] = admin.firestore.FieldValue.delete();
                         hasRemovedField = true;
                     } else {
-                        if (key === "query" || key === "state") {
+                        if (key === "query" || key === "state" || key === fieldMapping.dataDestruction.physicalActivity.toString()) {
                             const subFieldKeys = Object.keys(participant[key]);
                             subFieldKeys.forEach((subKey) => {
                                 if (!subStubFieldArray.includes(subKey)) {
