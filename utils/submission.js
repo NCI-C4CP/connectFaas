@@ -3,6 +3,7 @@ const { updateResponse } = require('./firestore');
 const fieldMapping = require('./fieldToConceptIdMapping');
 
 const submit = async (res, data, uid) => {
+    // @TODO: This would all be better revamped with a transaction
     // Remove locked attributes.
     lockedAttributes.forEach(atr => delete data[atr]);
 
@@ -56,7 +57,7 @@ const submit = async (res, data, uid) => {
             })
 
             if (moduleComplete) {
-                const { checkDerivedVariables } = require('./validation');
+                const { checkDerivedVariables, processMouthwashEligibility } = require('./validation');
                 const { getTokenForParticipant, retrieveUserProfile } = require('./firestore');
 
                 const participant = await retrieveUserProfile(uid);
@@ -72,6 +73,14 @@ const submit = async (res, data, uid) => {
                         const { processPromisResults } = require('./promis');
                         processPromisResults(uid);
                     }
+                }
+
+                // If the participant address changed, it may have changed their home mouthwash kit eligibility
+                // so re-check and update if necessary
+                const updatedParticipant = await retrieveUserProfile(uid);
+                const participantUpdates = processMouthwashEligibility(updatedParticipant);
+                if(participantUpdates && Object.keys(participantUpdates).length) {
+                    await updateResponse(participantUpdates, uid);
                 }
             }
         }
