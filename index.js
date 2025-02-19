@@ -1,6 +1,6 @@
 const {onRequest} = require("firebase-functions/v2/https");
 const { getToken } = require('./utils/validation');
-const { getFilteredParticipants, getParticipants, identifyParticipant } = require('./utils/submission');
+const { getFilteredParticipants, getParticipants, getParticipantsNew, identifyParticipant } = require('./utils/submission');
 const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('./utils/sites');
 const { getParticipantNotification, sendScheduledNotifications } = require('./utils/notifications');
 const { connectApp } = require('./utils/connectApp');
@@ -23,6 +23,8 @@ exports.getParticipantToken = getToken;
 exports.getFilteredParticipants = getFilteredParticipants;
 
 exports.getParticipants = getParticipants;
+
+exports.getParticipantsNew = getParticipantsNew; // temporary
 
 exports.identifyParticipant = identifyParticipant;
 

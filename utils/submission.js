@@ -306,6 +306,37 @@ const getParticipants = async (req, res, authObj) => {
     return res.status(200).json({data: docs, code: 200, cursor: data.cursor});
 }
 
+const getParticipantsNew = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+
+    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
+    if (req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+
+    let obj = {};
+
+    if(authObj) {
+        obj = authObj;
+    }
+    else {
+        const { APIAuthorization } = require('./shared');
+        const authorized = await APIAuthorization(req);
+
+        if (authorized instanceof Error) return res.status(500).json(getResponseJSON(authorized.message, 500));
+        if (!authorized) return res.status(401).json(getResponseJSON('Authorization failed!', 401))
+    
+        const { isParentEntity } = require('./shared');
+        obj = await isParentEntity(authorized);
+    }
+    
+    const isParent = obj.isParent;
+    const siteCodes = obj.siteCodes;
+
+    if (!req.query.type) return res.status(404).json(getResponseJSON('Resource not found!', 404));
+    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if (req.query.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
+}
+
 /**
  * Get participants based on the provided query parameters. Supports filtering by 'firstName', 'lastName', 'email', 'phone', 'dob', 'connectId', 'token', 'studyId', 'checkedIn'.
  * selectedFields is an optional array of concept IDs that limits returned data to the specified concept IDs. Nested data can be quieried with dot notation. Data nested under selectedField is returned.
