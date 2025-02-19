@@ -482,6 +482,106 @@ const resetParticipantHelper = async (uid, saveToDb) => {
     return { data: obj, deleted: toDelete };
 }
 
+/**
+ * Retrieves participants from a Firestore collection based on specified conditions and pagination options.
+ *
+ * @async
+ * @function retrieveParticipantsDemo
+ * @param {string} siteCode - The code representing the current site.
+ * @param {string} type - The type of participants to retrieve (e.g., "verified", "notyetverified", "cannotbeverified", "active", "notactive", "passive", "all", "profileNotSubmitted", "consentNotSubmitted", "notSignedIn").
+ * @param {boolean} isParent - Indicates if the current user is a parent. Used to determine the 'where' operator for the site field.
+ * @param {number} limit - The maximum number of documents to retrieve.
+ * @param {string} [cursor] - The ID of the last document retrieved in a previous request, used for pagination.
+ * @param {string} [from] - A lower bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` >= `from` are returned.
+ * @param {string} [to] - An upper bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` <= `to` are returned.
+ * @returns {Promise<{docs: Object[], cursor: string}>} An object containing:
+ *   - `docs`: An array of participant document data.
+ *   - `cursor`: The ID of the last document in the returned set (useful for pagination).
+ *
+ * @throws {Error} Will throw an error if the query or document retrieval fails.
+ */
+const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor, from, to) => {
+    try {
+        const conditions = {
+            'verified': {
+                where: [['821247024', '==', 197316935], ['699625233', '==', 353358909]],
+                orderBy: ['Connect_ID', 'asc'],
+                fromTo: '914594314'
+            }
+        }
+
+        const applyConditions = async (query, type, siteCode, limit, cursor, from, to) => {
+            const queryConditions = conditions[type];
+            const { where = [], orderBy, fromTo } = queryConditions;
+
+            where.forEach(([field, operation, value]) => {
+                query = query.where(field, operation, value);
+            });
+
+            query = query.where('827220437', isParent ? 'in' : '==', siteCode);
+
+            if (orderBy) query = query.orderBy(...orderBy);
+
+            if (fromTo && (from || to)) {
+                query = query.orderBy(fromTo, 'desc');
+
+                if (from) query = query.where(fromTo, '>=', from);
+                if (to)   query = query.where(fromTo, '<=', to);
+            }
+
+            if (cursor) {
+                const doc = await getCursorDocumnet('participants', cursor);
+
+                if (doc.exists) {
+                    query = query.startAfter(doc);
+                }
+                else {
+                    new Error(`Document with ID ${cursor} not found`);
+                }
+            }
+
+            query = query.limit(limit);
+
+            return query;
+        };
+
+        let query = await applyConditions(db.collection('participants'), type, siteCode, limit, cursor, from, to);
+
+        let snapshot = await query.get();
+        printDocsCount(snapshot, `retrieveParticipantsDemo`);
+
+        const results = {};
+        results.docs = snapshot.docs.map(doc => doc.data());
+
+        if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
+            results.cursor = snapshot.docs[snapshot.docs.length - 1].id;
+        } 
+
+        return results;
+    }
+    catch(error){
+        console.error(error);
+        return new Error(error);
+    }
+}
+
+const getCursorDocumnet = async (collection, cursor) => {
+    try {
+        const ref = db.collection(collection).doc(cursor);
+        const doc = await ref.get();
+
+        if (doc.exists) {
+            return doc;
+        }
+        else {
+            return new Error(`Document with ID ${cursor} not found`);
+        }
+    } catch (error) {
+        console.error(error);
+        return new Error(error);
+    }
+}
+
 // TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
 const retrieveParticipants = async (siteCode, decider, isParent, limit, page, site, from, to) => {
     try{
@@ -4226,6 +4326,7 @@ const processPhysicalActivity = async (dateExpression) => {
 module.exports = {
     db,
     updateResponse,
+    retrieveParticipantsDemo,
     retrieveParticipants,
     verifyIdentity,
     retrieveUserProfile,
