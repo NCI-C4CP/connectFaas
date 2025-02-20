@@ -2683,6 +2683,12 @@ const participantHomeCollectionKitFields = [
     fieldMapping.city.toString(),
     fieldMapping.state.toString(),
     fieldMapping.zip.toString(),
+    fieldMapping.isPOBox.toString(),
+    fieldMapping.physicalAddress1.toString(),
+    fieldMapping.physicalAddress2.toString(),
+    fieldMapping.physicalCity.toString(),
+    fieldMapping.physicalState.toString(),
+    fieldMapping.physicalZip.toString(),
     'Connect_ID',
 ];
 
@@ -2808,6 +2814,9 @@ const addKitStatusToParticipant = async (participantsCID) => {
 // Note: existing snake_casing follows through to BPTL CSV reporting. Do not update to camelCase without prior communication.
 const processParticipantHomeMouthwashKitData = (record, printLabel) => {
     const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, yes } = fieldMapping;
+
+    // If you need to read additional fields off of this record, make sure that the field is added to participantHomeCollectionKitFields
+    // or else it will not be selected when determining participants eligible for kit assignment
 
     if(!record) {
         return null;
