@@ -26,5 +26,5 @@ substitutions:
   _RUNTIME: nodejs20
   _ROLE: roles/cloudfunctions.invoker
   _TIMEOUT: 120s
-  _VARIABLES: config/dev/.env.yaml
+  _VARIABLES: config/stage/.env.yaml
   _MEMBER: allUsers
