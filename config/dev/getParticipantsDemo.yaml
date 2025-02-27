@@ -4,7 +4,7 @@ steps:
   args: [
     'functions', 
     'deploy', 
-    'physicalActivityROI', 
+    '${_FUNCTION}', 
     '--trigger-http', 
     '--runtime=${_RUNTIME}', 
     '--timeout=${_TIMEOUT}', 
@@ -16,15 +16,16 @@ steps:
   args: [
     'functions', 
     'add-iam-policy-binding', 
-    'physicalActivityROI', 
+    '${_FUNCTION}', 
     '--member=${_MEMBER}', 
     '--role=${_ROLE}'
   ]
 
 substitutions:
-  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-prod-6d04/repos/github_nci-c4cp_connectfaas
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
   _RUNTIME: nodejs20
   _ROLE: roles/cloudfunctions.invoker
   _TIMEOUT: 120s
-  _VARIABLES: config/prod/.env.yaml
+  _VARIABLES: config/dev/.env.yaml
   _MEMBER: allUsers
+  _FUNCTION: getParticipantsDemo

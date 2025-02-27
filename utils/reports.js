@@ -2,12 +2,13 @@ const { getBigQueryData } = require('./bigquery');
 const { retrieveConnectID } = require('./firestore');
 const { getResponseJSON, logIPAddress, setHeaders } = require('./shared');
 
-const retrievePhysicalActivityReport = async (req, res, uid, connectId) => {
+const retrievePhysicalActivityReport = async (req, res, uid) => {
     if (req.method !== "GET") {
         return res.status(405).json(getResponseJSON("Only GET requests are accepted!", 405));
     }
 
     //If there is a uid passed in lookup the connect id from the participant
+    let connectId;
     if (uid) {
         connectId = await retrieveConnectID(uid);
     }
