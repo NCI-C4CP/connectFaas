@@ -310,7 +310,7 @@ const processMouthwashEligibility = (data) => {
         data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bloodOrUrineCollectedTimestamp] >= '2024-04-01T00:00:00.000Z' &&
         (
             !data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash] ||
-            data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash][conceptIds.kitStatus] !== conceptIds.initialized
+            !data[conceptIds.collectionDetails][conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus]
         )
     ) {
         const isEligible = !!processParticipantHomeMouthwashKitData(data, true);
