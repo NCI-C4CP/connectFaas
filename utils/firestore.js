@@ -2760,6 +2760,35 @@ const requestHomeMWReplacementKit = async (connectId) => {
         throw new Error('Participant address information is invalid.');
        }
 
+       // @TODO: Backend validation: ensure that the previous kit has been shipped first
+       /**
+        * Reference:
+        * 
+        *  const kitStatus = participant[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]?.[fieldMapping.kitStatus];
+
+        let resetTextTemplate = ``;
+
+        switch (kitStatus) {
+            case fieldMapping.kitStatusValues.pending: 
+                resetTextTemplate = `This user is not yet eligible for a home mouthwash kit`;
+                break;
+            case fieldMapping.kitStatusValues.initialized:
+                resetTextTemplate = `This user's initial home mouthwash kit has not been sent`;
+                break;
+            case fieldMapping.kitStatusValues.addressPrinted:
+            case fieldMapping.kitStatusValues.assigned:
+            case fieldMapping.kitStatusValues.shipped:
+                resetTextTemplate = `<div>Request a Home Mouthwash Replacement Kit</div>
+                <div><span class="text-danger">NOTE:</span> Make sure you have verified the mailing address with the participant before entering this request and have updated the address in the User Profile if needed.
+</div>`;
+                break;
+            case fieldMapping.kitStatusValues.received:
+                resetTextTemplate = `A home mouthwash kit for this user has already been received`;
+                break;
+            default:
+                break;
+           }
+        */
         if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]) {
             // If one replacement, mark as eligible for second replacement
             // @TODO: Check address and other home MW eligibility stuff
@@ -2861,7 +2890,7 @@ const processParticipantHomeMouthwashKitData = (record, printLabel) => {
             address_2: record[address2] || '',
             city: record[city],
             state: record[state],
-            zip_code: record[zip], 
+            zip_code: record[zip]
         };
     }
 
