@@ -632,5 +632,9 @@
 		"dataType": "zipCode",
 		"mustExist": false,
 		"maxLength": 5
+	},
+	"471593703": {
+		"dataType": "ISO",
+		"mustExist": false
 	}
 }
