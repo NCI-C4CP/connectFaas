@@ -1090,6 +1090,27 @@ describe('biospecimen', async () => {
             assert.equal(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`], undefined);
         });
 
+        it.only('Should not set kitStatus because participant kit has already shipped', () => {
+            let data = {
+                [fieldToConceptIdMapping.withdrawConsent]: fieldToConceptIdMapping.no,
+                [fieldToConceptIdMapping.participantDeceasedNORC]: fieldToConceptIdMapping.no,
+                [fieldToConceptIdMapping.activityParticipantRefusal]: {
+                    [fieldToConceptIdMapping.baselineMouthwashSample]: fieldToConceptIdMapping.no
+                },
+                [fieldToConceptIdMapping.collectionDetails]: {
+                    [fieldToConceptIdMapping.baseline]: {
+                        [fieldToConceptIdMapping.bloodOrUrineCollected]: fieldToConceptIdMapping.yes,
+                        [fieldToConceptIdMapping.bloodOrUrineCollectedTimestamp]: '2024-09-27T00:00:00.000Z',
+                        [fieldToConceptIdMapping.bioKitMouthwash]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.shipped
+                        }
+                    }
+                },
+            };
+            const updates = validation.processMouthwashEligibility(data);
+            assert.deepEqual(updates, {});
+        });
+
         const testCasesFromDev = [
             // These are the participants as logged out after the relevant logic has run, not before
             // However large parts of their data are likely still useful
