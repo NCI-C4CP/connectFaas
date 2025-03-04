@@ -46,6 +46,10 @@ const dashboard = async (req, res) => {
     } else if (api === 'getParticipants') {
         const { getParticipants } = require('./submission');
         return await getParticipants(req, res, authObj);
+    } else if (api === 'retrievePhysicalActivityReport') {
+        const { retrievePhysicalActivityReport } = require('./reports');
+        let uid = req.query.uid;
+        return await retrievePhysicalActivityReport(req, res, uid);
     } else if (api === 'getFilteredParticipants') {
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));

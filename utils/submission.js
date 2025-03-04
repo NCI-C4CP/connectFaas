@@ -319,6 +319,48 @@ const getParticipants = async (req, res, authObj) => {
     return res.status(200).json({data, code: 200, limit, dataSize: data.length})
 }
 
+const getParticipantsDemo = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+    
+    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
+    if (req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+
+    if (!req.query.type || req.query.type !== 'verified') return res.status(404).json(getResponseJSON('Resource not found!', 404));
+    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if (req.query.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
+
+    let obj = {};
+
+    const { APIAuthorization } = require('./shared');
+    const authorized = await APIAuthorization(req);
+
+    if (authorized instanceof Error) return res.status(500).json(getResponseJSON(authorized.message, 500));
+    if (!authorized) return res.status(401).json(getResponseJSON('Authorization failed!', 401));
+
+    const { isParentEntity } = require('./shared');
+    obj = await isParentEntity(authorized);
+
+    const isParent = obj.isParent;
+    const siteCodes = obj.siteCodes;
+    const queryType = req.query.type;
+    const limit = req.query.limit ? parseInt(req.query.limit) : 100;
+    const cursor = req.query.cursor ?? null;
+    const from = req.query.from ? req.query.from : null; 
+    const to = req.query.to ? req.query.to : null; 
+
+    const { retrieveParticipantsDemo } = require(`./firestore`);
+    const data = await retrieveParticipantsDemo(siteCodes, queryType, isParent, limit, cursor, from, to);
+
+    if(data instanceof Error){
+        return res.status(500).json(getResponseJSON(data.message, 500));
+    }
+
+    const docs = data.docs;
+
+    return res.status(200).json({data: docs, code: 200, cursor: data.cursor});
+}
+
 const removeRestrictedFields = (data, restriectedFields, isParent) => {
     if(restriectedFields && !isParent) {
         return data.filter(dt => {
@@ -742,6 +784,7 @@ module.exports = {
     submitSocial,
     getFilteredParticipants,
     getParticipants,
+    getParticipantsDemo,
     identifyParticipant,
     getUserSurveys,
     getUserCollections,

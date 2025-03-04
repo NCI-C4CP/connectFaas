@@ -2068,6 +2068,11 @@ const safeJSONParse = (str) => {
  */
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
+const uspsUrl = {
+    auth : 'https://apis.usps.com/oauth2/v3/token',
+    addresses: 'https://apis.usps.com/addresses/v3/address'
+} 
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -2140,4 +2145,5 @@ module.exports = {
     getAdjustedTime,
     handleNorcBirthdayCard,
     safeJSONParse,
+    uspsUrl
 };

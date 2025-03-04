@@ -1,4 +1,4 @@
-const { getResponseJSON, setHeaders, logIPAddress, getSecret } = require('./shared');
+const { getResponseJSON, setHeaders, logIPAddress, getSecret, uspsUrl } = require('./shared');
 const conceptIds = require('./fieldToConceptIdMapping');
 
 // @ deprecated. Retain until Feb 2025 release for backward MyConnect compatibility (caching on participant devices)
@@ -309,9 +309,8 @@ const processMouthwashEligibility = (data) => {
         data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bloodOrUrineCollected] == conceptIds.yes &&
         data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bloodOrUrineCollectedTimestamp] >= '2024-04-01T00:00:00.000Z' &&
         (
-            !data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash]
-            // Commented out in case this reverts data once updated; test that it still looks good
-            // || data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash][conceptIds.kitStatus] !== conceptIds.initialized // @TODO: This might revert if it's already past initialized; what do?
+            !data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash] ||
+            !data[conceptIds.collectionDetails][conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus]
         )
     ) {
         const isEligible = !!processParticipantHomeMouthwashKitData(data, true);
@@ -685,6 +684,60 @@ const emailAddressValidation = async (req, res) => {
     }
 };
 
+const addressValidation = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+
+    if (req.method !== "POST") {
+        return res
+            .status(405)
+            .json(getResponseJSON("Only POST requests are accepted!", 405));
+    }
+
+    if (!req.body) {
+        return res.status(400).json(getResponseJSON("Bad Request", 400));
+    }
+    const payload = JSON.parse(req.body);
+    try {
+        const clientId = await getSecret(process.env.USPS_CLIENT_ID);
+        const clientSecret = await getSecret(process.env.USPS_CLIENT_SECRET);
+        const authorizedParams = new URLSearchParams();
+        authorizedParams.append("grant_type", "client_credentials");
+        authorizedParams.append("client_id", clientId);
+        authorizedParams.append("client_secret", clientSecret);
+        const authorizedResponse = await fetch(uspsUrl.auth, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            },
+            body: authorizedParams,
+        });
+        const {access_token: token} = await authorizedResponse.json();
+        const params = {
+            streetAddress: payload.streetAddress,
+            secondaryAddress: payload.secondaryAddress,
+            city: payload.city,
+            state: payload.state,
+            ZIPCode: payload.zipCode, // Note the capitalization: ZIPCode
+        };
+        const queryString = new URLSearchParams(params).toString();
+        const urlWithParams = `${uspsUrl.addresses}?${queryString}`;
+        const uspsResponse = await fetch(urlWithParams, {
+            method: "GET",
+            headers: {
+                accept: "application/json",
+                authorization: `Bearer ${token}`,
+            },
+        });
+        const uspsData = await uspsResponse.json()
+        console.info("USPS validate address", payload, uspsData);
+        return res.status(200).json(uspsData);
+    } catch (error) {
+        console.error("Unexpected error at addressValidation:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+
 const updateParticipantFirebaseAuthentication = async (req, res) => {
     if(req.method !== 'POST') {
         return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -788,6 +841,7 @@ module.exports = {
     checkDerivedVariables,
     validateUsersEmailPhone,
     emailAddressValidation,
+    addressValidation,
     updateParticipantFirebaseAuthentication,
     isIsoDate,
     validateIso8601Timestamp,
