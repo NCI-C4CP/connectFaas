@@ -3076,7 +3076,7 @@ const processParticipantHomeMouthwashKitData = (record, printLabel) => {
         return null;
     }
 
-    const poBoxRegex = /^(?:P\.?O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
+    const poBoxRegex = /^(?:P\.?\s*O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
 
     const physicalAddressLineOne = record[physicalAddress1];
     let addressObj = {};

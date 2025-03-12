@@ -1,39 +1,6 @@
 const { getResponseJSON, setHeaders, logIPAddress, getSecret, uspsUrl } = require('./shared');
 const conceptIds = require('./fieldToConceptIdMapping');
 
-// @ deprecated. Retain until Feb 2025 release for backward MyConnect compatibility (caching on participant devices)
-// This call has been removed from MyConnect as of the Jan 2025 release.
-const generateToken = async (req, res, uid) => {
-
-    if(req.method !== 'GET') {
-        return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    }
-
-    const { participantExists } = require('./firestore')
-    const userAlreadyExists = await participantExists(uid);
-
-    if(userAlreadyExists){
-        return res.status(401).json(getResponseJSON('Account already exists', 401));
-    }
-    const { v4: uuid } = require('uuid');
-    const { defaultFlags, defaultStateFlags } = require('./shared');
-    const obj = {
-        state: { 
-            uid, 
-            ...defaultStateFlags
-        },
-        230663853: 353358909,
-        token: uuid(),
-        512820379: 854703046, // defaulting it as passive
-        471593703: (new Date()).toISOString(),
-        ...defaultFlags
-    }
-    console.log('Token of new record:', obj.token);
-    const { createRecord } = require('./firestore');
-    createRecord(obj);
-    return res.status(200).json(getResponseJSON('Ok', 200));
-}
-
 /**
  * Sign up flow for passive recruitment. Create the initial participant record in Firestore with the provided UID.
  * Note: if PIN was provided, it did not pass validation. We store it anyway.
@@ -86,79 +53,6 @@ const createParticipantRecord = async (res, firstSignInData, uid) => {
         return res.status(500).json(getResponseJSON('Internal Server Error', 500));
     }
 }
-
-// @ deprecated. Retain until Feb 2025 release for backward MyConnect compatibility (caching on participant devices)
-// This call has been removed from the MyConnect app as of the Jan 2025 release.
-const validateToken = async (req, res, uid) => {
-
-    if(req.method !== 'GET') {
-        return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    }
-
-    console.log('uid:', uid, ' req.query:', JSON.stringify(req.query));
-    const { participantExists } = require('./firestore')
-    const userAlreadyExists = await participantExists(uid);
-
-    if(userAlreadyExists){
-        return res.status(401).json(getResponseJSON('Account already exists', 401));
-    }
-
-    const pin = req.query.pin?.trim();
-    const token = req.query.token?.trim();
-    if (!pin && !token) {
-        return res.status(400).json(getResponseJSON('Bad request: token/pin required', 400));
-    }
-
-    if (token) {
-      const {
-        verifyTokenOrPin,
-        linkParticipanttoFirebaseUID,
-      } = require('./firestore');
-
-      const {
-        isDuplicateAccount,
-        isValid: isValidToken,
-        docId,
-      } = await verifyTokenOrPin({ token });
-
-      if (isDuplicateAccount) {
-        return res.status(202).json(getResponseJSON('Duplicate account', 202));
-      }
-
-      if (isValidToken) {
-        await linkParticipanttoFirebaseUID(docId, uid);
-        return res.status(200).json(getResponseJSON('Ok', 200));
-      }
-
-      return res.status(401).json(getResponseJSON('Invalid token', 401));
-    }
-
-    if (pin) {
-      const {
-        verifyTokenOrPin,
-        linkParticipanttoFirebaseUID,
-        updateResponse,
-      } = require('./firestore');
-
-      const {
-        isDuplicateAccount,
-        isValid: isValidPin,
-        docId,
-      } = await verifyTokenOrPin({ pin });
-
-      if (isDuplicateAccount) {
-        return res.status(202).json(getResponseJSON('Duplicate account', 202));
-      }
-
-      if (isValidPin) {
-        await linkParticipanttoFirebaseUID(docId, uid);
-        await updateResponse({ [conceptIds.pinMatch]: conceptIds.yes }, uid);
-        return res.status(200).json(getResponseJSON('Ok', 200));
-      }
-
-      return res.status(401).json(getResponseJSON('Invalid pin', 401));
-    }
-};
 
 /**
  * Validate the PIN provided by the participant (MyConnect PIN entry sign-up form). If the PIN is valid, link the invitation record with the participant's UID.
@@ -832,8 +726,6 @@ const validateIso8601Timestamp = (timestamp) => {
 };
 
 module.exports = {
-    generateToken, // @ deprecated ok to remove Feb 2025
-    validateToken, // @ deprecated ok to remove Feb 2025
     createParticipantRecord,
     validatePin,
     getToken,
