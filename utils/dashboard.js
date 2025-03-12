@@ -189,11 +189,12 @@ const dashboard = async (req, res) => {
             return res.status(500).json(getResponseJSON(err.message, 500));
         }
     } else if (api === 'requestHomeMWReplacementKit') {
-        // @TODO
-        if (req.method !== 'GET') {
-            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        let body = req.body;
+
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
         }
-        const connectId = req.query.connect_id;
+        const {connectId} = body;
 
         if(!connectId) {
             return res.status(405).json(getResponseJSON('Missing connect ID!', 405));
@@ -203,6 +204,7 @@ const dashboard = async (req, res) => {
             await requestHomeMWReplacementKit(connectId);
             return res.status(200).json(getResponseJSON('Success!', 200));
         } catch(err) {
+            console.error('Error', err);
             return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
         }
     } else {

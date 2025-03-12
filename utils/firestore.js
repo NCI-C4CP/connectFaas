@@ -1,8 +1,6 @@
 const admin = require('firebase-admin');
 const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore');
-const serviceAccount = require('../nih-nci-dceg-connect-dev-4a660d0c674e'); 
-admin.initializeApp({credential: admin.credential.cert(serviceAccount)}); 
-// admin.initializeApp();
+admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, conceptMappings } = require('./shared');
@@ -2810,8 +2808,8 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
             .concat(snapshot2.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true)))
             .filter(result => result !== null)
             .sort((a, b) => {
-                let aDate = a[requestDate]; 
-                let bDate = b[requestDate];
+                let aDate = a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
+                let bDate = b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
                 return aDate > bDate ? -1 : 1; // @TODO: Double-check order
             });
         if (limit && limit < mappedResults.length) {
@@ -2834,17 +2832,58 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
 
 const eligibleParticipantsForKitAssignment = async () => {
     try {
-        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bloodOrUrineCollectedTimestamp, kitStatus } = fieldMapping;
+        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, dateKitRequested, kitStatus } = fieldMapping;
 
-        const snapshot = await db.collection("participants")
-            .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', addressPrinted)
-            .select(...participantHomeCollectionKitFields)
-            .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
-            .get();
-        printDocsCount(snapshot, "eligibleParticipantsForKitAssignment");
+        const participantSnapshotPromises = [
+            // Initial home MW kits
+            db.collection("participants")
+                .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', addressPrinted)
+                .select(...participantHomeCollectionKitFields)
+                .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
+                .get(),
+            // First replacement home MW kits
+            db.collection("participants")
+                .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', addressPrinted)
+                .select(...participantHomeCollectionKitFields)
+                // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
+                .get(),
+            // Second replacement home MW kits
+            db.collection("participants")
+                .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', addressPrinted)
+                .select(...participantHomeCollectionKitFields)
+                // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
+                .get()
+        ];
+        const [snapshot, firstReplacementKitSnapshot, secondReplacementKitSnapshot] = await Promise.all(participantSnapshotPromises);
+        // There should never be redundant participants but just in case
+        
+        // Include the participants who have replacement kits
+        // Sort order: oldest replacement kit requests should always be at the top
+        // and then all the regular ones
 
-        if (snapshot.size === 0) return [];
-        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false));
+        const sortedReplacements = []
+            .concat(firstReplacementKitSnapshot.docs)
+            .concat(secondReplacementKitSnapshot.docs)
+            .sort((a, b) => {
+                const aVal = a?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+                const bVal = b?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+                if(aVal === bVal) {
+                    return 0;
+                }
+                return aVal > bVal ? -1 : 1; // @TODO: Check that this matches
+            })
+
+        let allPts = sortedReplacements
+            .concat(snapshot.docs);
+
+
+        // Sort allPts
+        // Filter out redundancies
+
+        // printDocsCount(snapshot, "eligibleParticipantsForKitAssignment");
+
+        if (allPts.length === 0) return [];
+        const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false));
         return mappedResults.filter(result => result !== null);
 
     } catch(error) {
@@ -2857,76 +2896,93 @@ const requestHomeMWReplacementKit = async (connectId) => {
         // First find the user
         const participantQuery = db.collection('participants').where('Connect_ID', '==', connectId);
         const participantSnapshot = await transaction.get(participantQuery);
-        if(!snapshot.size) {
+        if(!participantSnapshot.size) {
             throw new Error('Could not find participant ' + connectId);
         }
-        const data = participantSnapshot[0].data();
-        let fieldPath;
-        if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]) {
-            // If two replacements, they are out of replacement kits; error out.
-            throw new Error('Participant has exceeded supported number of replacement kits.');
-        }
+        const data = participantSnapshot.docs[0].data();
         
-       const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
+        try {
+            // Do we need to copy over any other data? What other data do we need to set here?
+            const updatedParticipantObject = getHomeMWReplacementKitData(data);
+            transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
+            return true;
+        } catch(err) {
+            console.error('Error getting participant replacement kit', err);
+            throw err;
+        }
+    });
+}
 
-       if(!participantIsEligible) {
-        throw new Error('Participant address information is invalid.');
-       }
+/**
+ * Broken into a separate helper function for easier testing
+ */
+const getHomeMWReplacementKitData = (data) => {
+    let fieldPath;
+    if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL2]) {
+        // If two replacements, they are out of replacement kits; error out.
+        throw new Error('Participant has exceeded supported number of replacement kits.');
+    }
+    
+   const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
 
-       // @TODO: Backend validation: ensure that the previous kit has been shipped first
-       /**
-        * Reference:
-        * 
-        *  const kitStatus = participant[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]?.[fieldMapping.kitStatus];
+   if(!participantIsEligible) {
+    throw new Error('Participant address information is invalid.');
+   }
 
-        let resetTextTemplate = ``;
-
-        switch (kitStatus) {
-            case fieldMapping.kitStatusValues.pending: 
-                resetTextTemplate = `This user is not yet eligible for a home mouthwash kit`;
-                break;
-            case fieldMapping.kitStatusValues.initialized:
-                resetTextTemplate = `This user's initial home mouthwash kit has not been sent`;
-                break;
-            case fieldMapping.kitStatusValues.addressPrinted:
-            case fieldMapping.kitStatusValues.assigned:
-            case fieldMapping.kitStatusValues.shipped:
-                resetTextTemplate = `<div>Request a Home Mouthwash Replacement Kit</div>
-                <div><span class="text-danger">NOTE:</span> Make sure you have verified the mailing address with the participant before entering this request and have updated the address in the User Profile if needed.
-</div>`;
-                break;
-            case fieldMapping.kitStatusValues.received:
-                resetTextTemplate = `A home mouthwash kit for this user has already been received`;
+   
+    if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1]) {
+        // If one replacement, mark as eligible for second replacement
+        switch(data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1][fieldMapping.kitStatus]) {
+            case undefined:
+            case null:
+            case fieldMapping.pending: {
+                throw new Error('This participant is not eligible for a second replacement home mouthwash kit');
+            }
+            case fieldMapping.initialized:
+            case fieldMapping.addressPrinted:
+            case fieldMapping.assigned: 
+            {
+                throw new Error('This participant\'s first replacement home mouthwash kit has not been sent');
+            }
+            case fieldMapping.shipped:
+            case fieldMapping.received:
+                // Eligible for second replacement
+                fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL2}`;
                 break;
             default:
-                break;
-           }
-        */
-        if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]) {
-            // If one replacement, mark as eligible for second replacement
-            // @TODO: Check address and other home MW eligibility stuff
-            fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}`;
-        } else if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]?.[fieldMapping.kitStatus] === fieldMapping.initialized) {
-            // Has the participant been sent their first home MW kit yet?
-            throw new Error('Participant has not been sent an initial home MW kit.');
-        } else {
-            // If no replacements, mark as eligible for first replacement
-            // @TODO: Do we also need to check the status of baseline1/update it to make sure it's not initialized?
-            fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}`;
+                throw new Error('Unrecognized kit status ' + data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1][fieldMapping.kitStatus]);
         }
-
-        // Do we need to copy over any other data? What other data do we need to set here?
-        const updatedParticipantObject = {
-            [fieldPath]: {
-                [fieldMapping.bioKitMouthwash]: {
-                    [fieldMapping.kitType]: fieldMapping.mouthwashKit,
-                    [fieldMapping.kitStatus]: fieldMapping.initialized
-                }
+    } else if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]) {
+        switch(data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash][fieldMapping.kitStatus]) {
+            case undefined:
+            case null:
+            case fieldMapping.pending: {
+                throw new Error('This participant is not yet eligible for a home mouthwash kit');
             }
-        };
-        transaction.update(participantSnapshot[0].ref, updatedParticipantObject);
-        return true;
-    });
+            case fieldMapping.initialized:
+            case fieldMapping.addressPrinted:
+            case fieldMapping.assigned: 
+            {
+                throw new Error('This participant\'s initial home mouthwash kit has not been sent');
+            }
+            case fieldMapping.shipped:
+            case fieldMapping.received:
+                // Eligible for first replacement
+                fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL1}`;
+                break;
+            default:
+                throw new Error('Unrecognized kit status ' + data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash][fieldMapping.kitStatus]);
+        }
+    }
+
+    // Do we need to copy over any other data? What other data do we need to set here?
+    const updatedParticipantObject = {
+        [[fieldPath, fieldMapping.kitType].join('.')]: fieldMapping.mouthwashKit,
+        [[fieldPath, fieldMapping.kitStatus].join('.')]: fieldMapping.initialized,
+        [[fieldPath, fieldMapping.dateKitRequested].join('.')]: new Date().toISOString()
+    };
+
+    return updatedParticipantObject;
 }
 
 const addKitStatusToParticipant = async (participantsCID) => {
@@ -2952,6 +3008,46 @@ const addKitStatusToParticipant = async (participantsCID) => {
                         }
                     }
                 }
+            });
+        });
+
+        // Wait for all update promises to complete
+        await Promise.all(updatePromises);
+
+        return true;
+    } catch (error) {
+        console.error(error);
+        return new Error(error);
+    }
+};
+
+const addKitStatusToParticipantV2 = async (participants) => {
+    try {
+        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressPrinted } = fieldMapping;
+
+        // Create an array of promises to update participants in parallel
+        const updatePromises = participants.map(async (participantObj) => {
+            const participantCID = participantObj.connect_id;
+            let path = bioKitMouthwash;
+            switch(participantObj.visit) {
+                case 'BL_1':
+                    path = bioKitMouthwashBL1;
+                    break;
+                case 'BL_2':
+                    path = bioKitMouthwashBL2;
+                    break;
+                default:
+                    path = bioKitMouthwash;
+            }
+            const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('id').get();
+            printDocsCount(snapshot, "addKitStatusToParticipantV2");
+            if (snapshot.size === 0) {
+                // No matching document found, stop the update
+                return false;
+            }
+            const docId = snapshot.docs[0].id;
+            await db.collection("participants").doc(docId).update({
+                [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: addressPrinted
             });
         });
 
@@ -3011,7 +3107,6 @@ const processParticipantHomeMouthwashKitData = (record, printLabel) => {
     }
 
     const hasMouthwash = record[collectionDetails][baseline][bioKitMouthwash] !== undefined;    
-    // @TODO: Need to put visit and date requested in here.
     // First of all, determine which visit it is
     let visit = 'BL';
     let requestDate = record[collectionDetails][baseline][bioKitMouthwash]?.[dateKitRequested] || record[collectionDetails][baseline][bioKitMouthwash]?.[bloodOrUrineCollectedTimestamp];
@@ -3040,7 +3135,7 @@ const processParticipantHomeMouthwashKitData = (record, printLabel) => {
 const assignKitToParticipant = async (data) => {
     let kitAssignmentResult;
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
-        assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, 
+        assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         kitType, mouthwashKit } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
@@ -3112,7 +3207,6 @@ const assignKitToParticipant = async (data) => {
         const kitDoc = kitSnapshot.docs[0];
         data[uniqueKitID] = kitDoc.data()[uniqueKitID];
 
-        // @TODO: How to handle replacement kits?
         // See if this kit has already been assigned to any other participants
         const otherParticipantsWithThisKit = await transaction.get(
             db.collection('participants')
@@ -3138,11 +3232,11 @@ const assignKitToParticipant = async (data) => {
         }
 
 
-
         
         const kitData = {
             [supplyKitTrackingNum]: data[supplyKitTrackingNum],
             [kitStatus]: assigned,
+            // Per documentation, collection round for replacement kits is still baseline
             [collectionRound]: baseline,
             'Connect_ID': parseInt(data['Connect_ID'])
         };
@@ -3155,13 +3249,14 @@ const assignKitToParticipant = async (data) => {
         printDocsCount(participantSnapshot, "assignKitToParticipant; collection: participants");
 
         // 1109: Check if the participant already has another baseline kit assigned and error if it does.
-        // Note that this will need to be modified in the future to recognize and handle replacement kits
-        // once that functionality is added
+        // Because kit replacements are only valid when the previous kit has been shipped
+        // there should never be another kit which is still in assigned status
+        // even for replacement kits
         const kitAssemblyQuery =  db.collection("kitAssembly")
             .where('Connect_ID', '==', parseInt(data['Connect_ID']))
             .where(`${kitStatus}`, '==', assigned)
             .where(`${collectionRound}`, '==', baseline)
-            // .select([`${supplyKitId}`]);
+            .select(`${supplyKitId}`);
         const kitAssemblySnapshot = await transaction.get(kitAssemblyQuery);
 
         printDocsCount(participantSnapshot, "assignKitToParticipant; collection: possible duplicate kits");
@@ -3195,19 +3290,21 @@ const assignKitToParticipant = async (data) => {
         }
 
         const participantDoc = participantSnapshot.docs[0];
+        // Now check the participant information. Which kit are they on?
+        // Do they have any replacements? Handle that appropriately.
+
         const prevParticipantObject = participantDoc.data()?.[collectionDetails]?.[baseline];
+        let path = bioKitMouthwash;
+        if(prevParticipantObject?.[bioKitMouthwashBL2]) {
+            path = bioKitMouthwashBL2;
+        } else if(prevParticipantObject?.[bioKitMouthwashBL1]) {
+            path = bioKitMouthwashBL1;
+        }
         
         const updatedParticipantObject = {
-            [collectionDetails]: {
-                [baseline]: {
-                    ...prevParticipantObject,
-                    [bioKitMouthwash]: {
-                        [kitType]: mouthwashKit,
-                        [kitStatus]: assigned,
-                        [uniqueKitID]: data[uniqueKitID],
-                    }
-                }
-            }
+            [`${collectionDetails}.${baseline}.${path}.${kitType}`]: mouthwashKit,
+            [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: assigned,
+            [`${collectionDetails}.${baseline}.${path}.${uniqueKitID}`]: data[uniqueKitID]
         };
 
         transaction.update(kitDoc.ref, kitData);
@@ -3243,9 +3340,13 @@ const processVerifyScannedCode = async (id) => {
 const confirmShipmentKit = async (shipmentData) => {
     try {
         return await db.runTransaction(async transaction => {
-            const { collectionDetails, baseline, bioKitMouthwash, uniqueKitID } = fieldMapping;
+            const { 
+                collectionDetails, baseline, 
+                bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, uniqueKitID,
+                kitStatus, shipped, shippedDateTime, preferredName, firstName
+            } = fieldMapping;
 
-            const kitAssemblyQuery = db.collection("kitAssembly").where('687158491', '==', shipmentData['687158491']);
+            const kitAssemblyQuery = db.collection("kitAssembly").where(`${uniqueKitID}`, '==', shipmentData[uniqueKitID]);
             const kitSnapshot = await transaction.get(kitAssemblyQuery);
             printDocsCount(kitSnapshot, "confirmShipmentKit; collection: kitAssembly");
 
@@ -3255,14 +3356,25 @@ const confirmShipmentKit = async (shipmentData) => {
 
             const kitDoc = kitSnapshot.docs[0];
             const kitData = {
-                '221592017': 277438316,
-                '661940160': shipmentData['661940160']
+                [kitStatus]: shipped,
+                [shippedDateTime]: shipmentData[shippedDateTime]
             };
 
-            
-            const participantQuery = db.collection("participants")
+
+            // Needs multiple participant queries for all cases
+            const participantQueryInitial = db.collection("participants")
                 .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', shipmentData[uniqueKitID]);
-            const participantSnapshot = await transaction.get(participantQuery);
+            const participantQuery1 = db.collection("participants")
+                .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${uniqueKitID}`, '==', shipmentData[uniqueKitID]);
+            const participantQuery2 = db.collection("participants")
+                .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${uniqueKitID}`, '==', shipmentData[uniqueKitID]);
+            const [ptSnapshotInitial, ptSnapshot1, ptSnapshot2] = await Promise.all([
+                transaction.get(participantQueryInitial), 
+                transaction.get(participantQuery1),
+                transaction.get(participantQuery2)]);
+            const participantSnapshot = (ptSnapshot2.size && ptSnapshot2) ||
+                                        (ptSnapshot1.size && ptSnapshot1) ||
+                                        ptSnapshotInitial;
             printDocsCount(participantSnapshot, "confirmShipmentKit; collection: participants");
 
             if (participantSnapshot.size === 0) {
@@ -3271,31 +3383,29 @@ const confirmShipmentKit = async (shipmentData) => {
 
             const participantDoc = participantSnapshot.docs[0];
             const participantDocData = participantDoc.data();
-            const prevParticipantObject = participantDocData[collectionDetails][baseline][bioKitMouthwash];
-            const baselineParticipantObject = participantDocData[173836415][266600170];
+            const baselineParticipantObject = participantDocData[collectionDetails][baseline];
+            let path = bioKitMouthwash;
+            if(baselineParticipantObject[bioKitMouthwashBL2]?.[uniqueKitID] === shipmentData[uniqueKitID]) {
+                path = bioKitMouthwashBL2;
+            } else if(baselineParticipantObject[bioKitMouthwashBL1]?.[uniqueKitID] === shipmentData[uniqueKitID]) {
+                path = bioKitMouthwashBL1;
+            }
+            // const prevParticipantObject = participantDocData[collectionDetails][baseline][path];
             const uid = participantDocData['state']['uid'];
             const Connect_ID = participantDocData['Connect_ID'];
-            const prefEmail = participantDocData['869588347'];
+            const prefEmail = participantDocData[fieldMapping.prefEmail];
             const token = participantDocData['token'];
-            const ptName = participantDocData['153211406'] || participantDocData['399159511']
+            const ptName = participantDocData[preferredName] || participantDocData[firstName]
             const preferredLanguage = cidToLangMapper[participantDocData[fieldMapping.preferredLanguage]] || cidToLangMapper[fieldMapping.english];
 
             const updatedParticipantObject = {
-                '173836415': {
-                    '266600170': {
-                        ...baselineParticipantObject,
-                        '319972665': {
-                            ...prevParticipantObject,
-                            '221592017': 277438316,
-                            '661940160': shipmentData['661940160']
-                        }
-                    }
-                }
+                [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: shipped,
+                [`${collectionDetails}.${baseline}.${path}.${shippedDateTime}`]: shipmentData[shippedDateTime]
             };
 
             transaction.update(kitDoc.ref, kitData);
             transaction.update(participantDoc.ref, updatedParticipantObject);
-            return { status: true, Connect_ID, token, uid, prefEmail, ptName, preferredLanguage };
+            return { status: true, Connect_ID, token, uid, prefEmail, ptName, preferredLanguage, path };
         });
         
 
@@ -3307,9 +3417,22 @@ const confirmShipmentKit = async (shipmentData) => {
 
 const storeKitReceipt = async (pkg) => {
     try {
+        const {
+            returnKitTrackingNum, kitStatus,
+            collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, uniqueKitID,
+            healthCareProvider, preferredName, firstName, mouthwashSurveyCompletionStatus,
+            collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
+            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, received, shipped,
+            pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
+            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime
+        } = fieldMapping;
         let toReturn;
         await db.runTransaction(async (transaction) => {
-            const kitSnapshot = await transaction.get(db.collection("kitAssembly").where('972453354', '==', pkg['972453354']).where('221592017', '==', 277438316));
+            const kitSnapshot = await transaction.get(
+                db.collection("kitAssembly")
+                .where(`${returnKitTrackingNum}`, '==', pkg[returnKitTrackingNum])
+                .where(`${kitStatus}`, '==', shipped)
+            );
             printDocsCount(kitSnapshot, "storeKitReceipt");
             if (kitSnapshot.size === 0) {
                 toReturn = false;
@@ -3319,21 +3442,32 @@ const storeKitReceipt = async (pkg) => {
             const kitData = kitDoc.data();
             const Connect_ID = kitData['Connect_ID'];
     
-            const participantSnapshot = await transaction.get(db.collection("participants").where('173836415.266600170.319972665.687158491', '==', kitDoc.data()[687158491]));
+            let ptSnapshotPromises = [
+                transaction.get(db.collection("participants").where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', kitDoc.data()[uniqueKitID])),
+                transaction.get(db.collection("participants").where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${uniqueKitID}`, '==', kitDoc.data()[uniqueKitID])),
+                transaction.get(db.collection("participants").where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${uniqueKitID}`, '==', kitDoc.data()[uniqueKitID]))
+            ];
+            const ptCandidates = await Promise.all(ptSnapshotPromises);
+            const participantSnapshot = (ptCandidates[2]?.size && ptCandidates[2]) || 
+                (ptCandidates[1].size && ptCandidates[1]) ||
+                ptCandidates[0];
             const participantDoc = participantSnapshot.docs[0];
             const participantDocData = participantSnapshot.docs[0].data();
 
             const token = participantDocData['token'];
             const uid = participantDocData['state']['uid'];
-            const site = participantDocData['827220437'];
-            const prefEmail = participantDocData['869588347'];
-            const ptName = participantDocData['153211406'] || participantDocData['399159511']
-            const surveyStatus = participantDocData['547363263']
+            const site = participantDocData[healthCareProvider];
+            const prefEmail = participantDocData[fieldMapping.prefEmail];
+            const ptName = participantDocData[preferredName] || participantDocData[firstName]
+            const surveyStatus = participantDocData[mouthwashSurveyCompletionStatus]
             const preferredLanguage = cidToLangMapper[participantDocData[fieldMapping.preferredLanguage]] || cidToLangMapper[fieldMapping.english];
 
-            const prevParticipantObject = participantDocData[173836415][266600170][319972665];
-            const collectionId = pkg['259846815']?.split(' ')[0];
-            const objectId = pkg['259846815']?.split(' ')[1];
+            const path = (ptCandidates[2]?.size && bioKitMouthwashBL2) || 
+                (ptCandidates[1].size && bioKitMouthwashBL1) ||
+                bioKitMouthwash;
+            // const prevParticipantObject = participantDocData[collectionDetails][baseline][path];
+            const collectionId = pkg[collectionCupId]?.split(' ')[0];
+            const objectId = pkg[collectionCupId]?.split(' ')[1];
             
             if (objectId === undefined || collectionId === undefined) {
                 toReturn = { status: 'Check Collection ID' };
@@ -3341,21 +3475,21 @@ const storeKitReceipt = async (pkg) => {
             }
 
             // check the collection ID from the kitAssembly against the one from package and error if they don't match
-            if(kitData[fieldMapping.collectionCupId] !== pkg[fieldMapping.collectionCupId]) {
+            if(kitData[collectionCupId] !== pkg[collectionCupId]) {
                 toReturn = { status: 'Collection Cup ID from tracking number does not match provided Collection Cup ID' };
                 return;
             }
 
             const biospecPkg = {
-                '143615646': {
-                    '593843561': 353358909,
-                    '825582494': pkg['259846815'],
-                    '826941471': pkg['826941471']
+                [fieldMapping.tubesBagsCids.mouthwashTube1]: {
+                    [tubeIsCollected]: yes,
+                    [fieldMapping.objectId]: pkg[collectionCupId],
+                    [receivedDateTime]: pkg[receivedDateTime]
                 },
-                '260133861': pkg['260133861'],
-                '678166505': pkg['678166505'],
-                '820476880':  collectionId,
-                '827220437': site,
+                [collectionAddtnlNotes]: pkg[collectionAddtnlNotes],
+                [collectionDateTimeStamp]: pkg[collectionDateTimeStamp],
+                [fieldMapping.collectionId]:  collectionId,
+                [healthCareProvider]: site,
                 'Connect_ID': Connect_ID,
                 'token': token,
                 'uid': uid
@@ -3367,23 +3501,20 @@ const storeKitReceipt = async (pkg) => {
             transaction.set(newDocRef, biospecPkg);
 
             transaction.update(kitDoc.ref, {
-                '137401245': pkg['137401245'] === true ? 353358909 : 104430631,
-                '221592017': 375535639,
-                '633640710': processPackageConditions(pkg['633640710']),
-                '755095663': pkg['755095663'],
-                '826941471': pkg['826941471']
+                [collectionCardFlag]: pkg[collectionCardFlag] === true ? yes : no,
+                [kitStatus]: received,
+                [pkgReceiptConditions]: processPackageConditions(pkg[pkgReceiptConditions]),
+                [kitPkgComments]: pkg[kitPkgComments],
+                [receivedDateTime]: pkg[receivedDateTime]
             });
 
             transaction.update(participantDoc.ref, {
-                '684635302': 353358909,
-                '254109640': 353358909,
-                '173836415.266600170.915179629': 103209024,
-                '173836415.266600170.448660695': pkg['678166505'],
-                '173836415.266600170.319972665': {
-                    ...prevParticipantObject,
-                    '221592017': 375535639,
-                    '826941471': pkg['826941471']
-                }
+                [baselineMouthwashCollected]: yes,
+                [allBaselineSamplesCollected]: yes,
+                [`${collectionDetails}.${baseline}.${mouthwashCollectionSetting}`]: biospecimenHome,
+                [`${collectionDetails}.${baseline}.${baselineMouthwashCollectedTime}`]: pkg[collectionDateTimeStamp],
+                [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: received,
+                [`${collectionDetails}.${baseline}.${path}.${receivedDateTime}`]: pkg[receivedDateTime]
             });
 
             toReturn = {
@@ -4619,15 +4750,19 @@ module.exports = {
     addKitAssemblyData,
     updateKitAssemblyData,
     queryHomeCollectionAddressesToPrint,
+    queryReplacementHomeCollectionAddressesToPrint,
     queryCountHomeCollectionAddressesToPrint,
+    queryCountReplacementHomeCollectionAddressesToPrint,
     checkCollectionUniqueness,
     processVerifyScannedCode,
     assignKitToParticipant,
     confirmShipmentKit,
     storeKitReceipt,
     addKitStatusToParticipant,
+    addKitStatusToParticipantV2,
     eligibleParticipantsForKitAssignment,
     requestHomeMWReplacementKit,
+    getHomeMWReplacementKitData,
     processSendGridEvent,
     processTwilioEvent,
     getSpecimenAndParticipant,

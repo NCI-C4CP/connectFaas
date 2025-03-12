@@ -798,8 +798,8 @@ const biospecimenAPIs = async (req, res) => {
         }
         
         try {
-            const { queryHomeCollectionAddressesToPrint } = require('./firestore');
-            const response = await queryHomeCollectionAddressesToPrint(req.query ? req.query.limit : undefined);
+            const { queryReplacementHomeCollectionAddressesToPrint } = require('./firestore');
+            const response = await queryReplacementHomeCollectionAddressesToPrint(req.query ? req.query.limit : undefined);
             return res.status(200).json({data: response, code:200});
         } catch (error) {
             console.error(error);
@@ -813,8 +813,8 @@ const biospecimenAPIs = async (req, res) => {
         }
 
         try {
-            const { queryCountHomeCollectionAddressesToPrint } = require('./firestore');
-            const response = await queryCountHomeCollectionAddressesToPrint();
+            const { queryCountReplacementHomeCollectionAddressesToPrint } = require('./firestore');
+            const response = await queryCountReplacementHomeCollectionAddressesToPrint();
             return res.status(200).json({data: response, code:200});
         } catch (error) {
             console.error(error);
@@ -847,6 +847,23 @@ const biospecimenAPIs = async (req, res) => {
         try {
             const { addKitStatusToParticipant } = require('./firestore');
             const response = await addKitStatusToParticipant(requestData);
+            return res.status(200).json({data: response, code:200});
+        }
+        catch (error) {
+            console.error(error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+    }
+
+    else if(api === 'kitStatusToParticipantV2') {
+        if(req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+        const requestData = req.body;
+        if(Object.keys(requestData).length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
+        try {
+            const { addKitStatusToParticipantV2 } = require('./firestore');
+            const response = await addKitStatusToParticipantV2(requestData);
             return res.status(200).json({data: response, code:200});
         }
         catch (error) {

@@ -1,4 +1,5 @@
 const assert = require('chai').assert;
+const expect = require('chai').expect; // assert is mostly used, but expect is for testing error handlers
 const Supertest = require('supertest');
 const supertest = Supertest('http://localhost:5001/nih-nci-dceg-connect-dev/us-central1/app?api=');
 const bearerToken = 'Bearer ';
@@ -1090,7 +1091,7 @@ describe('biospecimen', async () => {
             assert.equal(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`], undefined);
         });
 
-        it.only('Should not set kitStatus because participant kit has already shipped', () => {
+        it('Should not set kitStatus because participant kit has already shipped', () => {
             let data = {
                 [fieldToConceptIdMapping.withdrawConsent]: fieldToConceptIdMapping.no,
                 [fieldToConceptIdMapping.participantDeceasedNORC]: fieldToConceptIdMapping.no,
@@ -1115,6 +1116,296 @@ describe('biospecimen', async () => {
             // These are the participants as logged out after the relevant logic has run, not before
             // However large parts of their data are likely still useful
         ];
+    });
+
+    describe('getHomeMWReplacementKitData', () => {
+        describe('First replacement kit', () => {
+            it('Should set a first replacement kit', () => {
+                const statuses = [
+                    fieldToConceptIdMapping.shipped,
+                    fieldToConceptIdMapping.received,
+                ];
+                const baseObj = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789
+                }
+                statuses.forEach(status => {
+                    const data = Object.assign({}, baseObj, {
+                        [fieldToConceptIdMapping.collectionDetails]: {
+                            [fieldToConceptIdMapping.baseline]: {
+                                [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                    [fieldToConceptIdMapping.kitStatus]: status
+                                }
+                            }
+                        }
+                    });
+                    const updates = firestore.getHomeMWReplacementKitData(data);
+                    const clonedUpdates = Object.assign({}, updates);
+                    delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.dateKitRequested}`];
+                    assert.closeTo
+                        (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                        +new Date(), 
+                        60000, 
+                        'Date kit requested is within a minute of test completion'
+                    );
+                    // console.log('updates', updates);
+                    assert.deepEqual(clonedUpdates, {
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitType}`]: 976461859,
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitStatus}`]: 728267588
+                      },
+                       `Kit status ${status} eligible for replacement kit`);
+                });
+            });
+            it('Should prevent participant with a pending home MW kit from obtaining a replacement', () => {
+                const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.pending
+                            }
+                        }
+                    }
+                };
+    
+                expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant is not yet eligible for a home mouthwash kit/gi);
+            });
+            it('Should prevent a participant whose initial home MW kit has not been sent from obtaining a replacement', () => {
+                const statuses = [
+                    fieldToConceptIdMapping.initialized,
+                    fieldToConceptIdMapping.addressPrinted,
+                    fieldToConceptIdMapping.assigned,
+                ];
+                const baseObj = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                };
+                statuses.forEach(status => {
+                    const data = Object.assign({}, baseObj, {
+                        [fieldToConceptIdMapping.collectionDetails]: {
+                            [fieldToConceptIdMapping.baseline]: {
+                                [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                    [fieldToConceptIdMapping.kitStatus]: status
+                                }
+                            }
+                        }
+                    });
+        
+                    expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant\'s initial home mouthwash kit has not been sent/);
+                });
+                
+            });
+            it('Should throw error on unrecognized kitStatus for initial home MW kit', () => {
+                const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                [fieldToConceptIdMapping.kitStatus]: 'fake'
+                            }
+                        }
+                    }
+                };
+    
+                expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
+            });
+        });
+
+        describe('Second replacement kit', () => {
+            it('Should set a second replacement kit', () => {
+                const statuses = [
+                    fieldToConceptIdMapping.shipped,
+                    fieldToConceptIdMapping.received,
+                ];
+                const baseObj = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789
+                }
+                statuses.forEach(status => {
+                    const data = Object.assign({}, baseObj, {
+                        [fieldToConceptIdMapping.collectionDetails]: {
+                            [fieldToConceptIdMapping.baseline]: {
+                                [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                    [fieldToConceptIdMapping.kitStatus]: status
+                                },
+                                [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                                    [fieldToConceptIdMapping.kitStatus]: status
+                                }
+                            }
+                        }
+                    });
+                    const updates = firestore.getHomeMWReplacementKitData(data);
+                    const clonedUpdates = Object.assign({}, updates);
+                    delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.dateKitRequested}`];
+                    assert.closeTo
+                        (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                        +new Date(), 
+                        60000, 
+                        'Date kit requested is within a minute of test completion'
+                    );
+        
+                    // console.log('updates', updates);
+                    assert.deepEqual(clonedUpdates, {
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitType}`]: 976461859,
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitStatus}`]: 728267588
+                      },
+                       `Kit status ${status} eligible for replacement kit`);
+                });
+            });
+            it('Should prevent participant with a pending replacement home MW kit from obtaining a second replacement', () => {
+                const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                            },
+                            [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.pending
+                            }
+                        }
+                    }
+                };
+    
+                expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant is not eligible for a second replacement home mouthwash kit/gi);
+            });
+            it('Should prevent a participant whose first replacement home MW kit has not been sent from obtaining a second replacement', () => {
+                const statuses = [
+                    fieldToConceptIdMapping.initialized,
+                    fieldToConceptIdMapping.addressPrinted,
+                    fieldToConceptIdMapping.assigned,
+                ];
+                const baseObj = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                };
+                statuses.forEach(status => {
+                    const data = Object.assign({}, baseObj, {
+                        [fieldToConceptIdMapping.collectionDetails]: {
+                            [fieldToConceptIdMapping.baseline]: {
+                                [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                    [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                                },
+                                [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                                    [fieldToConceptIdMapping.kitStatus]: status
+                                }
+                            }
+                        }
+                    });
+        
+                    expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant\'s first replacement home mouthwash kit has not been sent/);
+                });
+    
+            });
+            it('Should throw error on unrecognized kitStatus for first replacement home MW kit', () => {
+                const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                            },
+                            [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                                [fieldToConceptIdMapping.kitStatus]: 'fake'
+                            }
+                        }
+                    }
+                };
+    
+                expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
+            });
+
+        });
+        it('Should prevent a participant who already has a second replacement kit from obtaining another', () => {
+            const data = {
+                [fieldToConceptIdMapping.firstName]: 'First',
+                [fieldToConceptIdMapping.lastName]: 'Last',
+                [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                [fieldToConceptIdMapping.city]: 'City',
+                [fieldToConceptIdMapping.state]: 'PA',
+                [fieldToConceptIdMapping.zip]: '19104',
+                'Connect_ID': 123456789,
+                [fieldToConceptIdMapping.collectionDetails]: {
+                    [fieldToConceptIdMapping.baseline]: {
+                        [fieldToConceptIdMapping.bioKitMouthwash]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                        },
+                        [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                        },[fieldToConceptIdMapping.bioKitMouthwashBL2]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.initialized
+                        }
+                    }
+                }
+            };
+
+            expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant has exceeded supported number of replacement kits./);
+        });
+        it('Should prevent a participant with an invalid address from obtaining a replacement kit', () => {
+            const data = {
+                [fieldToConceptIdMapping.firstName]: 'First',
+                [fieldToConceptIdMapping.lastName]: 'Last',
+                [fieldToConceptIdMapping.address1]: 'P.O. Box 1234',
+                [fieldToConceptIdMapping.city]: 'City',
+                [fieldToConceptIdMapping.state]: 'PA',
+                [fieldToConceptIdMapping.zip]: '19104',
+                'Connect_ID': 123456789,
+                [fieldToConceptIdMapping.collectionDetails]: {
+                    [fieldToConceptIdMapping.baseline]: {
+                        [fieldToConceptIdMapping.bioKitMouthwash]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                        }
+                    }
+                }
+            };
+            expect(firestore.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
+
+        });
+        
     });
 
     describe('updateBaselineData', async () => {
