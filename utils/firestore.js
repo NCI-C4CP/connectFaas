@@ -2832,13 +2832,11 @@ const eligibleParticipantsForKitAssignment = async () => {
             db.collection("participants")
                 .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', addressPrinted)
                 .select(...participantHomeCollectionKitFields)
-                // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
                 .get(),
             // Second replacement home MW kits
             db.collection("participants")
                 .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', addressPrinted)
                 .select(...participantHomeCollectionKitFields)
-                // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
                 .get()
         ];
         const [snapshot, firstReplacementKitSnapshot, secondReplacementKitSnapshot] = await Promise.all(participantSnapshotPromises);
