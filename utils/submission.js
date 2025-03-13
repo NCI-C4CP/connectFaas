@@ -57,7 +57,7 @@ const submit = async (res, data, uid) => {
             })
 
             if (moduleComplete) {
-                const { checkDerivedVariables, processMouthwashEligibility } = require('./validation');
+                const { checkDerivedVariables } = require('./validation');
                 const { getTokenForParticipant, retrieveUserProfile } = require('./firestore');
 
                 const participant = await retrieveUserProfile(uid);
@@ -74,14 +74,16 @@ const submit = async (res, data, uid) => {
                         processPromisResults(uid);
                     }
                 }
+            }
 
-                // If the participant address changed, it may have changed their home mouthwash kit eligibility
-                // so re-check and update if necessary
-                const updatedParticipant = await retrieveUserProfile(uid);
-                const participantUpdates = processMouthwashEligibility(updatedParticipant);
-                if(participantUpdates && Object.keys(participantUpdates).length) {
-                    await updateResponse(participantUpdates, uid);
-                }
+            const { processMouthwashEligibility } = require('./validation');
+
+            // If the participant address changed, it may have changed their home mouthwash kit eligibility
+            // so re-check and update if necessary
+            const updatedParticipant = await retrieveUserProfile(uid);
+            const participantUpdates = processMouthwashEligibility(updatedParticipant);
+            if(participantUpdates && Object.keys(participantUpdates).length) {
+                await updateResponse(participantUpdates, uid);
             }
         }
 

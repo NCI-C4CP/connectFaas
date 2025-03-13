@@ -3,7 +3,7 @@ const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, conceptMappings } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWReplacementKitData, processParticipantHomeMouthwashKitData, conceptMappings } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
@@ -2749,33 +2749,21 @@ const queryCountHomeCollectionAddressesToPrint = async () => {
 const queryCountReplacementHomeCollectionAddressesToPrint = async () => {
     try {
         const { bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, initialized,
-            collectionDetails, baseline } = fieldMapping;
+                collectionDetails, baseline } = fieldMapping;
 
-        // Two queries, one for participants with replacement kit 1 and one for participants with replacement kit 2
-        // Due to possible overlap and Firestore's lack of an or query, must do two queries and manually combine
-        // while checking for duplicates
-        let query1 = db.collection('participants')
-            .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', initialized)
-            .count()
-            // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
+        const query1 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`;
+        const query2 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`;
 
-
-        // These queries should be mutually exclusive, so we can save resources on duplicate checking
-
-        const snapshot1 = await query1.get();
-
-        let query2 = db.collection('participants')
-            .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', initialized)
-            .count()
-            // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
-
-        const snapshot2 = await query2.get();
+        const [snapshot1, snapshot2] = await Promise.all([
+            db.collection('participants').where(query1, '==', initialized).count().get(),
+            db.collection('participants').where(query2, '==', initialized).count().get(),
+        ]);
 
         return snapshot1.data().count + snapshot2.data().count;
     } catch (error) {
-        throw new Error(`Error querying count of home collection addresses to print`, {cause: error});
+        throw new Error('Error querying count of home collection addresses to print', { cause: error });
     }
-}
+};
 
 const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
     try {
@@ -2785,20 +2773,19 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
         // Two queries, one for participants with replacement kit 1 and one for participants with replacement kit 2
         // Due to possible overlap and Firestore's lack of an or query, must do two queries and manually combine
         // while checking for duplicates
-        let query1 = db.collection('participants')
-            .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', initialized)
-            // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
+        const path1 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`;
+        const path2 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`;
 
+        const query1 = db.collection('participants')
+                    .where(path1, '==', initialized)
+                    .get();
 
-        // These queries should be mutually exclusive, so we can save resources on duplicate checking
+        const query2 = db.collection('participants')
+                    .where(path2, '==', initialized)
+                    .get();
 
-        const snapshot1 = await query1.get();
-
-        let query2 = db.collection('participants')
-            .where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', initialized)
-            // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
-
-        const snapshot2 = await query2.get();
+        // Execute both queries in parallel
+        const [snapshot1, snapshot2] = await Promise.all([query1, query2]);
 
         if (snapshot1.size === 0 && snapshot1.size === 0) return [];
 
@@ -2913,78 +2900,6 @@ const requestHomeMWReplacementKit = async (connectId) => {
     });
 }
 
-/**
- * Broken into a separate helper function for easier testing
- */
-const getHomeMWReplacementKitData = (data) => {
-    let fieldPath;
-    if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL2]) {
-        // If two replacements, they are out of replacement kits; error out.
-        throw new Error('Participant has exceeded supported number of replacement kits.');
-    }
-    
-   const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
-
-   if(!participantIsEligible) {
-    throw new Error('Participant address information is invalid.');
-   }
-
-   
-    if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1]) {
-        // If one replacement, mark as eligible for second replacement
-        switch(data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1][fieldMapping.kitStatus]) {
-            case undefined:
-            case null:
-            case fieldMapping.pending: {
-                throw new Error('This participant is not eligible for a second replacement home mouthwash kit');
-            }
-            case fieldMapping.initialized:
-            case fieldMapping.addressPrinted:
-            case fieldMapping.assigned: 
-            {
-                throw new Error('This participant\'s first replacement home mouthwash kit has not been sent');
-            }
-            case fieldMapping.shipped:
-            case fieldMapping.received:
-                // Eligible for second replacement
-                fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL2}`;
-                break;
-            default:
-                throw new Error('Unrecognized kit status ' + data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1][fieldMapping.kitStatus]);
-        }
-    } else if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]) {
-        switch(data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash][fieldMapping.kitStatus]) {
-            case undefined:
-            case null:
-            case fieldMapping.pending: {
-                throw new Error('This participant is not yet eligible for a home mouthwash kit');
-            }
-            case fieldMapping.initialized:
-            case fieldMapping.addressPrinted:
-            case fieldMapping.assigned: 
-            {
-                throw new Error('This participant\'s initial home mouthwash kit has not been sent');
-            }
-            case fieldMapping.shipped:
-            case fieldMapping.received:
-                // Eligible for first replacement
-                fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL1}`;
-                break;
-            default:
-                throw new Error('Unrecognized kit status ' + data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash][fieldMapping.kitStatus]);
-        }
-    }
-
-    // Do we need to copy over any other data? What other data do we need to set here?
-    const updatedParticipantObject = {
-        [[fieldPath, fieldMapping.kitType].join('.')]: fieldMapping.mouthwashKit,
-        [[fieldPath, fieldMapping.kitStatus].join('.')]: fieldMapping.initialized,
-        [[fieldPath, fieldMapping.dateKitRequested].join('.')]: new Date().toISOString()
-    };
-
-    return updatedParticipantObject;
-}
-
 const addKitStatusToParticipant = async (participantsCID) => {
     try {
         const { collectionDetails, baseline, bioKitMouthwash, kitStatus, addressPrinted } = fieldMapping;
@@ -3046,7 +2961,7 @@ const addKitStatusToParticipantV2 = async (participants) => {
                 return false;
             }
             const docId = snapshot.docs[0].id;
-            await db.collection("participants").doc(docId).update({
+            return db.collection("participants").doc(docId).update({
                 [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: addressPrinted
             });
         });
@@ -3060,77 +2975,6 @@ const addKitStatusToParticipantV2 = async (participants) => {
         return new Error(error);
     }
 };
-
-// Note: existing snake_casing follows through to BPTL CSV reporting. Do not update to camelCase without prior communication.
-const processParticipantHomeMouthwashKitData = (record, printLabel) => {
-    const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
-        firstName, lastName, 
-        isPOBox, address1, address2, 
-        physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, 
-        yes, dateKitRequested, bloodOrUrineCollectedTimestamp } = fieldMapping;
-
-    // If you need to read additional fields off of this record, make sure that the field is added to participantHomeCollectionKitFields
-    // or else it will not be selected when determining participants eligible for kit assignment
-
-    if(!record) {
-        return null;
-    }
-
-    const poBoxRegex = /^(?:P\.?\s*O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
-
-    const physicalAddressLineOne = record[physicalAddress1];
-    let addressObj = {};
-
-    // If there is a physical address, default to it unless it's a PO Box
-    // (Behavior clarified in the notes on [1174](https://github.com/episphere/connect/issues/1174))
-    if(physicalAddressLineOne && !poBoxRegex.test(physicalAddressLineOne)) {
-        addressObj = {
-            address_1: record[physicalAddress1],
-            address_2: record[physicalAddress2] || '',
-            city: record[physicalCity],
-            state: record[physicalState],
-            zip_code: record[physicalZip], 
-        };
-    } else {
-        const addressLineOne = record?.[address1];
-        const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
-        if(isPOBoxMatch) {
-            return null;
-        }
-        addressObj = {
-            address_1: record[address1],
-            address_2: record[address2] || '',
-            city: record[city],
-            state: record[state],
-            zip_code: record[zip]
-        };
-    }
-
-    const hasMouthwash = record[collectionDetails][baseline][bioKitMouthwash] !== undefined;    
-    // First of all, determine which visit it is
-    let visit = 'BL';
-    let requestDate = record[collectionDetails][baseline][bioKitMouthwash]?.[dateKitRequested] || record[collectionDetails][baseline][bioKitMouthwash]?.[bloodOrUrineCollectedTimestamp];
-
-    if(record[collectionDetails][baseline][bioKitMouthwashBL2]) {
-        visit = 'BL_2';
-        requestDate = record[collectionDetails][baseline][bioKitMouthwashBL2][dateKitRequested];
-    } else if (record[collectionDetails][baseline][bioKitMouthwashBL1]) {
-        visit = 'BL_1';
-        requestDate = record[collectionDetails][baseline][bioKitMouthwashBL1][dateKitRequested];
-    }
-    const processedRecord = {
-        first_name: record[firstName],
-        last_name: record[lastName],
-        connect_id: record['Connect_ID'],
-        visit,
-        requestDate,
-        ...addressObj
-    };
-
-    return printLabel || hasMouthwash
-        ? processedRecord
-        : [];
-}
 
 const assignKitToParticipant = async (data) => {
     let kitAssignmentResult;
@@ -4673,7 +4517,6 @@ module.exports = {
     biospecimenUserExists,
     addNewBiospecimenUser,
     removeUser,
-    processParticipantHomeMouthwashKitData,
     storeSpecimen,
     submitSpecimen,
     updateSpecimen,
@@ -4762,7 +4605,6 @@ module.exports = {
     addKitStatusToParticipantV2,
     eligibleParticipantsForKitAssignment,
     requestHomeMWReplacementKit,
-    getHomeMWReplacementKitData,
     processSendGridEvent,
     processTwilioEvent,
     getSpecimenAndParticipant,

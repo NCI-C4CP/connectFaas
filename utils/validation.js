@@ -194,7 +194,7 @@ const processMouthwashEligibility = (data) => {
     // Conditions for initialized: baselineMouthwashSample is no, bloodOrUrineCollected is yes, 
     // kitStatus does not yet have a value, processParticipantHomeMouthwashKitData passes
     const updates = {};
-    const {processParticipantHomeMouthwashKitData} = require('./firestore');
+    const {processParticipantHomeMouthwashKitData} = require('./shared');
     if(
         data[conceptIds.withdrawConsent] == conceptIds.no &&
         data[conceptIds.participantDeceasedNORC] == conceptIds.no &&

@@ -199,8 +199,8 @@ const dashboard = async (req, res) => {
         if(!connectId) {
             return res.status(405).json(getResponseJSON('Missing connect ID!', 405));
         }
-        const {requestHomeMWReplacementKit} = require('./firestore');
         try {
+            const {requestHomeMWReplacementKit} = require('./firestore');
             await requestHomeMWReplacementKit(connectId);
             return res.status(200).json(getResponseJSON('Success!', 200));
         } catch(err) {
