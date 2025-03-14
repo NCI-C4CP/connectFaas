@@ -194,7 +194,7 @@ const processMouthwashEligibility = (data) => {
     // Conditions for initialized: baselineMouthwashSample is no, bloodOrUrineCollected is yes, 
     // kitStatus does not yet have a value, processParticipantHomeMouthwashKitData passes
     const updates = {};
-    const {processParticipantHomeMouthwashKitData} = require('./firestore');
+    const {processParticipantHomeMouthwashKitData} = require('./shared');
     if(
         data[conceptIds.withdrawConsent] == conceptIds.no &&
         data[conceptIds.participantDeceasedNORC] == conceptIds.no &&
@@ -212,16 +212,25 @@ const processMouthwashEligibility = (data) => {
             updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = conceptIds.initialized;
         }
     } else if(
-        data[conceptIds.collectionDetails] &&
-        data[conceptIds.collectionDetails][conceptIds.baseline] &&
-        data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash] &&
-        data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash][conceptIds.kitStatus] == conceptIds.initialized
+        data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus] == conceptIds.initialized ||
+        data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwashBL1]?.[conceptIds.kitStatus] == conceptIds.initialized ||
+        data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwashBL2]?.[conceptIds.kitStatus] == conceptIds.initialized
     ) {
         // Conditions to remove initialized: status is initialized and processParticipantHomeMouthwashKitData fails
         const isEligible = !!processParticipantHomeMouthwashKitData(data, true);
         if(!isEligible) {
-            updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = undefined;
+            if(data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus] == conceptIds.initialized) {
+                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = undefined;
+            }
+            // Handle replacement kits as well
+            if(data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwashBL1]?.[conceptIds.kitStatus] == conceptIds.initialized) {
+                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwashBL1}.${conceptIds.kitStatus}`] = undefined;
+            }
+            if(data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwashBL2]?.[conceptIds.kitStatus] == conceptIds.initialized) {
+                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwashBL2}.${conceptIds.kitStatus}`] = undefined;
+            }
         }
+
     }
     return updates;
 }
