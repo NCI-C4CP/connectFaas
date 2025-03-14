@@ -1044,7 +1044,12 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
  */
 const getHomeMWReplacementKitData = (data) => {
     let fieldPath;
-    if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL2]) {
+    const {
+        collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, 
+        kitType, mouthwashKit, dateKitRequested, kitStatus,
+        pending, initialized, addressPrinted, assigned, shipped, received
+    } = fieldMapping;
+    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
         // If two replacements, they are out of replacement kits; error out.
         throw new Error('Participant has exceeded supported number of replacement kits.');
     }
@@ -1056,56 +1061,56 @@ const getHomeMWReplacementKitData = (data) => {
    }
 
    
-    if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1]) {
+    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
         // If one replacement, mark as eligible for second replacement
-        switch(data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1][fieldMapping.kitStatus]) {
+        switch(data[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][kitStatus]) {
             case undefined:
             case null:
-            case fieldMapping.pending: {
+            case pending: {
                 throw new Error('This participant is not eligible for a second replacement home mouthwash kit');
             }
-            case fieldMapping.initialized:
-            case fieldMapping.addressPrinted:
-            case fieldMapping.assigned: 
+            case initialized:
+            case addressPrinted:
+            case assigned: 
             {
                 throw new Error('This participant\'s first replacement home mouthwash kit has not been sent');
             }
-            case fieldMapping.shipped:
-            case fieldMapping.received:
+            case shipped:
+            case received:
                 // Eligible for second replacement
-                fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL2}`;
+                fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}`;
                 break;
             default:
-                throw new Error('Unrecognized kit status ' + data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwashBL1][fieldMapping.kitStatus]);
+                throw new Error('Unrecognized kit status ' + data[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][kitStatus]);
         }
-    } else if(data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]) {
-        switch(data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash][fieldMapping.kitStatus]) {
+    } else if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]) {
+        switch(data[collectionDetails]?.[baseline]?.[bioKitMouthwash][kitStatus]) {
             case undefined:
             case null:
-            case fieldMapping.pending: {
+            case pending: {
                 throw new Error('This participant is not yet eligible for a home mouthwash kit');
             }
-            case fieldMapping.initialized:
-            case fieldMapping.addressPrinted:
-            case fieldMapping.assigned: 
+            case initialized:
+            case addressPrinted:
+            case assigned: 
             {
                 throw new Error('This participant\'s initial home mouthwash kit has not been sent');
             }
-            case fieldMapping.shipped:
-            case fieldMapping.received:
+            case shipped:
+            case received:
                 // Eligible for first replacement
-                fieldPath = `${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL1}`;
+                fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}`;
                 break;
             default:
-                throw new Error('Unrecognized kit status ' + data[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash][fieldMapping.kitStatus]);
+                throw new Error('Unrecognized kit status ' + data[collectionDetails]?.[baseline]?.[bioKitMouthwash][kitStatus]);
         }
     }
 
     // Do we need to copy over any other data? What other data do we need to set here?
     const updatedParticipantObject = {
-        [[fieldPath, fieldMapping.kitType].join('.')]: fieldMapping.mouthwashKit,
-        [[fieldPath, fieldMapping.kitStatus].join('.')]: fieldMapping.initialized,
-        [[fieldPath, fieldMapping.dateKitRequested].join('.')]: new Date().toISOString()
+        [[fieldPath, kitType].join('.')]: mouthwashKit,
+        [[fieldPath, kitStatus].join('.')]: initialized,
+        [[fieldPath, dateKitRequested].join('.')]: new Date().toISOString()
     };
 
     return updatedParticipantObject;
