@@ -2952,7 +2952,7 @@ const addKitStatusToParticipantV2 = async (participants) => {
                 default:
                     path = bioKitMouthwash;
             }
-            const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('id').get();
+            const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID').get();
             printDocsCount(snapshot, "addKitStatusToParticipantV2");
             if (snapshot.size === 0) {
                 // No matching document found, stop the update
