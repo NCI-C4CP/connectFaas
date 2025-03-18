@@ -54,11 +54,13 @@ const submit = async (res, data, uid) => {
                         calculateScores = true;
                     }
                 }
-            })
+            });
+
+            const { retrieveUserProfile } = require('./firestore');
 
             if (moduleComplete) {
                 const { checkDerivedVariables } = require('./validation');
-                const { getTokenForParticipant, retrieveUserProfile } = require('./firestore');
+                const { getTokenForParticipant } = require('./firestore');
 
                 const participant = await retrieveUserProfile(uid);
                 const siteCode = participant['827220437'];
