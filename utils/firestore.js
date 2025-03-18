@@ -2787,7 +2787,7 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
         // Execute both queries in parallel
         const [snapshot1, snapshot2] = await Promise.all([query1, query2]);
 
-        if (snapshot1.size === 0 && snapshot1.size === 0) return [];
+        if (snapshot1.size === 0 && snapshot2.size === 0) return [];
 
 
         let mappedResults = snapshot1.docs
