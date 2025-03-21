@@ -792,6 +792,36 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
 
+    else if(api == 'totalReplacementAddressesToPrint'){
+        if(req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+        
+        try {
+            const { queryReplacementHomeCollectionAddressesToPrint } = require('./firestore');
+            const response = await queryReplacementHomeCollectionAddressesToPrint(req.query ? req.query.limit : undefined);
+            return res.status(200).json({data: response, code:200});
+        } catch (error) {
+            console.error(error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+    }
+
+    else if(api == 'totalReplacementAddressesToPrintCount'){
+        if(req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+
+        try {
+            const { queryCountReplacementHomeCollectionAddressesToPrint } = require('./firestore');
+            const response = await queryCountReplacementHomeCollectionAddressesToPrint();
+            return res.status(200).json({data: response, code:200});
+        } catch (error) {
+            console.error(error);
+            return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
+        }
+    }
+
     else if(api === 'getKitsByReceivedDate') {
         if(req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
@@ -818,6 +848,23 @@ const biospecimenAPIs = async (req, res) => {
         try {
             const { addKitStatusToParticipant } = require('./firestore');
             const response = await addKitStatusToParticipant(requestData);
+            return res.status(200).json({data: response, code:200});
+        }
+        catch (error) {
+            console.error(error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+    }
+
+    else if(api === 'kitStatusToParticipantV2') {
+        if(req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+        const requestData = req.body;
+        if(Object.keys(requestData).length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
+        try {
+            const { addKitStatusToParticipantV2 } = require('./firestore');
+            const response = await addKitStatusToParticipantV2(requestData);
             return res.status(200).json({data: response, code:200});
         }
         catch (error) {

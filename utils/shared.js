@@ -1039,6 +1039,154 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
     return participantUpdates
 }
 
+/**
+ * Broken into a separate helper function for easier testing
+ */
+const getHomeMWReplacementKitData = (data) => {
+    let fieldPath;
+    const {
+        collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, 
+        kitType, mouthwashKit, dateKitRequested, kitStatus,
+        pending, initialized, addressPrinted, assigned, shipped, received
+    } = fieldMapping;
+    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
+        // If two replacements, they are out of replacement kits; error out.
+        throw new Error('Participant has exceeded supported number of replacement kits.');
+    }
+    
+   const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
+
+   if(!participantIsEligible) {
+    throw new Error('Participant address information is invalid.');
+   }
+
+   
+    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
+        // If one replacement, mark as eligible for second replacement
+        switch(data[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][kitStatus]) {
+            case undefined:
+            case null:
+            case pending: {
+                throw new Error('This participant is not eligible for a second replacement home mouthwash kit');
+            }
+            case initialized:
+            case addressPrinted:
+            case assigned: 
+            {
+                throw new Error('This participant\'s first replacement home mouthwash kit has not been sent');
+            }
+            case shipped:
+            case received:
+                // Eligible for second replacement
+                fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}`;
+                break;
+            default:
+                throw new Error('Unrecognized kit status ' + data[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][kitStatus]);
+        }
+    } else if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]) {
+        switch(data[collectionDetails]?.[baseline]?.[bioKitMouthwash][kitStatus]) {
+            case undefined:
+            case null:
+            case pending: {
+                throw new Error('This participant is not yet eligible for a home mouthwash kit');
+            }
+            case initialized:
+            case addressPrinted:
+            case assigned: 
+            {
+                throw new Error('This participant\'s initial home mouthwash kit has not been sent');
+            }
+            case shipped:
+            case received:
+                // Eligible for first replacement
+                fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}`;
+                break;
+            default:
+                throw new Error('Unrecognized kit status ' + data[collectionDetails]?.[baseline]?.[bioKitMouthwash][kitStatus]);
+        }
+    }
+
+    // Do we need to copy over any other data? What other data do we need to set here?
+    const updatedParticipantObject = {
+        [[fieldPath, kitType].join('.')]: mouthwashKit,
+        [[fieldPath, kitStatus].join('.')]: initialized,
+        [[fieldPath, dateKitRequested].join('.')]: new Date().toISOString()
+    };
+
+    return updatedParticipantObject;
+}
+
+// Note: existing snake_casing follows through to BPTL CSV reporting. Do not update to camelCase without prior communication.
+const processParticipantHomeMouthwashKitData = (record, printLabel) => {
+    const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
+        firstName, lastName, 
+        isPOBox, address1, address2, 
+        physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, 
+        yes, dateKitRequested, bloodOrUrineCollectedTimestamp } = fieldMapping;
+
+    // If you need to read additional fields off of this record, make sure that the field is added to participantHomeCollectionKitFields
+    // or else it will not be selected when determining participants eligible for kit assignment
+
+    if(!record) {
+        return null;
+    }
+
+    const poBoxRegex = /^(?:P\.?\s*O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
+
+    const physicalAddressLineOne = record[physicalAddress1];
+    let addressObj = {};
+
+    // If there is a physical address, default to it unless it's a PO Box
+    // (Behavior clarified in the notes on [1174](https://github.com/episphere/connect/issues/1174))
+    if(physicalAddressLineOne && !poBoxRegex.test(physicalAddressLineOne)) {
+        addressObj = {
+            address_1: record[physicalAddress1],
+            address_2: record[physicalAddress2] || '',
+            city: record[physicalCity],
+            state: record[physicalState],
+            zip_code: record[physicalZip], 
+        };
+    } else {
+        const addressLineOne = record?.[address1];
+        const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
+        if(isPOBoxMatch) {
+            return null;
+        }
+        addressObj = {
+            address_1: record[address1],
+            address_2: record[address2] || '',
+            city: record[city],
+            state: record[state],
+            zip_code: record[zip]
+        };
+    }
+
+    const hasMouthwash = record[collectionDetails][baseline][bioKitMouthwash] !== undefined;    
+    // First of all, determine which visit it is
+    let visit = 'BL';
+    let requestDate = record[collectionDetails][baseline][bioKitMouthwash]?.[dateKitRequested] || record[collectionDetails][baseline][bioKitMouthwash]?.[bloodOrUrineCollectedTimestamp];
+
+    if(record[collectionDetails][baseline][bioKitMouthwashBL2]) {
+        visit = 'BL_2';
+        requestDate = record[collectionDetails][baseline][bioKitMouthwashBL2][dateKitRequested];
+    } else if (record[collectionDetails][baseline][bioKitMouthwashBL1]) {
+        visit = 'BL_1';
+        requestDate = record[collectionDetails][baseline][bioKitMouthwashBL1][dateKitRequested];
+    }
+    const processedRecord = {
+        first_name: record[firstName],
+        last_name: record[lastName],
+        connect_id: record['Connect_ID'],
+        visit,
+        requestDate,
+        ...addressObj
+    };
+
+    return printLabel || hasMouthwash
+        ? processedRecord
+        : [];
+}
+
 const convertSiteLoginToNumber = (siteLogin) => {
     const siteLoginNumber = parseInt(siteLogin);
     if (siteLoginNumber === NaN) return undefined;
@@ -2102,6 +2250,8 @@ module.exports = {
     bagConceptIDs,
     cleanSurveyData,
     updateBaselineData,
+    getHomeMWReplacementKitData,
+    processParticipantHomeMouthwashKitData,
     refusalWithdrawalConcepts,
     withdrawalConcepts,
     convertSiteLoginToNumber,
