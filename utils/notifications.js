@@ -4,7 +4,7 @@ const showdown = require("showdown");
 const twilio = require("twilio");
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
 const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, createChunkArray, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
-const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, getNotificationSpecsBySchedule, updateNotifySmsRecord, updateSmsPermission} = require("./firestore");
+const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateNotifySmsRecord, updateSmsPermission} = require("./firestore");
 const {getParticipantsForNotificationsBQ} = require("./bigquery");
 const conceptIds = require("./fieldToConceptIdMapping");
 
@@ -724,10 +724,6 @@ const sendEmailLink = async (req, res) => {
     }
     try {
         const { email, continueUrl, preferredLanguage } = req.body;
-
-        console.log(`EMAIL: ${email}`);
-        console.log(`CONTINUE URL: ${continueUrl}`);
-
         const [clientId, clientSecret, tenantId, magicLink] = await Promise.all(
             [
                 getSecret(process.env.APP_REGISTRATION_CLIENT_ID),
@@ -736,8 +732,6 @@ const sendEmailLink = async (req, res) => {
                 generateSignInWithEmailLink(email, continueUrl),
             ]
         );
-
-        console.log(`GENERATED MAGIC LINK: ${magicLink}`);
 
         const params = new URLSearchParams();
         params.append("grant_type", "client_credentials");
