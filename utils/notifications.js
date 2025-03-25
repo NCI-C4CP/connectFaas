@@ -4,7 +4,7 @@ const showdown = require("showdown");
 const twilio = require("twilio");
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
 const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, createChunkArray, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
-const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, getNotificationSpecsBySchedule, updateNotifySmsRecord, updateSmsPermission} = require("./firestore");
+const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateNotifySmsRecord, updateSmsPermission} = require("./firestore");
 const {getParticipantsForNotificationsBQ} = require("./bigquery");
 const conceptIds = require("./fieldToConceptIdMapping");
 
@@ -724,10 +724,6 @@ const sendEmailLink = async (req, res) => {
     }
     try {
         const { email, continueUrl, preferredLanguage } = req.body;
-
-        console.log(`EMAIL: ${email}`);
-        console.log(`CONTINUE URL: ${continueUrl}`);
-
         const [clientId, clientSecret, tenantId, magicLink] = await Promise.all(
             [
                 getSecret(process.env.APP_REGISTRATION_CLIENT_ID),
@@ -737,7 +733,7 @@ const sendEmailLink = async (req, res) => {
             ]
         );
 
-        console.log(`GENERATED MAGIC LINK: ${magicLink}`);
+        const cleanMagicLink = cleanContinueUrl(magicLink);
 
         const params = new URLSearchParams();
         params.append("grant_type", "client_credentials");
@@ -768,7 +764,7 @@ const sendEmailLink = async (req, res) => {
                     contentType: "html",
                     content: getTemplateForEmailLink(
                         email,
-                        magicLink,
+                        cleanMagicLink,
                         preferredLanguage
                     ),
                 },
@@ -806,6 +802,32 @@ const sendEmailLink = async (req, res) => {
             });
     }
 };
+
+/**
+ * Properly cleans the continueUrl parameter by finding where it should end
+ * @param {string} url - The full authentication URL
+ * @returns {string} - URL with cleaned continueUrl parameter
+ */
+const cleanContinueUrl = (url) => {
+    const normalizedUrl = url.replace(/&amp;/g, '&');
+    const continueUrlIndex = normalizedUrl.indexOf('continueUrl=');
+    
+    if (continueUrlIndex === -1) {
+        return url;
+    }
+
+    const beforeContinueUrl = normalizedUrl.substring(0, continueUrlIndex + 'continueUrl='.length);
+    const afterContinueUrlStart = normalizedUrl.substring(continueUrlIndex + 'continueUrl='.length);
+    const baseUrlMatch = afterContinueUrlStart.match(/^(https:\/\/[^&#]+)/);
+    
+    if (!baseUrlMatch) {
+        return url;
+    }
+    
+    const baseUrl = baseUrlMatch[1];
+
+    return beforeContinueUrl + baseUrl;
+}
 
 const dryRunNotificationSchema = async (req, res) => {
   if (req.method !== "GET") {
