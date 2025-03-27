@@ -2,7 +2,7 @@ const { getResponseJSON, setHeadersDomainRestricted, getUserProfile, safeJSONPar
 const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
 const { retrievePhysicalActivityReport } = require('./reports');
-const { validateToken, generateToken, validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation } = require('./validation');
+const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation } = require('./validation');
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -69,14 +69,6 @@ const connectApp = async (req, res) => {
     }
 
     else if (api === 'retrieveNotifications') return await retrieveNotifications(req, res, uid);
-    
-    // @ deprecated. Retail until Feb 2025 release for backward MyConnect compatibility (caching on participant devices) with MyConnect.
-    // This call has been removed from the MyConnect app as of the Jan 2025 release. OK to delete Feb 2025 once caching concerns are alleviated.
-    else if (api === 'validateToken') return await validateToken(req, res, uid);
-
-    // @ deprecated. Retail until Feb 2025 release for backward MyConnect compatibility (caching on participant devices) with MyConnect.
-    // This call has been removed from the MyConnect app as of the Jan 2025 release. OK to delete Feb 2025 once caching concerns are alleviated.
-    else if (api === 'generateToken') return await generateToken(req, res, uid);
     
     else if (api === 'validatePin') {
       if (req.method !== 'POST') {
