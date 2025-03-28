@@ -551,14 +551,14 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
                 orderBy: ['821247024', 'asc']
             },
             'refusalswithdrawals': {
-                where: [refusalConcept, '==', 353358909],
+                where: [[refusalConcept, '==', 353358909]],
                 orderBy: ['Connect_ID', 'asc']
             }
         }  
 
         const applyConditions = async (collection, type, siteCode, limit, cursor, from, to) => {
             
-            const query = db.collection(collection);
+            let query = db.collection(collection);
             const queryConditions = conditions[type];
             const { where = [], orderBy, fromTo } = queryConditions;
 
@@ -4376,7 +4376,6 @@ const processPhysicalActivity = async (dateExpression) => {
 module.exports = {
     db,
     updateResponse,
-    retrieveParticipantsDemo,
     retrieveParticipants,
     verifyIdentity,
     retrieveUserProfile,
@@ -4471,7 +4470,6 @@ module.exports = {
     getBptlMetricsForShipped,
     sendClientEmail,
     verifyUsersEmailOrPhone,
-    retrieveRefusalWithdrawalParticipants,
     updateUserPhoneSigninMethod,
     updateUserEmailSigninMethod,
     updateUsersCurrentLogin,

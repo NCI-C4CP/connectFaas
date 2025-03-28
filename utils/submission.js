@@ -264,7 +264,7 @@ const getParticipants = async (req, res, authObj) => {
             return res.status(400).json(getResponseJSON('Bad request', 400));
         }
     }
-    else if (type.in(acceptedTypes)) {
+    else if (acceptedTypes.includes(type)) {
         
         let refusalConcept;
 
@@ -282,7 +282,7 @@ const getParticipants = async (req, res, authObj) => {
 
         if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
 
-        return res.status(200).json({data: response, code: 200, limit, dataSize: response.length})
+        return res.status(200).json({data: response, code: 200})
     }
     else {
         return res.status(404).json(getResponseJSON('Resource not found', 404));
@@ -702,7 +702,6 @@ module.exports = {
     submitSocial,
     getFilteredParticipants,
     getParticipants,
-    getParticipantsDemo,
     identifyParticipant,
     getUserSurveys,
     getUserCollections,
