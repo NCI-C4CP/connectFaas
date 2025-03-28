@@ -486,7 +486,7 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  * Retrieves participants from a Firestore collection based on specified conditions and pagination options.
  *
  * @async
- * @function retrieveParticipantsDemo
+ * @function retrieveParticipants
  * @param {string} siteCode - The code representing the current site.
  * @param {string} type - The type of participants to retrieve (e.g., "verified", "notyetverified", "cannotbeverified", "active", "notactive", "passive", "all", "profileNotSubmitted", "consentNotSubmitted", "notSignedIn").
  * @param {boolean} isParent - Indicates if the current user is a parent. Used to determine the 'where' operator for the site field.
@@ -494,23 +494,71 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  * @param {string} [cursor] - The ID of the last document retrieved in a previous request, used for pagination.
  * @param {string} [from] - A lower bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` >= `from` are returned.
  * @param {string} [to] - An upper bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` <= `to` are returned.
+ * @param {string} [refusalConcept] - The concept ID for filtering documents by refusal/withdrawal status.
  * @returns {Promise<{docs: Object[], cursor: string}>} An object containing:
  *   - `docs`: An array of participant document data.
  *   - `cursor`: The ID of the last document in the returned set (useful for pagination).
  *
  * @throws {Error} Will throw an error if the query or document retrieval fails.
  */
-const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor, from, to) => {
+const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, from, to, refusalConcept) => {
     try {
         const conditions = {
             'verified': {
                 where: [['821247024', '==', 197316935], ['699625233', '==', 353358909]],
                 orderBy: ['Connect_ID', 'asc'],
                 fromTo: '914594314'
+            },
+            'notyetverified': {
+                where: [['821247024', '==', 875007964], ['699625233', '==', 353358909]],
+                orderBy: ['Connect_ID', 'asc'],
+                fromTo: '914594314'
+            },
+            'cannotbeverified': {
+                where: [['821247024', '==', 219863910], ['699625233', '==', 353358909]],
+                orderBy: ['Connect_ID', 'asc'],
+                fromTo: '914594314'
+            },
+            'active': {
+                where: [['512820379', '==', 486306141]],
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'notactive': {
+                where: [['512820379', '==', 180583933]],
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'passive': {
+                where: [['512820379', '==', 854703046]],
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'all': {
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'profileNotSubmitted': {
+                where: [['699625233', '==', 104430631], ['919254129', '==', 353358909]],
+                orderBy: ['821247024', 'asc']
+            },
+            'consentNotSubmitted': {
+                where: [['699625233', '==', 104430631], ['919254129', '==', 104430631], ['230663853', '==', 353358909]],
+                orderBy: ['821247024', 'asc']
+            },
+            'notSignedIn': {
+                where: [['699625233', '==', 104430631], ['919254129', '==', 104430631], ['230663853', '==', 104430631]],
+                orderBy: ['821247024', 'asc']
+            },
+            'refusalswithdrawals': {
+                where: [refusalConcept, '==', 353358909],
+                orderBy: ['Connect_ID', 'asc']
             }
-        }
+        }  
 
-        const applyConditions = async (query, type, siteCode, limit, cursor, from, to) => {
+        const applyConditions = async (collection, type, siteCode, limit, cursor, from, to) => {
+            
+            const query = db.collection(collection);
             const queryConditions = conditions[type];
             const { where = [], orderBy, fromTo } = queryConditions;
 
@@ -530,7 +578,8 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
             }
 
             if (cursor) {
-                const doc = await getCursorDocumnet('participants', cursor);
+                const collection = 'participants';
+                const doc = await getCursorDocumnet(collection, cursor);
 
                 if (doc.exists) {
                     query = query.startAfter(doc);
@@ -545,12 +594,13 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
             return query;
         };
 
-        let query = await applyConditions(db.collection('participants'), type, siteCode, limit, cursor, from, to);
-
-        let snapshot = await query.get();
-        printDocsCount(snapshot, `retrieveParticipantsDemo`);
-
+        const collection = 'participants';
+        const query = await applyConditions(collection, type, siteCode, limit, cursor, from, to);
+        const snapshot = await query.get();
         const results = {};
+
+        printDocsCount(snapshot, `retrieveParticipants`);
+
         results.docs = snapshot.docs.map(doc => doc.data());
 
         if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
@@ -559,12 +609,25 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
 
         return results;
     }
-    catch(error){
+    catch (error) {
         console.error(error);
         return new Error(error);
     }
 }
 
+/**
+ * Retrieves a document from a Firestore collection using its ID for pagination purposes.
+ *
+ * @async
+ * @function getCursorDocumnet
+ * @param {string} collection - The name of the Firestore collection to query.
+ * @param {string} cursor - The document ID to retrieve, typically the last document ID from a previous query result.
+ * @returns {Promise<FirebaseFirestore.DocumentSnapshot|Error>} A Promise that resolves to:
+ *   - The DocumentSnapshot if found
+ *   - An Error if the document doesn't exist or if retrieval fails
+ * 
+ * @throws {Error} May throw an error during document retrieval
+ */
 const getCursorDocumnet = async (collection, cursor) => {
     try {
         const ref = db.collection(collection).doc(cursor);
@@ -579,167 +642,6 @@ const getCursorDocumnet = async (collection, cursor) => {
     } catch (error) {
         console.error(error);
         return new Error(error);
-    }
-}
-
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
-const retrieveParticipants = async (siteCode, decider, isParent, limit, page, site, from, to) => {
-    try{
-        const operator = isParent ? 'in' : '==';
-        let snapshot;
-        const offset = (page-1)*limit;
-        if(decider === 'verified') {
-            let query = db.collection('participants')
-                            .where('821247024', '==', 197316935)
-                            .where('699625233', '==', 353358909)
-                            .orderBy("Connect_ID", "asc")
-                            .limit(limit)
-                            .offset(offset)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            snapshot = await query.get();
-        }
-        if(decider === 'notyetverified') {
-            let query = db.collection('participants')
-                                    .where('821247024', '==', 875007964)
-                                    .where('699625233', '==', 353358909)
-                                    .orderBy("Connect_ID", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'cannotbeverified') {
-            let query = db.collection('participants')
-                                    .where('821247024', '==', 219863910)
-                                    .where('699625233', '==', 353358909)
-                                    .orderBy("Connect_ID", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'profileNotSubmitted') {
-            let query = db.collection('participants')
-                                    .where('699625233', '==', 104430631)
-                                    .where('919254129', '==', 353358909)
-                                    .orderBy("821247024", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'consentNotSubmitted') {
-            let query = db.collection('participants')
-                                    .where('699625233', '==', 104430631)
-                                    .where('919254129', '==', 104430631)
-                                    .where('230663853', '==', 353358909)
-                                    .orderBy("821247024", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'notSignedIn') {
-            let query = db.collection('participants')
-                                    .where('699625233', '==', 104430631)
-                                    .where('919254129', '==', 104430631)
-                                    .where('230663853', '==', 104430631)
-                                    .orderBy("821247024", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'all') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent   
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-        if(decider === 'active') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.where("512820379", "==", 486306141) // Recruit type active
-                            .orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-        if(decider === 'notactive') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.where("512820379", "==", 180583933) // Recruit type not active
-                            .orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-        if(decider === 'passive') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.where("512820379", "==", 854703046) // Recruit type passive
-                            .orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-
-        printDocsCount(snapshot, `retrieveParticipants; offset: ${offset}`);
-        return snapshot.docs.map(doc => doc.data());
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
-}
-
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
-const retrieveRefusalWithdrawalParticipants = async (siteCode, isParent, concept, limit, page) => {
-    try {
-        const operator = isParent ? 'in' : '==';
-        const offset = (page - 1) * limit;
-        
-        const snapshot = await db.collection('participants')
-                                .where('827220437', operator, siteCode)
-                                .where(concept, '==', 353358909)
-                                .orderBy('Connect_ID', 'asc')
-                                .offset(offset)
-                                .limit(limit)
-                                .get();                 
-        printDocsCount(snapshot, `retrieveRefusalWithdrawalParticipants; offset: ${offset}`);
-
-        return snapshot.docs.map(doc => doc.data());
-    } catch (error) {
-        console.error(error);
-        return new Error(error)
     }
 }
 
@@ -3931,12 +3833,6 @@ const processQueryDailyReportParticipants = async (document) => {
     }
 };
 
-const getRestrictedFields = async () => {
-    const snapshot = await db.collection('siteDetails').where('coordinatingCenter', '==', true).get();
-    printDocsCount(snapshot, "getRestrictedFields");
-    return snapshot.docs[0].data().restrictedFields;
-}
-
 /**
  * This is for managing received boxes in BPTL only.
  * @param {string} receivedTimestamp - Timestamp of received date in format 'YYYY-MM-DDT00:00:00.000Z'. Ex: '2023-08-30T00:00:00.000Z'.
@@ -4573,7 +4469,6 @@ module.exports = {
     storePackageReceipt,
     getBptlMetrics,
     getBptlMetricsForShipped,
-    getRestrictedFields,
     sendClientEmail,
     verifyUsersEmailOrPhone,
     retrieveRefusalWithdrawalParticipants,
