@@ -1,6 +1,7 @@
 const { cleanSurveyData, getResponseJSON, lockedAttributes, setHeaders, logIPAddress, moduleConceptsToCollections, moduleStatusConcepts } = require('./shared');
 const { updateResponse } = require('./firestore');
 const fieldMapping = require('./fieldToConceptIdMapping');
+const { validateIso8601Timestamp } = require('./validation');
 
 const submit = async (res, data, uid) => {
     // @TODO: This would all be better revamped with a transaction
@@ -238,14 +239,24 @@ const getParticipants = async (req, res, authObj) => {
         const { isParentEntity } = require('./shared');
         obj = await isParentEntity(authorized);
     }
-    
+
     const type      = req.query.type;
     const limit     = req.query.limit ? parseInt(req.query.limit) : 100;
     const cursor    = req.query.cursor ?? null;
-    const from      = req.query.from ?? null; 
-    const to        = req.query.to ?? null; 
+    const from      = req.query.from ?? null;
+    const to        = req.query.to ?? null;
     const token     = req.query.token ?? null;
     const option    = req.query.option ?? null;
+
+    if (from) {
+        const validate = validateIso8601Timestamp(from);
+        if (validate.error) return res.status(400).json(getResponseJSON('Bad request', 400));
+    }
+
+    if (to) {
+        const validate = validateIso8601Timestamp(to);
+        if (validate.error) return res.status(400).json(getResponseJSON('Bad request', 400));
+    }
 
     const acceptedTypes = ['verified', 'notyetverified', 'cannotbeverified', 'profileNotSubmitted', 'consentNotSubmitted', 'notSignedIn', 'all', 'active', 'notactive', 'passive', 'refusalswithdrawals'];
 
