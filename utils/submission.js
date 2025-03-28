@@ -267,7 +267,7 @@ const getParticipants = async (req, res, authObj) => {
             let response = await individualParticipant('token', token, obj.siteCodes, obj.isParent);
 
             if (!response) return res.status(404).json(getResponseJSON('Resource not found', 404));
-            if (response instanceof Error) res.status(500).json(getResponseJSON(response.message, 500));
+            if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
             
             return res.status(200).json({data: response, code: 200})
         }
