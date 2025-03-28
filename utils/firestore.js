@@ -579,7 +579,7 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
 
             if (cursor) {
                 const collection = 'participants';
-                const doc = await getCursorDocumnet(collection, cursor);
+                const doc = await getCursorDocument(collection, cursor);
 
                 if (doc.exists) {
                     query = query.startAfter(doc);
@@ -619,7 +619,7 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
  * Retrieves a document from a Firestore collection using its ID for pagination purposes.
  *
  * @async
- * @function getCursorDocumnet
+ * @function getCursorDocument
  * @param {string} collection - The name of the Firestore collection to query.
  * @param {string} cursor - The document ID to retrieve, typically the last document ID from a previous query result.
  * @returns {Promise<FirebaseFirestore.DocumentSnapshot|Error>} A Promise that resolves to:
@@ -628,7 +628,7 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
  * 
  * @throws {Error} May throw an error during document retrieval
  */
-const getCursorDocumnet = async (collection, cursor) => {
+const getCursorDocument = async (collection, cursor) => {
     try {
         const ref = db.collection(collection).doc(cursor);
         const doc = await ref.get();

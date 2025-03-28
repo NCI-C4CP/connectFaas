@@ -250,12 +250,12 @@ const getParticipants = async (req, res, authObj) => {
 
     if (from) {
         const validate = validateIso8601Timestamp(from);
-        if (validate.error) return res.status(400).json(getResponseJSON('Bad request', 400));
+        if (validate.error) return res.status(400).json(getResponseJSON(`Bad request. ${validate.message}`, 400));
     }
 
     if (to) {
         const validate = validateIso8601Timestamp(to);
-        if (validate.error) return res.status(400).json(getResponseJSON('Bad request', 400));
+        if (validate.error) return res.status(400).json(getResponseJSON(`Bad request. ${validate.message}`, 400));
     }
 
     const acceptedTypes = ['verified', 'notyetverified', 'cannotbeverified', 'profileNotSubmitted', 'consentNotSubmitted', 'notSignedIn', 'all', 'active', 'notactive', 'passive', 'refusalswithdrawals'];
