@@ -581,12 +581,11 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
                 const collection = 'participants';
                 const doc = await getCursorDocument(collection, cursor);
 
-                if (doc.exists) {
-                    query = query.startAfter(doc);
+                if (doc instanceof Error) {
+                    return new Error(`Document with ID ${cursor} not found`);
                 }
-                else {
-                    new Error(`Document with ID ${cursor} not found`);
-                }
+
+                query = query.startAfter(doc);
             }
 
             query = query.limit(limit);
