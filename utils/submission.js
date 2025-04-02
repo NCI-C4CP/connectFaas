@@ -247,6 +247,7 @@ const getParticipants = async (req, res, authObj) => {
     const to        = req.query.to ?? null;
     const token     = req.query.token ?? null;
     const option    = req.query.option ?? null;
+    const site      = req.query.site && obj.isParent && obj.siteCodes.includes(parseInt(req.query.site)) ? parseInt(req.query.site) : null;
 
     if (from) {
         const validate = validateIso8601Timestamp(from);
@@ -289,7 +290,7 @@ const getParticipants = async (req, res, authObj) => {
         }
 
         const { retrieveParticipants } = require(`./firestore`);
-        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, refusalConcept);
+        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, site, refusalConcept);
 
         if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
 

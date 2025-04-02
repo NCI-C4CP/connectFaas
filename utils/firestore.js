@@ -1,6 +1,9 @@
 const admin = require('firebase-admin');
 const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore');
-admin.initializeApp();
+admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    projectId: 'nih-nci-dceg-connect-dev'
+});
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWReplacementKitData, processParticipantHomeMouthwashKitData, conceptMappings } = require('./shared');
@@ -494,6 +497,7 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  * @param {string} [cursor] - The ID of the last document retrieved in a previous request, used for pagination.
  * @param {string} [from] - A lower bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` >= `from` are returned.
  * @param {string} [to] - An upper bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` <= `to` are returned.
+ * @param {string} [site] - The site code for filtering documents. If provided, only documents with `site` == `site` are returned.
  * @param {string} [refusalConcept] - The concept ID for filtering documents by refusal/withdrawal status.
  * @returns {Promise<{docs: Object[], cursor: string}>} An object containing:
  *   - `docs`: An array of participant document data.
@@ -501,7 +505,7 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  *
  * @throws {Error} Will throw an error if the query or document retrieval fails.
  */
-const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, from, to, refusalConcept) => {
+const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, from, to, site, refusalConcept) => {
     try {
         const conditions = {
             'verified': {
@@ -566,7 +570,7 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
                 query = query.where(field, operation, value);
             });
 
-            query = query.where('827220437', isParent ? 'in' : '==', siteCode);
+            query = site ? query.where('827220437', '==', site) : query.where('827220437', isParent ? 'in' : '==', siteCode);
 
             if (orderBy) query = query.orderBy(...orderBy);
 
