@@ -1,6 +1,7 @@
 const { cleanSurveyData, getResponseJSON, lockedAttributes, setHeaders, logIPAddress, moduleConceptsToCollections, moduleStatusConcepts } = require('./shared');
 const { updateResponse } = require('./firestore');
 const fieldMapping = require('./fieldToConceptIdMapping');
+const { validateIso8601Timestamp } = require('./validation');
 
 const submit = async (res, data, uid) => {
     // @TODO: This would all be better revamped with a transaction
@@ -206,173 +207,98 @@ const submitSocial = async (req, res, uid) => {
     }
 }
 
+/**
+ * Get participants based on the specified query type.
+ * @param {object} req - The request object.
+ * @param {object} res - The response object.
+ * @param {object} [authObj] - Provided on access from SMDB or Biospecimen. If provided, the authObj contains the site codes.
+ * @returns {array<object>} - An array of participant data objects.
+ */
 const getParticipants = async (req, res, authObj) => {
     logIPAddress(req);
     setHeaders(res);
 
-    if(req.method === 'OPTIONS') return res.status(200).json({code: 200});
-        
-    if(req.method !== 'GET') {
-        return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    }
-    let obj = {};
-    if(authObj) {
+    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
+    if (req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if (req.query.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
+    if (!req.query.type) return res.status(404).json(getResponseJSON('Resource not found', 404));
+
+    let obj;
+    
+    if (authObj) {
         obj = authObj;
     }
     else {
         const { APIAuthorization } = require('./shared');
         const authorized = await APIAuthorization(req);
-        if(authorized instanceof Error){
-            return res.status(500).json(getResponseJSON(authorized.message, 500));
-        }
-    
-        if(!authorized){
-            return res.status(401).json(getResponseJSON('Authorization failed!', 401));
-        }
+        
+        if (authorized instanceof Error) return res.status(500).json(getResponseJSON(authorized.message, 500));
+        if (!authorized) return res.status(401).json(getResponseJSON('Authorization failed!', 401));
     
         const { isParentEntity } = require('./shared');
         obj = await isParentEntity(authorized);
     }
-    
-    const isParent = obj.isParent;
-    const siteCodes = obj.siteCodes;
 
-    if(!req.query.type) return res.status(404).json(getResponseJSON('Resource not found', 404));
+    const type      = req.query.type;
+    const limit     = req.query.limit ? parseInt(req.query.limit) : 100;
+    const cursor    = req.query.cursor ?? null;
+    const from      = req.query.from ?? null;
+    const to        = req.query.to ?? null;
+    const token     = req.query.token ?? null;
+    const option    = req.query.option ?? null;
+    const site      = req.query.site && obj.isParent && obj.siteCodes.includes(parseInt(req.query.site)) ? parseInt(req.query.site) : null;
 
-    if(req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if (from) {
+        const validate = validateIso8601Timestamp(from);
+        if (validate.error) return res.status(400).json(getResponseJSON(`Bad request. ${validate.message}`, 400));
+    }
 
-    let queryType = '';
-    const limit = req.query.limit ? parseInt(req.query.limit) : 100;
-    const page = req.query.page ? parseInt(req.query.page) : 1;
+    if (to) {
+        const validate = validateIso8601Timestamp(to);
+        if (validate.error) return res.status(400).json(getResponseJSON(`Bad request. ${validate.message}`, 400));
+    }
 
-    const { getRestrictedFields } = require('./firestore')
-    const restriectedFields = await getRestrictedFields();
+    const acceptedTypes = ['verified', 'notyetverified', 'cannotbeverified', 'profileNotSubmitted', 'consentNotSubmitted', 'notSignedIn', 'all', 'active', 'notactive', 'passive', 'refusalswithdrawals'];
 
-    if (req.query.type === 'verified') queryType = req.query.type;
-    else if (req.query.type === 'notyetverified') queryType = req.query.type;
-    else if (req.query.type === 'cannotbeverified') queryType = req.query.type;
-    else if (req.query.type === 'profileNotSubmitted') queryType = req.query.type;
-    else if (req.query.type === 'consentNotSubmitted') queryType = req.query.type;
-    else if (req.query.type === 'notSignedIn') queryType = req.query.type;
-    else if (req.query.type === 'all') queryType = req.query.type;
-    else if (req.query.type === 'active') queryType = req.query.type;
-    else if (req.query.type === 'notactive') queryType = req.query.type;
-    else if (req.query.type === 'passive') queryType = req.query.type;
-    else if (req.query.type === 'individual'){
-        if (req.query.token) {
-            queryType = "individual";
+    if (type === 'individual') {
+        if (token) {
+
             const { individualParticipant } = require(`./firestore`);
-            let response = await individualParticipant('token', req.query.token, siteCodes, isParent);
-            if(!response) return res.status(404).json(getResponseJSON('Resource not found', 404));
-            if(response instanceof Error) res.status(500).json(getResponseJSON(response.message, 500));
-            if(response.length > 0) response = removeRestrictedFields(response, restriectedFields, isParent);
-            if(response) return res.status(200).json({data: response, code: 200})
+            let response = await individualParticipant('token', token, obj.siteCodes, obj.isParent);
+
+            if (!response) return res.status(404).json(getResponseJSON('Resource not found', 404));
+            if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
+            
+            return res.status(200).json({data: response, code: 200})
         }
-        else{
+        else {
             return res.status(400).json(getResponseJSON('Bad request', 400));
         }
     }
-    else if(req.query.type === 'filter') {
-        const filterObsoleteNotification = "IMPORTANT: the type == 'filter' API is obsolete. Please use the new 'getFilteredParticipants' API. " + 
-            "Ex: .../getFilteredParticipants?firstName=John&lastName=Doe | API notes & documentation: https://github.com/episphere/connect/issues/817#issuecomment-1883893946";
+    else if (acceptedTypes.includes(type)) {
         
-        return res.status(410).json({data: [], message: filterObsoleteNotification, code: 410});
-    }
-    else if (req.query.type === 'refusalswithdrawals') {
-        
-        const { refusalWithdrawalConcepts } = require('./shared');
+        let refusalConcept;
 
-        let concept;
+        if (type === 'refusalswithdrawals') {
+            const { refusalWithdrawalConcepts } = require('./shared');
 
-        if(req.query.option) {
-            if(refusalWithdrawalConcepts[req.query.option]) {
-                concept = refusalWithdrawalConcepts[req.query.option];
-            }
-            else {
+            if (option && !refusalWithdrawalConcepts[option]) {
                 return res.status(400).json(getResponseJSON('Bad request', 400));
             }
-        }
-        else {
-            concept = refusalWithdrawalConcepts.anyRefusalWithdrawal;
+            refusalConcept = refusalWithdrawalConcepts[option] ?? refusalWithdrawalConcepts.anyRefusalWithdrawal;
         }
 
-        const { retrieveRefusalWithdrawalParticipants } = require('./firestore');
-        let result = await retrieveRefusalWithdrawalParticipants(siteCodes, isParent, concept, limit, page);
+        const { retrieveParticipants } = require(`./firestore`);
+        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, site, refusalConcept);
 
-        if(result instanceof Error){
-            return res.status(400).json(getResponseJSON(result.message, 400));
-        }
+        if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
 
-        return res.status(200).json({data: result, code: 200, limit, dataSize: result.length});
+        return res.status(200).json({data: response, code: 200})
     }
-    else{
+    else {
         return res.status(404).json(getResponseJSON('Resource not found', 404));
     }
-    const { retrieveParticipants } = require(`./firestore`);
-    const site = isParent && req.query.siteCode && siteCodes.includes(parseInt(req.query.siteCode)) ? parseInt(req.query.siteCode) : null;
-    if(site) console.log(`Retrieving data for siteCode - ${site}`);
-    const from = req.query.from ? req.query.from : null; 
-    const to = req.query.to ? req.query.to : null; 
-    let data = await retrieveParticipants(siteCodes, queryType, isParent, limit, page, site, from, to);
-    if(data instanceof Error){
-        return res.status(500).json(getResponseJSON(data.message, 500));
-    }
-    
-    // Remove module data from participant records.
-    if(data.length > 0) data = await removeRestrictedFields(data, restriectedFields, isParent);
-    return res.status(200).json({data, code: 200, limit, dataSize: data.length})
-}
-
-const getParticipantsDemo = async (req, res) => {
-    logIPAddress(req);
-    setHeaders(res);
-    
-    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
-    if (req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-
-    if (!req.query.type || req.query.type !== 'verified') return res.status(404).json(getResponseJSON('Resource not found!', 404));
-    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
-    if (req.query.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
-
-    let obj = {};
-
-    const { APIAuthorization } = require('./shared');
-    const authorized = await APIAuthorization(req);
-
-    if (authorized instanceof Error) return res.status(500).json(getResponseJSON(authorized.message, 500));
-    if (!authorized) return res.status(401).json(getResponseJSON('Authorization failed!', 401));
-
-    const { isParentEntity } = require('./shared');
-    obj = await isParentEntity(authorized);
-
-    const isParent = obj.isParent;
-    const siteCodes = obj.siteCodes;
-    const queryType = req.query.type;
-    const limit = req.query.limit ? parseInt(req.query.limit) : 100;
-    const cursor = req.query.cursor ?? null;
-    const from = req.query.from ? req.query.from : null; 
-    const to = req.query.to ? req.query.to : null; 
-
-    const { retrieveParticipantsDemo } = require(`./firestore`);
-    const data = await retrieveParticipantsDemo(siteCodes, queryType, isParent, limit, cursor, from, to);
-
-    if(data instanceof Error){
-        return res.status(500).json(getResponseJSON(data.message, 500));
-    }
-
-    const docs = data.docs;
-
-    return res.status(200).json({data: docs, code: 200, cursor: data.cursor});
-}
-
-const removeRestrictedFields = (data, restriectedFields, isParent) => {
-    if(restriectedFields && !isParent) {
-        return data.filter(dt => {
-            restriectedFields.forEach(field => delete dt[field]);
-            return dt;
-        })
-    }
-    else return data;
 }
 
 /**
@@ -788,7 +714,6 @@ module.exports = {
     submitSocial,
     getFilteredParticipants,
     getParticipants,
-    getParticipantsDemo,
     identifyParticipant,
     getUserSurveys,
     getUserCollections,
