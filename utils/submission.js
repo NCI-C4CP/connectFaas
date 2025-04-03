@@ -294,7 +294,7 @@ const getParticipants = async (req, res, authObj) => {
 
         if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
 
-        return res.status(200).json({data: response, code: 200})
+        return res.status(200).json({data: response.docs, cursor: response.cursor, code: 200});
     }
     else {
         return res.status(404).json(getResponseJSON('Resource not found', 404));
