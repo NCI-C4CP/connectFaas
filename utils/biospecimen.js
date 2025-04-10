@@ -879,7 +879,7 @@ const biospecimenAPIs = async (req, res) => {
         }
         const participantCID = req.body?.Connect_ID;
         if(!participantCID) {
-            return res.status(400).json(getResponseJSON('No participant connect ID', 500));
+            return res.status(400).json(getResponseJSON('No participant connect ID', 400));
         }
 
         try {
