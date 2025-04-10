@@ -3199,7 +3199,7 @@ const markParticipantAddressUndeliverable = async (participantCID) => {
     } catch(err) {
         return {
             success: 'false',
-            error: err && err.message ? err.message : err
+            error: err?.message || err
         }
     }
 }
