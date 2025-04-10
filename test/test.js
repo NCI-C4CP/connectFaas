@@ -1080,7 +1080,7 @@ describe('biospecimen', async () => {
             assert.equal(Object.keys(updates).length, 0);
         });
 
-        it('Should clear kitStatus because participant has P.O. box', () => {
+        it('Should set kitStatus undeliverable because participant has P.O. box', () => {
             let data = {
                 [fieldToConceptIdMapping.withdrawConsent]: fieldToConceptIdMapping.no,
                 [fieldToConceptIdMapping.participantDeceasedNORC]: fieldToConceptIdMapping.no,
@@ -1100,7 +1100,7 @@ describe('biospecimen', async () => {
 
             };
             const updates = validation.processMouthwashEligibility(data);
-            assert.equal(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`], undefined);
+            assert.equal(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`], fieldToConceptIdMapping.addressUndeliverable);
         });
 
         it('Should not set kitStatus because participant kit has already shipped', () => {
@@ -1222,6 +1222,25 @@ describe('biospecimen', async () => {
                     expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant\'s initial home mouthwash kit has not been sent/);
                 });
                 
+            });
+            it('Should prevent a participant whose initial kitStatus is address undeliverable from obtaining a replacement', () => {
+                const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressUndeliverable
+                            }
+                        }
+                    }
+                };
+                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
             });
             it('Should throw error on unrecognized kitStatus for initial home MW kit', () => {
                 const data = {
@@ -1346,6 +1365,28 @@ describe('biospecimen', async () => {
                     expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant\'s first replacement home mouthwash kit has not been sent/);
                 });
     
+            });
+            it('Should prevent a participant whose replacement kitStatus is address undeliverable from obtaining a replacement', () => {
+                const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789,
+                    [fieldToConceptIdMapping.collectionDetails]: {
+                        [fieldToConceptIdMapping.baseline]: {
+                            [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                            },
+                            [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                                [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressUndeliverable
+                            }
+                        }
+                    }
+                };
+                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
             });
             it('Should throw error on unrecognized kitStatus for first replacement home MW kit', () => {
                 const data = {

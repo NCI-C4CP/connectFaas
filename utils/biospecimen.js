@@ -873,6 +873,26 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
 
+    else if (api === 'markParticipantAddressUndeliverable') {
+        if(req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+        const participantCID = req.body?.Connect_ID;
+        if(!participantCID) {
+            return res.status(400).json(getResponseJSON('No participant connect ID', 500));
+        }
+
+        try {
+            const { markParticipantAddressUndeliverable } = require('./firestore');
+            const data = await markParticipantAddressUndeliverable(participantCID);
+            return res.status(200).json({code: 200, data});
+        } catch(error) {
+            console.error(error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+
+    }
+
     else if(api === 'getElgiblePtsForAssignment') {
         if(req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
