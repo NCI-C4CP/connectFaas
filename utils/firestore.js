@@ -2979,7 +2979,7 @@ const assignKitToParticipant = async (data) => {
     let kitAssignmentResult;
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
-        kitType, mouthwashKit, dateKitRequested,kitLevel, initialKit, replacementKit1, replacementKit2 } = fieldMapping;
+        kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2 } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
