@@ -1047,12 +1047,14 @@ const getHomeMWReplacementKitData = (data) => {
     const {
         collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, 
         kitType, mouthwashKit, dateKitRequested, kitStatus,
-        pending, initialized, addressPrinted, assigned, shipped, received
+        pending, initialized, addressUndeliverable, addressPrinted, assigned, shipped, received
     } = fieldMapping;
     if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
         // If two replacements, they are out of replacement kits; error out.
         throw new Error('Participant has exceeded supported number of replacement kits.');
     }
+
+
     
    const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
 
@@ -1075,6 +1077,10 @@ const getHomeMWReplacementKitData = (data) => {
             {
                 throw new Error('This participant\'s first replacement home mouthwash kit has not been sent');
             }
+            case addressUndeliverable:
+            {
+                throw new Error('Participant address information is invalid.');
+            }
             case shipped:
             case received:
                 // Eligible for second replacement
@@ -1096,6 +1102,10 @@ const getHomeMWReplacementKitData = (data) => {
             {
                 throw new Error('This participant\'s initial home mouthwash kit has not been sent');
             }
+            case addressUndeliverable:
+            {
+                throw new Error('Participant address information is invalid.');
+            }
             case shipped:
             case received:
                 // Eligible for first replacement
@@ -1106,11 +1116,13 @@ const getHomeMWReplacementKitData = (data) => {
         }
     }
 
+    const requestedDT = new Date().toISOString();
+
     // Do we need to copy over any other data? What other data do we need to set here?
     const updatedParticipantObject = {
         [[fieldPath, kitType].join('.')]: mouthwashKit,
         [[fieldPath, kitStatus].join('.')]: initialized,
-        [[fieldPath, dateKitRequested].join('.')]: new Date().toISOString()
+        [[fieldPath, dateKitRequested].join('.')]: requestedDT
     };
 
     return updatedParticipantObject;

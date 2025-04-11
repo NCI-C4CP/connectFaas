@@ -1,5 +1,5 @@
 const admin = require('firebase-admin');
-const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore');
+const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
@@ -2721,7 +2721,7 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
 
 const eligibleParticipantsForKitAssignment = async () => {
     try {
-        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, dateKitRequested, kitStatus } = fieldMapping;
+        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, kitStatus } = fieldMapping;
 
         const participantSnapshotPromises = [
             // Initial home MW kits
@@ -2877,10 +2877,11 @@ const addKitStatusToParticipantV2 = async (participants) => {
 };
 
 const assignKitToParticipant = async (data) => {
+
     let kitAssignmentResult;
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
-        kitType, mouthwashKit } = fieldMapping;
+        kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2 } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
@@ -3039,10 +3040,13 @@ const assignKitToParticipant = async (data) => {
 
         const prevParticipantObject = participantDoc.data()?.[collectionDetails]?.[baseline];
         let path = bioKitMouthwash;
+        let kitLevelValue = initialKit;
         if(prevParticipantObject?.[bioKitMouthwashBL2]) {
             path = bioKitMouthwashBL2;
+            kitLevelValue = replacementKit2;
         } else if(prevParticipantObject?.[bioKitMouthwashBL1]) {
             path = bioKitMouthwashBL1;
+            kitLevelValue = replacementKit1;
         }
         
         const updatedParticipantObject = {
@@ -3050,6 +3054,9 @@ const assignKitToParticipant = async (data) => {
             [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: assigned,
             [`${collectionDetails}.${baseline}.${path}.${uniqueKitID}`]: data[uniqueKitID]
         };
+
+        kitData[kitLevel] = kitLevelValue;
+        kitData[dateKitRequested] = prevParticipantObject?.[path]?.[dateKitRequested];
 
         transaction.update(kitDoc.ref, kitData);
         transaction.update(participantDoc.ref, updatedParticipantObject);
@@ -3064,7 +3071,40 @@ const assignKitToParticipant = async (data) => {
     return kitAssignmentResult;
 };
 
-
+const markParticipantAddressUndeliverable = async (participantCID) => {
+    try {
+        const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID').get();
+        printDocsCount(snapshot, "markParticipantAddressUndeliverable");
+        if (snapshot.size === 0) {
+            // No matching document found, stop the update
+            return {success: 'false', error: 'No matching participant found for CID ' + participantCID};
+        }
+        const docId = snapshot.docs[0].id;
+    
+        const data = snapshot.docs[0].data();
+        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressUndeliverable } = fieldMapping;
+        let path = bioKitMouthwash;
+        if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
+            path = bioKitMouthwashBL2;
+        } else if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
+            path = bioKitMouthwashBL1;
+        }
+        
+        await db.collection("participants").doc(docId).update({
+            [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: addressUndeliverable
+        });
+    
+        return {
+            success: 'true',
+            path
+        }
+    } catch(err) {
+        return {
+            success: 'false',
+            error: err?.message || err
+        }
+    }
+}
 
 
 const processVerifyScannedCode = async (id) => {
@@ -3263,6 +3303,7 @@ const storeKitReceipt = async (pkg) => {
 
             toReturn = {
               status: true,
+              path,
               Connect_ID,
               token,
               uid,
@@ -3411,11 +3452,15 @@ const getParticipantsByKitStatus = async (statusType) => {
 
 const shippedKitStatusParticipants = async () => { 
     try {
-        const { collectionDetails, baseline, bioKitMouthwash, kitStatus, 
-                shipped, healthCareProvider, mouthwashSurveyCompletionStatus, shippedDateTime} = fieldMapping;
+        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, 
+                shipped, healthCareProvider, mouthwashSurveyCompletionStatus, shippedDateTime, uniqueKitID} = fieldMapping;
         
         const snapshot = await db.collection("participants")
-                            .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', shipped)
+                            .where(Filter.or(
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', shipped),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', shipped),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', shipped)
+                            ))
                             .orderBy(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${shippedDateTime}`, 'asc')
                             .select('Connect_ID', 
                                 `${healthCareProvider}`, 
@@ -3424,39 +3469,79 @@ const shippedKitStatusParticipants = async () => {
                             .get();
         
         if (!snapshot.empty) {
-            const participants = [];
+            const participants = {};
+            const toReturn = [];
+            const kitLookupByParticipant = {};
             const kitAssemblyPromises = [];
             const { supplyKitId, supplyKitTrackingNum, returnKitId, collectionCardId, returnKitTrackingNum } = fieldMapping;
 
             for (const docs of snapshot.docs) {
                 const data = docs.data();
                 const participantConnectID = data['Connect_ID'];
-        
-                participants.push({
+
+                participants[participantConnectID] = {
                     "Connect_ID": participantConnectID,
                     [healthCareProvider]: data[healthCareProvider],
                     [shippedDateTime]: data[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[shippedDateTime] || '',
                     [mouthwashSurveyCompletionStatus]: data[mouthwashSurveyCompletionStatus],
-                });
-                
-                kitAssemblyPromises.push(
-                    db.collection("kitAssembly")
-                        .where('Connect_ID', '==', participantConnectID)
-                        .select(`${supplyKitId}`, `${supplyKitTrackingNum}`, `${returnKitTrackingNum}`, `${returnKitId}`, `${collectionCardId}`)
-                        .get()
-                );
+                };
+
+
+                // Find the home MW kits for the participant, both initial and any replacements
+                // Only include shipped ones
+
+                const kitFields = [`${supplyKitId}`, `${supplyKitTrackingNum}`, `${returnKitTrackingNum}`, `${returnKitId}`, `${collectionCardId}`, `${uniqueKitID}`, 'Connect_ID'];
+
+                if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == shipped) {
+                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash][uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: 'Initial'};
+                    kitAssemblyPromises.push(
+                        db.collection("kitAssembly")
+                            .where(`${uniqueKitID}`, '==', kitId)
+                            .select(...kitFields)
+                            .get()
+                    );
+                }
+
+                if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == shipped) {
+                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '2nd'};
+                    kitAssemblyPromises.push(
+                        db.collection("kitAssembly")
+                            .where(`${uniqueKitID}`, '==', kitId)
+                            .select(...kitFields)
+                            .get()
+                    );
+                }
+
+                if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] == shipped) {
+                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2][uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '3rd'};
+                    kitAssemblyPromises.push(
+                        db.collection("kitAssembly")
+                            .where(`${uniqueKitID}`, '==', kitId)
+                            .select(...kitFields)
+                            .get()
+                    );
+
+                }
+
             }
 
             const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
             printDocsCount(kitAssemblySnapshots, "shippedKitStatusParticipants");
 
-            kitAssemblySnapshots.forEach((snapshot, index) => {
+            kitAssemblySnapshots.forEach((snapshot) => {
                 if(!snapshot.empty) {
                     const kitData = snapshot.docs[0].data();
-                    Object.assign(participants[index], kitData);
+                    const {participant, kitIteration} = kitLookupByParticipant[kitData[uniqueKitID]];
+                    toReturn.push({...participants[participant], ...kitData, kitIteration});
                 }
             });
-            return participants;
+            // Because of how this array is built
+            // These should already be sorted in order by participant,
+            // and then in order of initial, replacement 1, replacement 2
+            return toReturn;
         }
     } catch (error) {
         console.error(error);
@@ -4494,6 +4579,7 @@ module.exports = {
     storeKitReceipt,
     addKitStatusToParticipant,
     addKitStatusToParticipantV2,
+    markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
     requestHomeMWReplacementKit,
     processSendGridEvent,
