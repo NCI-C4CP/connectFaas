@@ -3208,7 +3208,7 @@ const storeKitReceipt = async (pkg) => {
             collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
             collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, received, shipped,
             pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
-            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime
+            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime,
         } = fieldMapping;
         let toReturn;
         await db.runTransaction(async (transaction) => {
@@ -3274,15 +3274,22 @@ const storeKitReceipt = async (pkg) => {
                 [collectionDateTimeStamp]: pkg[collectionDateTimeStamp],
                 [fieldMapping.collectionId]:  collectionId,
                 [healthCareProvider]: site,
+                [uniqueKitID]: kitData[uniqueKitID],
                 'Connect_ID': Connect_ID,
                 'token': token,
                 'uid': uid
             }
 
-            // Create a reference to a document that doesn't exist yet with the given ID
-            const newDocRef = db.collection('biospecimen').doc(uid);
+            // This should be a new document, but just in case
+            let biospecimenDocRef;
+            let biospecimenSnapshot = await transaction.get(db.collection('biospecimen').where(`${uniqueKitID}`, '==', kitData[uniqueKitID]));
+            if(biospecimenSnapshot.size > 0) {
+                biospecimenDocRef = biospecimenSnapshot.docs[0].ref;
+            } else {
+                biospecimenDocRef = db.collection('biospecimen').doc();
+            }
             
-            transaction.set(newDocRef, biospecPkg);
+            transaction.set(biospecimenDocRef, biospecPkg);
 
             transaction.update(kitDoc.ref, {
                 [collectionCardFlag]: pkg[collectionCardFlag] === true ? yes : no,
