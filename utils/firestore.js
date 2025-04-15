@@ -3264,6 +3264,16 @@ const storeKitReceipt = async (pkg) => {
                 return;
             }
 
+            /**
+             * Check that the collection date is not later than the date received or earlier than the date shipped.
+             * If either is true, return an error.
+             * This check is completed once. If a second request with the same collection date is made, it will pass.
+             */
+            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shipped]) && !pkg["collectionDateChecked"]) {
+                toReturn = { status: 'Check collection date, possible invalid entry' };
+                return;
+            }
+
             const biospecPkg = {
                 [fieldMapping.tubesBagsCids.mouthwashTube1]: {
                     [tubeIsCollected]: yes,
