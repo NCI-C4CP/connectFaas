@@ -1129,7 +1129,7 @@ const getHomeMWReplacementKitData = (data) => {
 }
 
 // Note: existing snake_casing follows through to BPTL CSV reporting. Do not update to camelCase without prior communication.
-const processParticipantHomeMouthwashKitData = (record, printLabel) => {
+const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBoxes) => {
     const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         firstName, lastName, 
         isPOBox, address1, address2, 
@@ -1161,7 +1161,7 @@ const processParticipantHomeMouthwashKitData = (record, printLabel) => {
     } else {
         const addressLineOne = record?.[address1];
         const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
-        if(isPOBoxMatch) {
+        if(isPOBoxMatch && !includePOBoxes) {
             return null;
         }
         addressObj = {
