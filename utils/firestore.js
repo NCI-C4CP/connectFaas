@@ -2790,7 +2790,7 @@ const requestHomeMWReplacementKit = async (connectId) => {
         const data = participantSnapshot.docs[0].data();
         
         try {
-            if(data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
+            if (data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
                 throw new Error('Participant has withdrawn consent.');
             } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
                 throw new Error('Participant is deceased.');
