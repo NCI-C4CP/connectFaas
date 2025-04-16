@@ -2790,6 +2790,11 @@ const requestHomeMWReplacementKit = async (connectId) => {
         const data = participantSnapshot.docs[0].data();
         
         try {
+            if(data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
+                throw new Error('Participant has withdrawn consent.');
+            } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
+                throw new Error('Participant is deceased.');
+            }
             // Do we need to copy over any other data? What other data do we need to set here?
             const updatedParticipantObject = getHomeMWReplacementKitData(data);
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
