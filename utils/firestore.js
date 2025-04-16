@@ -2622,8 +2622,10 @@ const queryHomeCollectionAddressesToPrint = async (limit) => {
         if (snapshot.size === 0) return [];
 
 
-        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true));
-        return mappedResults.filter(result => result !== null);
+        // If we have made it to this stage and there is a P.O. Box,
+        // we allow it to show in the print labels list to avoid count discrepancies
+        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true, true));
+        return mappedResults;
     } catch (error) {
         throw new Error(`Error querying home collection addresses to print`, {cause: error});
     }
@@ -2670,11 +2672,10 @@ const queryCountReplacementHomeCollectionAddressesToPrint = async () => {
 const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
     try {
         const { bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, initialized,
-            collectionDetails, baseline, dateKitRequested } = fieldMapping;
+            collectionDetails, baseline } = fieldMapping;
 
         // Two queries, one for participants with replacement kit 1 and one for participants with replacement kit 2
-        // Due to possible overlap and Firestore's lack of an or query, must do two queries and manually combine
-        // while checking for duplicates
+        // Must be manually sorted due to using different date values depending on location
         const path1 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`;
         const path2 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`;
 
@@ -2692,10 +2693,7 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
         if (snapshot1.size === 0 && snapshot2.size === 0) return [];
 
 
-        let mappedResults = snapshot1.docs
-            .map(doc => processParticipantHomeMouthwashKitData(doc.data(), true))
-            .concat(snapshot2.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true)))
-            .filter(result => result !== null)
+        let mappedResults = snapshot1.docs.map(doc => doc.data()).concat(snapshot2.docs.map(doc => doc.data()))
             .sort((a, b) => {
                 let aDate = a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
                 let bDate = b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
@@ -2704,6 +2702,9 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
         if (limit && limit < mappedResults.length) {
             mappedResults = mappedResults.slice(0, limit);
         }
+        // If we have made it to this stage and there is a P.O. Box,
+        // we allow it to show in the print labels list to avoid count discrepancies
+        mappedResults = mappedResults.map(data => processParticipantHomeMouthwashKitData(data, true, true));    
         return mappedResults;
     } catch (error) {
         throw new Error(`Error querying home collection addresses to print`, {cause: error});
