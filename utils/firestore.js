@@ -2722,7 +2722,7 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
 
 const eligibleParticipantsForKitAssignment = async () => {
     try {
-        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, kitStatus } = fieldMapping;
+        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, kitStatus, dateKitRequested } = fieldMapping;
 
         const participantSnapshotPromises = [
             // Initial home MW kits
@@ -2753,25 +2753,25 @@ const eligibleParticipantsForKitAssignment = async () => {
             .concat(firstReplacementKitSnapshot.docs)
             .concat(secondReplacementKitSnapshot.docs)
             .sort((a, b) => {
-                const aVal = a?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
-                const bVal = b?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+                const aData = a.data();
+                const bData = b.data();
+                const aVal = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+                const bVal = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
                 if(aVal === bVal) {
                     return 0;
                 }
-                return aVal > bVal ? -1 : 1; // @TODO: Check that this matches
-            })
+                return aVal < bVal ? -1 : 1; // Oldest to newest
+            });
+
 
         let allPts = sortedReplacements
             .concat(snapshot.docs);
 
 
-        // Sort allPts
-        // Filter out redundancies
-
-        // printDocsCount(snapshot, "eligibleParticipantsForKitAssignment");
-
         if (allPts.length === 0) return [];
-        const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false));
+        // Once we get to this stage, we want any PO Boxes which have made it this far far to appear
+        // so that they can manually be marked as undeliverable
+        const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false, true));
         return mappedResults.filter(result => result !== null);
 
     } catch(error) {
