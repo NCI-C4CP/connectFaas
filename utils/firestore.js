@@ -3079,7 +3079,9 @@ const assignKitToParticipant = async (data) => {
 
 const markParticipantAddressUndeliverable = async (participantCID) => {
     try {
-        const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID').get();
+        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressUndeliverable } = fieldMapping;
+
+        const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID', `${collectionDetails}`).get();
         printDocsCount(snapshot, "markParticipantAddressUndeliverable");
         if (snapshot.size === 0) {
             // No matching document found, stop the update
@@ -3088,14 +3090,13 @@ const markParticipantAddressUndeliverable = async (participantCID) => {
         const docId = snapshot.docs[0].id;
     
         const data = snapshot.docs[0].data();
-        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressUndeliverable } = fieldMapping;
         let path = bioKitMouthwash;
         if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
             path = bioKitMouthwashBL2;
         } else if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
             path = bioKitMouthwashBL1;
         }
-        
+
         await db.collection("participants").doc(docId).update({
             [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: addressUndeliverable
         });
