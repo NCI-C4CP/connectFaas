@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const { getStatsFromBQ } = require('./bigquery');
+const { getStatsFromBQ, getAllCollections, getClinicalCollections, getResearchCollections } = require('./bigquery');
 
 const stats = async (req, res, authObj) => {
     logIPAddress(req);
@@ -78,8 +78,6 @@ const shortNameToTableName = {
   biospecimen: 'participants_biospecimen',
 };
 
-const shortNameArray = Object.keys(shortNameToTableName);
-
 /**
  * Retrieve all stats in one call for dashboard display
  * @param {Request} req 
@@ -95,12 +93,20 @@ const getStatsForDashboard = async (req, res, authObj) => {
   const siteCodes = authObj.siteCodes;
   let data = {};
   console.log(`Retrieveing stats data for siteCode: ${siteCodes}`);
+  let shortNameArray = Object.keys(shortNameToTableName);
 
   try {
     let promiseArray = [];
     for (const shortName of shortNameArray) {
       promiseArray.push(getStatsFromBQ(shortNameToTableName[shortName], siteCodes));
     }
+
+    shortNameArray.push('allCollections');
+    promiseArray.push(getAllCollections(siteCodes));
+    shortNameArray.push('researchCollections');
+    promiseArray.push(getResearchCollections(siteCodes));
+    shortNameArray.push('clinicalCollections');
+    promiseArray.push(getClinicalCollections(siteCodes));
 
     const results = await Promise.all(promiseArray);
     for (const [index, result] of results.entries()) {
