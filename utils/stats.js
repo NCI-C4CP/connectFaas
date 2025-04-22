@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const { getStatsFromBQ, getAllCollections, getClinicalCollections, getResearchCollections } = require('./bigquery');
+const { getStatsFromBQ, getCollectionStats } = require('./bigquery');
 
 const stats = async (req, res, authObj) => {
     logIPAddress(req);
@@ -102,11 +102,11 @@ const getStatsForDashboard = async (req, res, authObj) => {
     }
 
     shortNameArray.push('allCollections');
-    promiseArray.push(getAllCollections(siteCodes));
+    promiseArray.push(getCollectionStats('all', siteCodes));
     shortNameArray.push('researchCollections');
-    promiseArray.push(getResearchCollections(siteCodes));
+    promiseArray.push(getCollectionStats('research', siteCodes));
     shortNameArray.push('clinicalCollections');
-    promiseArray.push(getClinicalCollections(siteCodes));
+    promiseArray.push(getCollectionStats('clinical', siteCodes));
 
     const results = await Promise.all(promiseArray);
     for (const [index, result] of results.entries()) {
