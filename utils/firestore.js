@@ -3276,7 +3276,7 @@ const storeKitReceipt = async (pkg) => {
              * If either is true, return an error.
              * This check is completed once. If a second request with the same collection date is made, it will pass.
              */
-            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shipped]) && !pkg["collectionDateChecked"]) {
+            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && !pkg["collectionDateChecked"]) {
                 toReturn = { status: 'Check collection date, possible invalid entry' };
                 return;
             }
