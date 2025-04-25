@@ -3215,7 +3215,7 @@ const storeKitReceipt = async (pkg) => {
             collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
             collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, received, shipped,
             pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
-            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime,
+            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
         let toReturn;
         await db.runTransaction(async (transaction) => {
