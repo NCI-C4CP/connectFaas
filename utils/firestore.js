@@ -2672,7 +2672,7 @@ const queryCountReplacementHomeCollectionAddressesToPrint = async () => {
 const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
     try {
         const { bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, initialized,
-            collectionDetails, baseline } = fieldMapping;
+            collectionDetails, baseline, dateKitRequested } = fieldMapping;
 
         // Two queries, one for participants with replacement kit 1 and one for participants with replacement kit 2
         // Must be manually sorted due to using different date values depending on location
