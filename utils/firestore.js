@@ -2694,10 +2694,13 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 
 
         let mappedResults = snapshot1.docs.map(doc => doc.data()).concat(snapshot2.docs.map(doc => doc.data()))
-            .sort((a, b) => {
-                let aDate = a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
-                let bDate = b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
-                return aDate > bDate ? -1 : 1; // @TODO: Double-check order
+            .sort((aData, bData) => {
+                const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+                const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+                if(aDate === bDate) {
+                    return 0;
+                }
+                return aDate < bDate ? -1 : 1; // Oldest to newest
             });
         if (limit && limit < mappedResults.length) {
             mappedResults = mappedResults.slice(0, limit);
