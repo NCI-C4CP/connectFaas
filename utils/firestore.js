@@ -1,5 +1,5 @@
 const admin = require('firebase-admin');
-const { Transaction, FieldPath, FieldValue } = require('firebase-admin/firestore');
+const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
@@ -486,7 +486,7 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  * Retrieves participants from a Firestore collection based on specified conditions and pagination options.
  *
  * @async
- * @function retrieveParticipantsDemo
+ * @function retrieveParticipants
  * @param {string} siteCode - The code representing the current site.
  * @param {string} type - The type of participants to retrieve (e.g., "verified", "notyetverified", "cannotbeverified", "active", "notactive", "passive", "all", "profileNotSubmitted", "consentNotSubmitted", "notSignedIn").
  * @param {boolean} isParent - Indicates if the current user is a parent. Used to determine the 'where' operator for the site field.
@@ -494,23 +494,72 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  * @param {string} [cursor] - The ID of the last document retrieved in a previous request, used for pagination.
  * @param {string} [from] - A lower bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` >= `from` are returned.
  * @param {string} [to] - An upper bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` <= `to` are returned.
+ * @param {string} [site] - The site code for filtering documents. If provided, only documents with `site` == `site` are returned.
+ * @param {string} [refusalConcept] - The concept ID for filtering documents by refusal/withdrawal status.
  * @returns {Promise<{docs: Object[], cursor: string}>} An object containing:
  *   - `docs`: An array of participant document data.
  *   - `cursor`: The ID of the last document in the returned set (useful for pagination).
  *
  * @throws {Error} Will throw an error if the query or document retrieval fails.
  */
-const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor, from, to) => {
+const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, from, to, site, refusalConcept) => {
     try {
         const conditions = {
             'verified': {
                 where: [['821247024', '==', 197316935], ['699625233', '==', 353358909]],
                 orderBy: ['Connect_ID', 'asc'],
                 fromTo: '914594314'
+            },
+            'notyetverified': {
+                where: [['821247024', '==', 875007964], ['699625233', '==', 353358909]],
+                orderBy: ['Connect_ID', 'asc'],
+                fromTo: '914594314'
+            },
+            'cannotbeverified': {
+                where: [['821247024', '==', 219863910], ['699625233', '==', 353358909]],
+                orderBy: ['Connect_ID', 'asc'],
+                fromTo: '914594314'
+            },
+            'active': {
+                where: [['512820379', '==', 486306141]],
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'notactive': {
+                where: [['512820379', '==', 180583933]],
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'passive': {
+                where: [['512820379', '==', 854703046]],
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'all': {
+                orderBy: ['821247024', 'asc'],
+                fromTo: '914594314'
+            },
+            'profileNotSubmitted': {
+                where: [['699625233', '==', 104430631], ['919254129', '==', 353358909]],
+                orderBy: ['821247024', 'asc']
+            },
+            'consentNotSubmitted': {
+                where: [['699625233', '==', 104430631], ['919254129', '==', 104430631], ['230663853', '==', 353358909]],
+                orderBy: ['821247024', 'asc']
+            },
+            'notSignedIn': {
+                where: [['699625233', '==', 104430631], ['919254129', '==', 104430631], ['230663853', '==', 104430631]],
+                orderBy: ['821247024', 'asc']
+            },
+            'refusalswithdrawals': {
+                where: [[refusalConcept, '==', 353358909]],
+                orderBy: ['Connect_ID', 'asc']
             }
-        }
+        }  
 
-        const applyConditions = async (query, type, siteCode, limit, cursor, from, to) => {
+        const applyConditions = async (collection, type, siteCode, limit, cursor, from, to) => {
+            
+            let query = db.collection(collection);
             const queryConditions = conditions[type];
             const { where = [], orderBy, fromTo } = queryConditions;
 
@@ -518,7 +567,7 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
                 query = query.where(field, operation, value);
             });
 
-            query = query.where('827220437', isParent ? 'in' : '==', siteCode);
+            query = site ? query.where('827220437', '==', site) : query.where('827220437', isParent ? 'in' : '==', siteCode);
 
             if (orderBy) query = query.orderBy(...orderBy);
 
@@ -530,14 +579,14 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
             }
 
             if (cursor) {
-                const doc = await getCursorDocumnet('participants', cursor);
+                const collection = 'participants';
+                const doc = await getCursorDocument(collection, cursor);
 
-                if (doc.exists) {
-                    query = query.startAfter(doc);
+                if (doc instanceof Error) {
+                    return new Error(`Document with ID ${cursor} not found`);
                 }
-                else {
-                    new Error(`Document with ID ${cursor} not found`);
-                }
+
+                query = query.startAfter(doc);
             }
 
             query = query.limit(limit);
@@ -545,12 +594,13 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
             return query;
         };
 
-        let query = await applyConditions(db.collection('participants'), type, siteCode, limit, cursor, from, to);
-
-        let snapshot = await query.get();
-        printDocsCount(snapshot, `retrieveParticipantsDemo`);
-
+        const collection = 'participants';
+        const query = await applyConditions(collection, type, siteCode, limit, cursor, from, to);
+        const snapshot = await query.get();
         const results = {};
+
+        printDocsCount(snapshot, `retrieveParticipants`);
+
         results.docs = snapshot.docs.map(doc => doc.data());
 
         if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
@@ -559,13 +609,26 @@ const retrieveParticipantsDemo = async (siteCode, type, isParent, limit, cursor,
 
         return results;
     }
-    catch(error){
+    catch (error) {
         console.error(error);
         return new Error(error);
     }
 }
 
-const getCursorDocumnet = async (collection, cursor) => {
+/**
+ * Retrieves a document from a Firestore collection using its ID for pagination purposes.
+ *
+ * @async
+ * @function getCursorDocument
+ * @param {string} collection - The name of the Firestore collection to query.
+ * @param {string} cursor - The document ID to retrieve, typically the last document ID from a previous query result.
+ * @returns {Promise<FirebaseFirestore.DocumentSnapshot|Error>} A Promise that resolves to:
+ *   - The DocumentSnapshot if found
+ *   - An Error if the document doesn't exist or if retrieval fails
+ * 
+ * @throws {Error} May throw an error during document retrieval
+ */
+const getCursorDocument = async (collection, cursor) => {
     try {
         const ref = db.collection(collection).doc(cursor);
         const doc = await ref.get();
@@ -579,167 +642,6 @@ const getCursorDocumnet = async (collection, cursor) => {
     } catch (error) {
         console.error(error);
         return new Error(error);
-    }
-}
-
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
-const retrieveParticipants = async (siteCode, decider, isParent, limit, page, site, from, to) => {
-    try{
-        const operator = isParent ? 'in' : '==';
-        let snapshot;
-        const offset = (page-1)*limit;
-        if(decider === 'verified') {
-            let query = db.collection('participants')
-                            .where('821247024', '==', 197316935)
-                            .where('699625233', '==', 353358909)
-                            .orderBy("Connect_ID", "asc")
-                            .limit(limit)
-                            .offset(offset)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            snapshot = await query.get();
-        }
-        if(decider === 'notyetverified') {
-            let query = db.collection('participants')
-                                    .where('821247024', '==', 875007964)
-                                    .where('699625233', '==', 353358909)
-                                    .orderBy("Connect_ID", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'cannotbeverified') {
-            let query = db.collection('participants')
-                                    .where('821247024', '==', 219863910)
-                                    .where('699625233', '==', 353358909)
-                                    .orderBy("Connect_ID", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'profileNotSubmitted') {
-            let query = db.collection('participants')
-                                    .where('699625233', '==', 104430631)
-                                    .where('919254129', '==', 353358909)
-                                    .orderBy("821247024", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'consentNotSubmitted') {
-            let query = db.collection('participants')
-                                    .where('699625233', '==', 104430631)
-                                    .where('919254129', '==', 104430631)
-                                    .where('230663853', '==', 353358909)
-                                    .orderBy("821247024", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'notSignedIn') {
-            let query = db.collection('participants')
-                                    .where('699625233', '==', 104430631)
-                                    .where('919254129', '==', 104430631)
-                                    .where('230663853', '==', 104430631)
-                                    .orderBy("821247024", "asc")
-                                    .offset(offset)
-                                    .limit(limit)
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent                       
-            snapshot = await query.get();
-        }
-        if(decider === 'all') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent   
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-        if(decider === 'active') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.where("512820379", "==", 486306141) // Recruit type active
-                            .orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-        if(decider === 'notactive') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.where("512820379", "==", 180583933) // Recruit type not active
-                            .orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-        if(decider === 'passive') {
-            let query = db.collection('participants')
-            if(from || to) query = query.orderBy("914594314", "desc")
-            query = query.where("512820379", "==", 854703046) // Recruit type passive
-                            .orderBy("821247024", "asc")
-                            .offset(offset)
-                            .limit(limit)
-            
-            if(site) query = query.where('827220437', '==', site) // Get for a specific site
-            else query = query.where('827220437', operator, siteCode) // Get for all site if parent
-            if(from) query = query.where('914594314', '>=', from)
-            if(to) query = query.where('914594314', '<=', to)
-            snapshot = await query.get();
-        }
-
-        printDocsCount(snapshot, `retrieveParticipants; offset: ${offset}`);
-        return snapshot.docs.map(doc => doc.data());
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
-}
-
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
-const retrieveRefusalWithdrawalParticipants = async (siteCode, isParent, concept, limit, page) => {
-    try {
-        const operator = isParent ? 'in' : '==';
-        const offset = (page - 1) * limit;
-        
-        const snapshot = await db.collection('participants')
-                                .where('827220437', operator, siteCode)
-                                .where(concept, '==', 353358909)
-                                .orderBy('Connect_ID', 'asc')
-                                .offset(offset)
-                                .limit(limit)
-                                .get();                 
-        printDocsCount(snapshot, `retrieveRefusalWithdrawalParticipants; offset: ${offset}`);
-
-        return snapshot.docs.map(doc => doc.data());
-    } catch (error) {
-        console.error(error);
-        return new Error(error)
     }
 }
 
@@ -2720,8 +2622,10 @@ const queryHomeCollectionAddressesToPrint = async (limit) => {
         if (snapshot.size === 0) return [];
 
 
-        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true));
-        return mappedResults.filter(result => result !== null);
+        // If we have made it to this stage and there is a P.O. Box,
+        // we allow it to show in the print labels list to avoid count discrepancies
+        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true, true));
+        return mappedResults;
     } catch (error) {
         throw new Error(`Error querying home collection addresses to print`, {cause: error});
     }
@@ -2771,8 +2675,7 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
             collectionDetails, baseline, dateKitRequested } = fieldMapping;
 
         // Two queries, one for participants with replacement kit 1 and one for participants with replacement kit 2
-        // Due to possible overlap and Firestore's lack of an or query, must do two queries and manually combine
-        // while checking for duplicates
+        // Must be manually sorted due to using different date values depending on location
         const path1 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`;
         const path2 = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`;
 
@@ -2790,18 +2693,21 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
         if (snapshot1.size === 0 && snapshot2.size === 0) return [];
 
 
-        let mappedResults = snapshot1.docs
-            .map(doc => processParticipantHomeMouthwashKitData(doc.data(), true))
-            .concat(snapshot2.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true)))
-            .filter(result => result !== null)
-            .sort((a, b) => {
-                let aDate = a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || a?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
-                let bDate = b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2] || b?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]; 
-                return aDate > bDate ? -1 : 1; // @TODO: Double-check order
+        let mappedResults = snapshot1.docs.map(doc => doc.data()).concat(snapshot2.docs.map(doc => doc.data()))
+            .sort((aData, bData) => {
+                const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+                const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+                if(aDate === bDate) {
+                    return 0;
+                }
+                return aDate < bDate ? -1 : 1; // Oldest to newest
             });
         if (limit && limit < mappedResults.length) {
             mappedResults = mappedResults.slice(0, limit);
         }
+        // If we have made it to this stage and there is a P.O. Box,
+        // we allow it to show in the print labels list to avoid count discrepancies
+        mappedResults = mappedResults.map(data => processParticipantHomeMouthwashKitData(data, true, true));    
         return mappedResults;
     } catch (error) {
         throw new Error(`Error querying home collection addresses to print`, {cause: error});
@@ -2819,7 +2725,7 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
 
 const eligibleParticipantsForKitAssignment = async () => {
     try {
-        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, dateKitRequested, kitStatus } = fieldMapping;
+        const { addressPrinted, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, bloodOrUrineCollectedTimestamp, kitStatus, dateKitRequested } = fieldMapping;
 
         const participantSnapshotPromises = [
             // Initial home MW kits
@@ -2850,25 +2756,25 @@ const eligibleParticipantsForKitAssignment = async () => {
             .concat(firstReplacementKitSnapshot.docs)
             .concat(secondReplacementKitSnapshot.docs)
             .sort((a, b) => {
-                const aVal = a?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
-                const bVal = b?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+                const aData = a.data();
+                const bData = b.data();
+                const aVal = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+                const bVal = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
                 if(aVal === bVal) {
                     return 0;
                 }
-                return aVal > bVal ? -1 : 1; // @TODO: Check that this matches
-            })
+                return aVal < bVal ? -1 : 1; // Oldest to newest
+            });
+
 
         let allPts = sortedReplacements
             .concat(snapshot.docs);
 
 
-        // Sort allPts
-        // Filter out redundancies
-
-        // printDocsCount(snapshot, "eligibleParticipantsForKitAssignment");
-
         if (allPts.length === 0) return [];
-        const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false));
+        // Once we get to this stage, we want any PO Boxes which have made it this far far to appear
+        // so that they can manually be marked as undeliverable
+        const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false, true));
         return mappedResults.filter(result => result !== null);
 
     } catch(error) {
@@ -2887,6 +2793,11 @@ const requestHomeMWReplacementKit = async (connectId) => {
         const data = participantSnapshot.docs[0].data();
         
         try {
+            if (data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
+                throw new Error('Participant has withdrawn consent.');
+            } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
+                throw new Error('Participant is deceased.');
+            }
             // Do we need to copy over any other data? What other data do we need to set here?
             const updatedParticipantObject = getHomeMWReplacementKitData(data);
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
@@ -2975,10 +2886,11 @@ const addKitStatusToParticipantV2 = async (participants) => {
 };
 
 const assignKitToParticipant = async (data) => {
+
     let kitAssignmentResult;
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
-        kitType, mouthwashKit } = fieldMapping;
+        kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2 } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
@@ -3137,10 +3049,13 @@ const assignKitToParticipant = async (data) => {
 
         const prevParticipantObject = participantDoc.data()?.[collectionDetails]?.[baseline];
         let path = bioKitMouthwash;
+        let kitLevelValue = initialKit;
         if(prevParticipantObject?.[bioKitMouthwashBL2]) {
             path = bioKitMouthwashBL2;
+            kitLevelValue = replacementKit2;
         } else if(prevParticipantObject?.[bioKitMouthwashBL1]) {
             path = bioKitMouthwashBL1;
+            kitLevelValue = replacementKit1;
         }
         
         const updatedParticipantObject = {
@@ -3148,6 +3063,9 @@ const assignKitToParticipant = async (data) => {
             [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: assigned,
             [`${collectionDetails}.${baseline}.${path}.${uniqueKitID}`]: data[uniqueKitID]
         };
+
+        kitData[kitLevel] = kitLevelValue;
+        kitData[dateKitRequested] = prevParticipantObject?.[path]?.[dateKitRequested];
 
         transaction.update(kitDoc.ref, kitData);
         transaction.update(participantDoc.ref, updatedParticipantObject);
@@ -3162,7 +3080,41 @@ const assignKitToParticipant = async (data) => {
     return kitAssignmentResult;
 };
 
+const markParticipantAddressUndeliverable = async (participantCID) => {
+    try {
+        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressUndeliverable } = fieldMapping;
 
+        const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID', `${collectionDetails}`).get();
+        printDocsCount(snapshot, "markParticipantAddressUndeliverable");
+        if (snapshot.size === 0) {
+            // No matching document found, stop the update
+            return {success: 'false', error: 'No matching participant found for CID ' + participantCID};
+        }
+        const docId = snapshot.docs[0].id;
+    
+        const data = snapshot.docs[0].data();
+        let path = bioKitMouthwash;
+        if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
+            path = bioKitMouthwashBL2;
+        } else if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
+            path = bioKitMouthwashBL1;
+        }
+
+        await db.collection("participants").doc(docId).update({
+            [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: addressUndeliverable
+        });
+    
+        return {
+            success: 'true',
+            path
+        }
+    } catch(err) {
+        return {
+            success: 'false',
+            error: err?.message || err
+        }
+    }
+}
 
 
 const processVerifyScannedCode = async (id) => {
@@ -3266,7 +3218,7 @@ const storeKitReceipt = async (pkg) => {
             collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
             collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, received, shipped,
             pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
-            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime
+            biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
         let toReturn;
         await db.runTransaction(async (transaction) => {
@@ -3322,6 +3274,16 @@ const storeKitReceipt = async (pkg) => {
                 return;
             }
 
+            /**
+             * Check that the collection date is not later than the date received or earlier than the date shipped.
+             * If either is true, return an error.
+             * This check is completed once. If a second request with the same collection date is made, it will pass.
+             */
+            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && !pkg["collectionDateChecked"]) {
+                toReturn = { status: 'Check collection date, possible invalid entry' };
+                return;
+            }
+
             const biospecPkg = {
                 [fieldMapping.tubesBagsCids.mouthwashTube1]: {
                     [tubeIsCollected]: yes,
@@ -3332,15 +3294,22 @@ const storeKitReceipt = async (pkg) => {
                 [collectionDateTimeStamp]: pkg[collectionDateTimeStamp],
                 [fieldMapping.collectionId]:  collectionId,
                 [healthCareProvider]: site,
+                [uniqueKitID]: kitData[uniqueKitID],
                 'Connect_ID': Connect_ID,
                 'token': token,
                 'uid': uid
             }
 
-            // Create a reference to a document that doesn't exist yet with the given ID
-            const newDocRef = db.collection('biospecimen').doc(uid);
+            // This should be a new document, but just in case
+            let biospecimenDocRef;
+            let biospecimenSnapshot = await transaction.get(db.collection('biospecimen').where(`${uniqueKitID}`, '==', kitData[uniqueKitID]));
+            if(biospecimenSnapshot.size > 0) {
+                biospecimenDocRef = biospecimenSnapshot.docs[0].ref;
+            } else {
+                biospecimenDocRef = db.collection('biospecimen').doc();
+            }
             
-            transaction.set(newDocRef, biospecPkg);
+            transaction.set(biospecimenDocRef, biospecPkg);
 
             transaction.update(kitDoc.ref, {
                 [collectionCardFlag]: pkg[collectionCardFlag] === true ? yes : no,
@@ -3361,6 +3330,7 @@ const storeKitReceipt = async (pkg) => {
 
             toReturn = {
               status: true,
+              path,
               Connect_ID,
               token,
               uid,
@@ -3509,11 +3479,15 @@ const getParticipantsByKitStatus = async (statusType) => {
 
 const shippedKitStatusParticipants = async () => { 
     try {
-        const { collectionDetails, baseline, bioKitMouthwash, kitStatus, 
-                shipped, healthCareProvider, mouthwashSurveyCompletionStatus, shippedDateTime} = fieldMapping;
+        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, 
+                shipped, healthCareProvider, mouthwashSurveyCompletionStatus, shippedDateTime, uniqueKitID} = fieldMapping;
         
         const snapshot = await db.collection("participants")
-                            .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', shipped)
+                            .where(Filter.or(
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', shipped),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', shipped),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', shipped)
+                            ))
                             .orderBy(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${shippedDateTime}`, 'asc')
                             .select('Connect_ID', 
                                 `${healthCareProvider}`, 
@@ -3522,39 +3496,79 @@ const shippedKitStatusParticipants = async () => {
                             .get();
         
         if (!snapshot.empty) {
-            const participants = [];
+            const participants = {};
+            const toReturn = [];
+            const kitLookupByParticipant = {};
             const kitAssemblyPromises = [];
             const { supplyKitId, supplyKitTrackingNum, returnKitId, collectionCardId, returnKitTrackingNum } = fieldMapping;
 
             for (const docs of snapshot.docs) {
                 const data = docs.data();
                 const participantConnectID = data['Connect_ID'];
-        
-                participants.push({
+
+                participants[participantConnectID] = {
                     "Connect_ID": participantConnectID,
                     [healthCareProvider]: data[healthCareProvider],
                     [shippedDateTime]: data[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[shippedDateTime] || '',
                     [mouthwashSurveyCompletionStatus]: data[mouthwashSurveyCompletionStatus],
-                });
-                
-                kitAssemblyPromises.push(
-                    db.collection("kitAssembly")
-                        .where('Connect_ID', '==', participantConnectID)
-                        .select(`${supplyKitId}`, `${supplyKitTrackingNum}`, `${returnKitTrackingNum}`, `${returnKitId}`, `${collectionCardId}`)
-                        .get()
-                );
+                };
+
+
+                // Find the home MW kits for the participant, both initial and any replacements
+                // Only include shipped ones
+
+                const kitFields = [`${supplyKitId}`, `${supplyKitTrackingNum}`, `${returnKitTrackingNum}`, `${returnKitId}`, `${collectionCardId}`, `${uniqueKitID}`, 'Connect_ID'];
+
+                if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == shipped) {
+                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash][uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: 'Initial'};
+                    kitAssemblyPromises.push(
+                        db.collection("kitAssembly")
+                            .where(`${uniqueKitID}`, '==', kitId)
+                            .select(...kitFields)
+                            .get()
+                    );
+                }
+
+                if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == shipped) {
+                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '2nd'};
+                    kitAssemblyPromises.push(
+                        db.collection("kitAssembly")
+                            .where(`${uniqueKitID}`, '==', kitId)
+                            .select(...kitFields)
+                            .get()
+                    );
+                }
+
+                if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] == shipped) {
+                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2][uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '3rd'};
+                    kitAssemblyPromises.push(
+                        db.collection("kitAssembly")
+                            .where(`${uniqueKitID}`, '==', kitId)
+                            .select(...kitFields)
+                            .get()
+                    );
+
+                }
+
             }
 
             const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
             printDocsCount(kitAssemblySnapshots, "shippedKitStatusParticipants");
 
-            kitAssemblySnapshots.forEach((snapshot, index) => {
+            kitAssemblySnapshots.forEach((snapshot) => {
                 if(!snapshot.empty) {
                     const kitData = snapshot.docs[0].data();
-                    Object.assign(participants[index], kitData);
+                    const {participant, kitIteration} = kitLookupByParticipant[kitData[uniqueKitID]];
+                    toReturn.push({...participants[participant], ...kitData, kitIteration});
                 }
             });
-            return participants;
+            // Because of how this array is built
+            // These should already be sorted in order by participant,
+            // and then in order of initial, replacement 1, replacement 2
+            return toReturn;
         }
     } catch (error) {
         console.error(error);
@@ -3930,12 +3944,6 @@ const processQueryDailyReportParticipants = async (document) => {
         return error.errorInfo
     }
 };
-
-const getRestrictedFields = async () => {
-    const snapshot = await db.collection('siteDetails').where('coordinatingCenter', '==', true).get();
-    printDocsCount(snapshot, "getRestrictedFields");
-    return snapshot.docs[0].data().restrictedFields;
-}
 
 /**
  * This is for managing received boxes in BPTL only.
@@ -4480,7 +4488,6 @@ const processPhysicalActivity = async (dateExpression) => {
 module.exports = {
     db,
     updateResponse,
-    retrieveParticipantsDemo,
     retrieveParticipants,
     verifyIdentity,
     retrieveUserProfile,
@@ -4573,10 +4580,8 @@ module.exports = {
     storePackageReceipt,
     getBptlMetrics,
     getBptlMetricsForShipped,
-    getRestrictedFields,
     sendClientEmail,
     verifyUsersEmailOrPhone,
-    retrieveRefusalWithdrawalParticipants,
     updateUserPhoneSigninMethod,
     updateUserEmailSigninMethod,
     updateUsersCurrentLogin,
@@ -4601,6 +4606,7 @@ module.exports = {
     storeKitReceipt,
     addKitStatusToParticipant,
     addKitStatusToParticipantV2,
+    markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
     requestHomeMWReplacementKit,
     processSendGridEvent,

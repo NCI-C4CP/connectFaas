@@ -210,6 +210,8 @@ const processMouthwashEligibility = (data) => {
         const isEligible = !!processParticipantHomeMouthwashKitData(data, true);
         if(isEligible) {
             updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = conceptIds.initialized;
+        } else {
+            updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = conceptIds.addressUndeliverable;
         }
     } else if(
         data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus] == conceptIds.initialized ||
@@ -220,14 +222,14 @@ const processMouthwashEligibility = (data) => {
         const isEligible = !!processParticipantHomeMouthwashKitData(data, true);
         if(!isEligible) {
             if(data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus] == conceptIds.initialized) {
-                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = undefined;
+                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwash}.${conceptIds.kitStatus}`] = conceptIds.addressUndeliverable;
             }
             // Handle replacement kits as well
             if(data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwashBL1]?.[conceptIds.kitStatus] == conceptIds.initialized) {
-                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwashBL1}.${conceptIds.kitStatus}`] = undefined;
+                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwashBL1}.${conceptIds.kitStatus}`] = conceptIds.addressUndeliverable;
             }
             if(data?.[conceptIds.collectionDetails]?.[conceptIds.baseline]?.[conceptIds.bioKitMouthwashBL2]?.[conceptIds.kitStatus] == conceptIds.initialized) {
-                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwashBL2}.${conceptIds.kitStatus}`] = undefined;
+                updates[`${conceptIds.collectionDetails}.${conceptIds.baseline}.${conceptIds.bioKitMouthwashBL2}.${conceptIds.kitStatus}`] = conceptIds.addressUndeliverable;
             }
         }
 

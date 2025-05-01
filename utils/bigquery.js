@@ -148,6 +148,94 @@ const getStatsFromBQ = async (tableName, siteCode) => {
 };
 
 /**
+ * Gets the collection stats for sites
+ * @param {number | number[]} siteCode
+ */
+const getCollectionStats = async (type, siteCode) => {
+  let  query = `
+    WITH actual_dups AS (
+      SELECT *
+      FROM FlatConnect.biospecimen_JP
+      WHERE d_556788178 IS NOT NULL AND d_410912345 is not null and Connect_ID is not null
+      QUALIFY COUNT(*) OVER (PARTITION BY Connect_ID) > 1
+    ),
+
+    rows_to_keep AS (
+      SELECT *
+      FROM actual_dups
+      QUALIFY d_556788178 = MIN(d_556788178) OVER (PARTITION BY Connect_ID)
+    ),
+
+    non_duplicate_rows AS (
+      SELECT orig.*
+      FROM FlatConnect.biospecimen_JP AS orig
+      LEFT JOIN actual_dups AS dups
+      ON orig.Connect_ID = dups.Connect_ID
+      WHERE dups.Connect_ID IS NULL
+    ),
+
+    no_dups AS (
+      SELECT * FROM rows_to_keep
+      UNION ALL
+      SELECT * FROM non_duplicate_rows
+    )
+
+    SELECT 
+      p.d_827220437 AS siteCode,
+      count(*) as verfiedPts
+    FROM FlatConnect.participants_JP AS p
+    LEFT JOIN no_dups AS n
+      ON p.Connect_ID = n.Connect_ID
+    WHERE 
+      p.Connect_ID IS NOT NULL
+      AND p.d_821247024 = '197316935'
+      AND (p.d_512820379 = '486306141' OR p.d_512820379 = '854703046')
+      AND p.d_831041022 = '104430631' AND
+      (d_878865966 = '353358909' OR d_167958071 = '353358909' OR
+      d_684635302 = '353358909') AND
+      n.d_556788178 IS NOT NULL AND n.d_410912345 IS NOT NULL AND 
+      p.d_827220437 IN UNNEST(@siteCode)`;
+
+  switch (type) {
+    case "research":
+      query += `
+       AND ((d_650516960 = '534621077' OR d_173836415_d_266600170_d_592099155 = '534621077' OR
+        d_173836415_d_266600170_d_718172863 = '534621077' OR d_173836415_d_266600170_d_915179629 = '534621077'))`;
+      break;
+    case "clinical":
+      query += `
+        AND ((d_650516960 = '664882224' OR d_173836415_d_266600170_d_592099155 = '664882224' OR
+        d_173836415_d_266600170_d_718172863 = '664882224' OR d_173836415_d_266600170_d_915179629 = '664882224'))`;
+      break;
+    case "all":
+    default:
+      //No additional filters needed
+      break;
+  }
+  query += ' GROUP BY siteCode';
+
+  //The siteCodes need to be converted to strings because of the data type in bigquery
+  const options = {
+    query,
+    location: "US",
+    params: { siteCode: Array.isArray(siteCode) ? siteCode.map((val) => {return ''+val;}) : [''+siteCode] }
+  };
+
+  let rows = [];
+  try {
+    [rows] = await bigquery.query(options);
+  } catch (error) {
+    console.error("getCollectionStats() error.", error);
+  }
+
+  //The siteCodes need to be converted to integers to keep the data consistent with the other stats
+  return rows.map((row) => {
+      row.siteCode = parseInt(row.siteCode, 10)
+      return row;
+  });
+}
+
+/**
  * 
  * @param {string} fullNumber Phone number in the format +11234567890
  * @returns {Promise<string[]>} Array of tokens of participant(s) having the phone number
@@ -410,6 +498,7 @@ module.exports = {
     getTable,
     getParticipantsForNotificationsBQ,
     getStatsFromBQ,
+    getCollectionStats,
     getParticipantTokensByPhoneNumber,
     validateFields,
     validateFilters,

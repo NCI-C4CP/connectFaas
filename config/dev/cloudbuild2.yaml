@@ -1,16 +1,8 @@
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'getParticipants', '--trigger-http', '--runtime=${_RUNTIME}', '--memory=1024MB', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'getParticipants', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'getFilteredParticipants', '--trigger-http', '--runtime=${_RUNTIME}', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'add-iam-policy-binding', 'getFilteredParticipants', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'app', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=240s', '--memory=1024MB',  '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'app', '--member=allUsers', '--role=${_ROLE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'importNotificationsToBigquery', '--trigger-resource=${_RESOURCE}', '--trigger-event=${_EVENT}', '--runtime=${_RUNTIME}', '--timeout=480s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
 - name: 'gcr.io/cloud-builders/gcloud'
