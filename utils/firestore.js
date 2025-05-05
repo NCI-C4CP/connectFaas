@@ -3509,9 +3509,9 @@ const shippedKitStatusParticipants = async () => {
                 participants[participantConnectID] = {
                     "Connect_ID": participantConnectID,
                     [healthCareProvider]: data[healthCareProvider],
-                    [shippedDateTime]: data[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[shippedDateTime] || '',
                     [mouthwashSurveyCompletionStatus]: data[mouthwashSurveyCompletionStatus],
                 };
+                // shippedDateTime not included here because it depends on which kit iteration the participant is on
 
 
                 // Find the home MW kits for the participant, both initial and any replacements
@@ -3520,8 +3520,9 @@ const shippedKitStatusParticipants = async () => {
                 const kitFields = [`${supplyKitId}`, `${supplyKitTrackingNum}`, `${returnKitTrackingNum}`, `${returnKitId}`, `${collectionCardId}`, `${uniqueKitID}`, 'Connect_ID'];
 
                 if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == shipped) {
-                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash][uniqueKitID];
-                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: 'Initial'};
+                    const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash];
+                    const kitId = kitData?.[uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: 'Initial', shippedDateTimeValue: kitData?.[shippedDateTime]};
                     kitAssemblyPromises.push(
                         db.collection("kitAssembly")
                             .where(`${uniqueKitID}`, '==', kitId)
@@ -3531,8 +3532,9 @@ const shippedKitStatusParticipants = async () => {
                 }
 
                 if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == shipped) {
-                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][uniqueKitID];
-                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '2nd'};
+                    const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1];
+                    const kitId = kitData?.[uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '2nd', shippedDateTimeValue: kitData?.[shippedDateTime]};
                     kitAssemblyPromises.push(
                         db.collection("kitAssembly")
                             .where(`${uniqueKitID}`, '==', kitId)
@@ -3542,8 +3544,9 @@ const shippedKitStatusParticipants = async () => {
                 }
 
                 if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] == shipped) {
-                    const kitId = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2][uniqueKitID];
-                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '3rd'};
+                    const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2];
+                    const kitId = kitData?.[uniqueKitID];
+                    kitLookupByParticipant[kitId] = {participant: participantConnectID, kitIteration: '3rd', shippedDateTimeValue: kitData?.[shippedDateTime]};
                     kitAssemblyPromises.push(
                         db.collection("kitAssembly")
                             .where(`${uniqueKitID}`, '==', kitId)
@@ -3561,8 +3564,9 @@ const shippedKitStatusParticipants = async () => {
             kitAssemblySnapshots.forEach((snapshot) => {
                 if(!snapshot.empty) {
                     const kitData = snapshot.docs[0].data();
-                    const {participant, kitIteration} = kitLookupByParticipant[kitData[uniqueKitID]];
-                    toReturn.push({...participants[participant], ...kitData, kitIteration});
+                    const {participant, kitIteration, shippedDateTimeValue} = kitLookupByParticipant[kitData[uniqueKitID]];
+
+                    toReturn.push({...participants[participant], ...kitData, kitIteration, [shippedDateTime]: shippedDateTimeValue});
                 }
             });
             // Because of how this array is built
