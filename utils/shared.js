@@ -2233,6 +2233,22 @@ const uspsUrl = {
     addresses: 'https://apis.usps.com/addresses/v3/address'
 } 
 
+/**
+ * Sanitizes an object by removing potentially dangerous keys to prevent prototype pollution.
+ *
+ * @param {Object} obj - The object to sanitize.
+ * @returns {Object} - A new sanitized object with dangerous keys removed.
+ */
+const sanitizeObject = (obj) => {
+    const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
+    return Object.keys(obj).reduce((sanitized, key) => {
+        if (!dangerousKeys.includes(key)) {
+            sanitized[key] = obj[key];
+        }
+        return sanitized;
+    }, {});
+};
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -2307,5 +2323,6 @@ module.exports = {
     getAdjustedTime,
     handleNorcBirthdayCard,
     safeJSONParse,
-    uspsUrl
+    uspsUrl,
+    sanitizeObject
 };
