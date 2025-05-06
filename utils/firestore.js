@@ -2716,8 +2716,43 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 
 const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
     try {
-        const snapShot = await db.collection('biospecimen').where('143615646.826941471', '==', receivedDateTimestamp).get();
-        return snapShot.docs.map(document => document.data());
+        const biospecSnapshot = await db.collection('biospecimen').where('143615646.826941471', '==', receivedDateTimestamp).get();
+        // Because kitLevel is needed by this report and is stored only on the kitAssembly and not the biospecimen record
+        // we must look up the corresponding kitAssembly records and match them up
+        const kitIds = [];
+        const toReturn = [];
+        const kitDict = {};
+
+        biospecSnapshot.docs.forEach(document => {
+            const data = document.data();
+            const kitId = data[fieldMapping.uniqueKitID];
+            kitDict[kitId] = data;
+            kitIds.push(kitId);
+            toReturn.push(data);
+        });
+
+        // Find the corresponding kit using conceptIds.uniqueKitID values
+        let kitSnapshot;
+        let start = 0;
+
+        // Run this in chunks of 30 to avoid exceeding the max allowed size for IN queries if we have more than 30 kits
+        const maxSize = 30;
+        do {
+            let query = db.collection('kitAssembly')
+                .where(`${fieldMapping.uniqueKitID}`, 'in', kitIds.slice(start, Math.min(maxSize, kitIds.length)));
+            kitSnapshot = await query.get();
+            for (const doc of kitSnapshot.docs) {
+                // For each kit, attach the kitLevel to the kit data found
+                const kitData = doc.data();
+                const kitLevel = kitData?.[fieldMapping.kitLevel] || fieldMapping.initialKit;
+                const kitId = kitData[fieldMapping.uniqueKitID];
+                kitDict[kitId][fieldMapping.kitLevel] = kitLevel;
+            }
+            start += maxSize;
+
+        } while (kitSnapshot.size === maxSize);
+
+        return toReturn;
     } catch (error) {
         return new Error(error);
     }
