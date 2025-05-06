@@ -2720,15 +2720,14 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
         // Because kitLevel is needed by this report and is stored only on the kitAssembly and not the biospecimen record
         // we must look up the corresponding kitAssembly records and match them up
         const kitIds = [];
-        const toReturn = [];
         const kitDict = {};
 
         biospecSnapshot.docs.forEach(document => {
+            // Store each data object in kitDict to match up to kit records later
             const data = document.data();
             const kitId = data[fieldMapping.uniqueKitID];
             kitDict[kitId] = data;
             kitIds.push(kitId);
-            toReturn.push(data);
         });
 
         // Find the corresponding kit using conceptIds.uniqueKitID values
@@ -2752,7 +2751,9 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
 
         } while (kitSnapshot.size === maxSize);
 
-        return toReturn;
+        // Because there are no sorts on biospecSnapshot, we don't need to care about order,
+        // so just whatever order is returned here is fine
+        return Object.keys(kitDict).map(key => kitDict[key]);
     } catch (error) {
         return new Error(error);
     }
