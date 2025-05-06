@@ -2716,7 +2716,7 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 
 const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
     try {
-        const biospecSnapshot = await db.collection('biospecimen').where('143615646.826941471', '==', receivedDateTimestamp).get();
+        const biospecSnapshot = await db.collection('biospecimen').where(`${fieldMapping.tubesBagsCids.mouthwashTube1}.${fieldMapping.receivedDateTime}`, '==', receivedDateTimestamp).get();
         // Because kitLevel is needed by this report and is stored only on the kitAssembly and not the biospecimen record
         // we must look up the corresponding kitAssembly records and match them up
         const kitIds = [];
