@@ -1,11 +1,11 @@
 steps:
 
-# getParticipants
+# participantsEligibleForIncentive
 - name: 'gcr.io/cloud-builders/gcloud'
   args: [
     'functions', 
     'deploy', 
-    'getParticipants', 
+    'participantsEligibleForIncentive', 
     '--trigger-http', 
     '--runtime=${_RUNTIME}', 
     '--memory=${_MEMORY}',
@@ -18,17 +18,17 @@ steps:
   args: [
     'functions', 
     'add-iam-policy-binding', 
-    'getParticipants', 
+    'participantsEligibleForIncentive', 
     '--member=${_MEMBER}', 
     '--role=${_ROLE}'
   ]
 
-# getFilteredParticipants
+# incentiveCompleted
 - name: 'gcr.io/cloud-builders/gcloud'
   args: [
     'functions', 
     'deploy', 
-    'getFilteredParticipants', 
+    'incentiveCompleted', 
     '--trigger-http', 
     '--runtime=${_RUNTIME}', 
     '--memory=${_MEMORY}',
@@ -41,7 +41,7 @@ steps:
   args: [
     'functions', 
     'add-iam-policy-binding', 
-    'getFilteredParticipants', 
+    'incentiveCompleted', 
     '--member=${_MEMBER}', 
     '--role=${_ROLE}'
   ]
@@ -51,6 +51,6 @@ substitutions:
   _MEMORY: 1024MB
   _ROLE: roles/cloudfunctions.invoker
   _RUNTIME: nodejs20
-  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-prod-6d04/repos/github_nci-c4cp_connectfaas
-  _TIMEOUT: 120s
-  _VARIABLES: config/prod/.env.yaml
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-stg-5519/repos/github_nci-c4cp_connectfaas/moveable-aliases/stage
+  _TIMEOUT: 240s
+  _VARIABLES: config/stage/.env.yaml

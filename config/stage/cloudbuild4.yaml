@@ -1,9 +1,5 @@
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'dashboard', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=240s', '--memory=1024MB', '--source=${_SOURCE}', '--env-vars-file=config/stage/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'dashboard', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'importToBigQuery', '--trigger-resource=${_RESOURCE}', '--trigger-event=${_EVENT}', '--runtime=${_RUNTIME}', '--timeout=480s', '--source=${_SOURCE}', '--env-vars-file=config/stage/.env.yaml']
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'scheduleFirestoreDataExport', '--trigger-topic=${_TOPIC}', '--runtime=${_RUNTIME}', '--timeout=480s', '--source=${_SOURCE}', '--env-vars-file=config/stage/.env.yaml']
