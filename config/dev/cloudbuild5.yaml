@@ -4,21 +4,9 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'add-iam-policy-binding', 'getBigQueryData', '--member=allUsers', '--role=${_ROLE}']
 - name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'updateParticipantData', '--trigger-http', '--runtime=${_RUNTIME}', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'updateParticipantData', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'submitParticipantsData', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=120s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'submitParticipantsData', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'getParticipantToken', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=120s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'add-iam-policy-binding', 'getParticipantToken', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'incentiveCompleted', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=120s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'incentiveCompleted', '--member=allUsers', '--role=${_ROLE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'participantDataCleanup', '--trigger-topic=${_TOPIC}', '--runtime=${_RUNTIME}', '--timeout=480s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
 substitutions:

@@ -1,9 +1,5 @@
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'getFilteredParticipants', '--trigger-http', '--runtime=${_RUNTIME}', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'getFilteredParticipants', '--member=allUsers', '--role=${_ROLE}']
-- name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'importNotificationsToBigquery', '--trigger-resource=${_RESOURCE}', '--trigger-event=${_EVENT}', '--runtime=${_RUNTIME}', '--timeout=480s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'deploy', 'exportNotificationsToBucket', '--trigger-topic=${_TOPIC}', '--runtime=${_RUNTIME}', '--timeout=480s', '--source=${_SOURCE}', '--env-vars-file=config/dev/.env.yaml']
