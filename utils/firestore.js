@@ -2503,42 +2503,32 @@ const validateKitAssemblyData = async (data) => {
 }
 
 const addKitAssemblyData = async (data) => {
-    try {
-        await validateKitAssemblyData(data);
-        await db.collection('kitAssembly').add(data);
-        
-        return true;
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
+    // No try/catch; that is handled in the biospecimen endpoint
+    await validateKitAssemblyData(data);
+    await db.collection('kitAssembly').add(data);
+    
+    return true;
 }
 
 
 const updateKitAssemblyData = async (data) => {
-    try {
-        await validateKitAssemblyData(data);
-        const snapshot = await db.collection('kitAssembly').where('687158491', '==', data['687158491']).get();
-        printDocsCount(snapshot, "updateKitAssemblyData");
+    // No try/catch; that is handled in the biospecimen endpoint
+    await validateKitAssemblyData(data);
+    const snapshot = await db.collection('kitAssembly').where('687158491', '==', data['687158491']).get();
+    printDocsCount(snapshot, "updateKitAssemblyData");
 
-        if (snapshot.empty) return false
-        const docId = snapshot.docs[0].id;
+    if (snapshot.empty) return false
+    const docId = snapshot.docs[0].id;
 
-        await db.collection('kitAssembly').doc(docId).update({
-            '194252513': data[fieldMapping.returnKitId],
-            '259846815': data[fieldMapping.collectionCupId],
-            '972453354': data[fieldMapping.returnKitTrackingNum],
-            '690210658': data[fieldMapping.supplyKitId],
-            '786397882': data[fieldMapping.collectionCardId]
-        });
-        
-        return true;
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
+    await db.collection('kitAssembly').doc(docId).update({
+        '194252513': data[fieldMapping.returnKitId],
+        '259846815': data[fieldMapping.collectionCupId],
+        '972453354': data[fieldMapping.returnKitTrackingNum],
+        '690210658': data[fieldMapping.supplyKitId],
+        '786397882': data[fieldMapping.collectionCardId]
+    });
+    
+    return true;
 }
 
 const checkCollectionUniqueness = async (supplyId, collectionId, returnKitTrackingNumber, uniqueKitID) => {
