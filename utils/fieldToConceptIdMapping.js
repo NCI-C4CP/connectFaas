@@ -308,6 +308,10 @@ module.exports = {
     preferredLanguage: 255077064,
     english: 163149180,
     spanish: 773342525,
+    dhq3Username: 148184166,
+    dhq3UUID: 808755658,
+    dhq3StudyID: 196723965,
+    dhq3HEIReportViewed: 892697201,
 
     // cancer occurrences
     haveYouEverBeenDiagnosedWithCancer: 452166062,
@@ -378,6 +382,10 @@ module.exports = {
     submitted:      231311385,
     cancerScreeningHistorySurveyStatus: 176068627,
     cancerScreeningHistorySurveyCompletionTime: 389890053,
+    dhq3SurveyStatus: 692560814,
+    dhq3SurveyStartTime: 109610692,
+    dhq3SurveyCompletionTime: 610227793,
+    
     dataDestruction: {
         consentFirstName: 471168198,
         consentMiddleName: 436680969,
@@ -501,6 +509,10 @@ module.exports = {
         anyRefusalOrWithdrawal: 451953807,
         cancerScreeningHistorySurveyStatus: 176068627,
         cancerScreeningHistorySurveyCompletionTime: 389890053,
+        dhq3SurveyStatus: 692560814,
+        dhq3SurveyCompletionTime: 610227793,
+        dhq3StudyID: 196723965,
+        dhq3Username: 148184166,
         numberOfAvailableReports: 794047378,
         physicalActivity: 686238347,
         flagForReportUnreadViewedDeclined: 446235715,

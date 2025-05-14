@@ -885,6 +885,7 @@ const verifyIdentity = async (type, token, siteCode) => {
 
       if (existingValue === fieldMapping.notVerified && type === "verified") {
         data[fieldMapping.cancerScreeningHistorySurveyStatus] = fieldMapping.notStarted;
+        data[fieldMapping.dhq3SurveyStatus] = fieldMapping.notStarted;
       }
 
       await doc.ref.update(data);
