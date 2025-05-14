@@ -727,6 +727,24 @@ const validateIso8601Timestamp = (timestamp) => {
     return { error: false, message: "" };
 };
 
+/**
+ * Standard Connect ISO 8601 timestamp formatting.
+ * Original Usage: DHQ platform provides timestamp in microseconds. We need to convert to milliseconds to match our expected data format.
+ * E.g. "2025-12-15T12:45:52.123Z".
+ * @param {string} timestamp - the incoming timestamp string.
+ * @returns {string} - the normalized ISO 8601 timestamp.
+ */
+
+const normalizeIso8601Timestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+        throw new Error('Invalid timestamp format');
+    }
+
+    return date.toISOString();
+
+}
+
 module.exports = {
     createParticipantRecord,
     validatePin,
@@ -738,5 +756,6 @@ module.exports = {
     addressValidation,
     updateParticipantFirebaseAuthentication,
     isIsoDate,
+    normalizeIso8601Timestamp,
     validateIso8601Timestamp,
 }

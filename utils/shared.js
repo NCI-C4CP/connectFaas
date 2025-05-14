@@ -254,6 +254,7 @@ const moduleConceptsToCollections = {
     "D_601305072" :     "promis_v1",
     "D_506648060" :     "experience2024",
     "D_369168474":      "cancerScreeningHistorySurvey",
+    "D_497020618" :     "dhq3Survey",
 };
 
 const moduleStatusConcepts = {
@@ -269,7 +270,8 @@ const moduleStatusConcepts = {
     "547363263" :       "mouthwash",
     "320303124" :       "promis",
     "956490759" :       "experience2024",
-    "176068627":       "cancerScreeningHistorySurvey"
+    "176068627":        "cancerScreeningHistorySurvey",
+    "497020618":        "dhq3Survey",
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -288,7 +290,8 @@ const listOfCollectionsRelatedToDataDestruction = [
     "mouthwash_v1",
     "ssn",
     "experience2024",
-    "cancerScreeningHistorySurvey"
+    "cancerScreeningHistorySurvey",
+    // TODO: DHQ Phase 2 - add "dhq3Survey" here once data is in Firestore. Return data only. Not credential pool data.
 ];
 
 const incentiveConcepts = {
