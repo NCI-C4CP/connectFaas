@@ -3,7 +3,7 @@ const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/f
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWReplacementKitData, processParticipantHomeMouthwashKitData, conceptMappings } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWReplacementKitData, processParticipantHomeMouthwashKitData, sanitizeObject } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
@@ -2029,7 +2029,7 @@ const getBoxesByBoxId = async (boxIdArray, siteCode, transaction = null) => {
 const shipBatchBoxes = async (boxIdAndShipmentDataArray, siteCode) => {
     const boxIdToShipmentData = {};
     boxIdAndShipmentDataArray.forEach(item => {
-        boxIdToShipmentData[item.boxId] = item.shipmentData;
+        boxIdToShipmentData[item.boxId] = sanitizeObject(item.shipmentData);
     });
 
     const boxIdArray = Object.keys(boxIdToShipmentData);
