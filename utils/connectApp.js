@@ -2,7 +2,7 @@ const { getResponseJSON, setHeadersDomainRestricted, getUserProfile, safeJSONPar
 const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
 const { retrievePhysicalActivityReport } = require('./reports');
-const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation } = require('./validation');
+const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation, validateToken } = require('./validation');
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -82,6 +82,19 @@ const connectApp = async (req, res) => {
 
       // all 'validatePin' paths return res.status(code).json({ message, code });
       return await validatePin(res, body, uid);
+    }
+
+    else if (api === 'validateToken') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const body = safeJSONParse(req.body);
+      if (!body || Object.keys(body).length === 0) {
+        return res.status(400).json(getResponseJSON('Bad request: empty submission', 400));
+      }
+
+      return validateToken(res, body, uid);
     }
 
     else if (api === 'createParticipantRecord') {
