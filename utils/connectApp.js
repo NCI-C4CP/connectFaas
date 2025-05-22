@@ -182,13 +182,13 @@ const connectApp = async (req, res) => {
         return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
       }
 
-      const { studyID, respondentUsername, dhqSurveyStatus } = safeJSONParse(req.body);      
+      const { studyID, respondentUsername, dhqSurveyStatus, dhqSurveyStatusExternal } = safeJSONParse(req.body);      
       if (!respondentUsername || !studyID || !dhqSurveyStatus) {
         return res.status(400).json(getResponseJSON('DHQ respondent username and study ID parameters are required!', 400));
       }
 
       const { syncDHQ3RespondentInfo } = require('./dhq');
-      const respondentInfo = await syncDHQ3RespondentInfo(studyID, respondentUsername, dhqSurveyStatus, uid);
+      const respondentInfo = await syncDHQ3RespondentInfo(studyID, respondentUsername, dhqSurveyStatus, dhqSurveyStatusExternal, uid);
 
       return res.status(200).json({ data: respondentInfo, code: 200 });
     }

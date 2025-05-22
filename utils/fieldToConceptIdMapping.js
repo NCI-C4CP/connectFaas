@@ -383,6 +383,7 @@ module.exports = {
     cancerScreeningHistorySurveyStatus: 176068627,
     cancerScreeningHistorySurveyCompletionTime: 389890053,
     dhq3SurveyStatus: 692560814,
+    dhq3SurveyStatusExternal: 501613780,
     dhq3SurveyStartTime: 109610692,
     dhq3SurveyCompletionTime: 610227793,
     

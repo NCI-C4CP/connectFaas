@@ -49,9 +49,11 @@ const fetchDHQAPIData = async (url, method, headers, data) => {
  * Cloud Function handler. Called by index.js onRequest wrapper.
  * DHQ's survey completion doesn't provide a direct way to update the participant's completion status.
  * This function checks 'started' participants' DHQ survey status nightly and updates their progress status in Firestore.
+ * @param {Request} req - HTTP request
+ * @param {Response} res - HTTP response
  */
 
-const scheduledSyncDHQ3Status = async () => {
+const scheduledSyncDHQ3Status = async (req, res) => {
     console.log('Scheduled update of DHQ3 progress status started.');
     let updatesToProcess = 0;
     let successCount = 0;
@@ -65,7 +67,7 @@ const scheduledSyncDHQ3Status = async () => {
 
         if (participantsSnapshot.empty) {
             console.log('No participants with DHQ survey status "started" found.');
-            return;
+            return res.status(200).json(getResponseJSON("No participants with DHQ survey status 'started' to update.", 200));
         }
 
         updatesToProcess = participantsSnapshot.size;
@@ -75,7 +77,7 @@ const scheduledSyncDHQ3Status = async () => {
         const dhqToken = await getSecret(process.env.DHQ_TOKEN);
         if (!dhqToken) {
             console.error('DHQ API token not found in secret manager.');
-            return;
+            return res.status(500).json(getResponseJSON("DHQ API token not found in secret manager.", 500));
         }
 
         const updatePromises = [];
@@ -86,6 +88,7 @@ const scheduledSyncDHQ3Status = async () => {
             const dhq3StudyID = participantData[fieldMapping.dhq3StudyID];
             const dhq3Username = participantData[fieldMapping.dhq3Username];
             const dhq3SurveyStatus = participantData[fieldMapping.dhq3SurveyStatus];
+            const dhq3SurveyStatusExternal = participantData[fieldMapping.dhq3SurveyStatusExternal];
 
             if (!uid) {
                 console.error(`Participant document ${participantDoc.id} missing state.uid. Skipping.`);
@@ -104,7 +107,7 @@ const scheduledSyncDHQ3Status = async () => {
             }
 
             updatePromises.push(
-                syncDHQ3RespondentInfo(dhq3StudyID, dhq3Username, dhq3SurveyStatus, uid, dhqToken)
+                syncDHQ3RespondentInfo(dhq3StudyID, dhq3Username, dhq3SurveyStatus, dhq3SurveyStatusExternal, uid, dhqToken)
                     .then(result => ({ status: 'fulfilled', value: { uid, result } }))
                     .catch(error => ({ status: 'rejected', reason: { uid, error } }))
             );
@@ -121,10 +124,11 @@ const scheduledSyncDHQ3Status = async () => {
         });
 
         console.log(`DHQ Status Sync Summary: Total Found=${updatesToProcess}, Succeeded=${successCount}, Failed/Skipped=${errorCount}`);
+        return res.status(200).json(getResponseJSON("DHQ survey status sync completed successfully.", 200));
 
     } catch (error) {
-        console.error("Error in scheduledUpdateDHQ3ProgressStatus:", error);
-        throw error; // Will be logged by the Cloud Function framework
+        console.error("Error running scheduledSyncDHQ3Status:", error);
+        return res.status(500).json(getResponseJSON("Error in scheduledSyncDHQ3Status: " + error.message, 500));
     }
 }
 
@@ -134,6 +138,7 @@ const scheduledSyncDHQ3Status = async () => {
  * @param {string} studyID - The ID of the study the respondent is assigned to.
  * @param {string} respondentUsername - The DHQ-assigned username for the respondent.
  * @param {number} dhq3SurveyStatus - The current status of the participant's DHQ survey in Firestore.
+ * @param {number} dhq3SurveyStatusExternal - The current external status of the participant's DHQ survey (from DHQ).
  * @param {string} uid - The participant's Connect UID.
  * @param {string} dhqToken - The DHQ API token for authentication. If not provided, it will be fetched from the secret manager.
  * @return {Promise<Object>} - Returns a promise that resolves to the respondent's information.
@@ -152,7 +157,7 @@ const scheduledSyncDHQ3Status = async () => {
  *     downloaded_hei_report: bool
  */
 
-const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveyStatus, uid, dhqToken = null) => {
+const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveyStatus, dhq3SurveyStatusExternal, uid, dhqToken = null) => {
     try {
         // The DHQ API token is required for authentication. It's passed in by the scheduled Cloud (bulk) function.
         // It needs to be fetched by the one-off version (called from the PWA).
@@ -174,11 +179,11 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
         const results = await fetchDHQAPIData(url, method, headers, data);
 
         // If the the survey is completed in DHQ, update the participant profile with the completed timestamp and flag.
-        if (results?.questionnaire_status === 3 && dhq3SurveyStatus !== fieldMapping.submitted) {
+        if (results?.questionnaire_status === 3 && (dhq3SurveyStatus !== fieldMapping.submitted || dhq3SurveyStatusExternal !== fieldMapping.submitted)) {
             await updateDHQ3ProgressStatus(true, fieldMapping.submitted, results?.status_date || '', uid);
 
         // If the survey is only started in DHQ, sanity-check the status with the participant profile. This should always be set on the survey's 'start' click in the PWA.
-        } else if (results?.questionnaire_status === 2 && dhq3SurveyStatus !== fieldMapping.started) {
+        } else if (results?.questionnaire_status === 2 && (dhq3SurveyStatus !== fieldMapping.started || dhq3SurveyStatusExternal !== fieldMapping.started)) {
             await updateDHQ3ProgressStatus(false, fieldMapping.started, results?.status_date || '', uid);
         }
 
@@ -201,7 +206,10 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
 
 const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmittedTimestamp, uid) => {
     try {
-        let updateData = { [fieldMapping.dhq3SurveyStatus]: completionStatus }
+        let updateData = {
+            [fieldMapping.dhq3SurveyStatus]: completionStatus,
+            [fieldMapping.dhq3SurveyStatusExternal]: completionStatus,
+        };
 
         if (isSubmitted) {
             if (dhqSubmittedTimestamp) {
@@ -259,6 +267,7 @@ const allocateDHQ3Credential = async (availableCredentialPools, uid) => {
                 [fieldMapping.dhq3Username]: participant?.[fieldMapping.dhq3Username],
                 [fieldMapping.dhq3UUID]: participant?.[fieldMapping.dhq3UUID],
                 [fieldMapping.dhq3SurveyStatus]: participant?.[fieldMapping.dhq3SurveyStatus],
+                [fieldMapping.dhq3SurveyStatusExternal]: participant?.[fieldMapping.dhq3SurveyStatusExternal],
                 [fieldMapping.dhq3SurveyStartTime]: participant?.[fieldMapping.dhq3SurveyStartTime],
                 [fieldMapping.dhq3HEIReportViewed]: participant?.[fieldMapping.dhq3HEIReportViewed],
             };
@@ -296,6 +305,7 @@ const allocateDHQ3Credential = async (availableCredentialPools, uid) => {
                             [fieldMapping.dhq3Username]: credentialData.username,
                             [fieldMapping.dhq3UUID]: credentialDoc.id,
                             [fieldMapping.dhq3SurveyStatus]: fieldMapping.notStarted,
+                            [fieldMapping.dhq3SurveyStatusExternal]: fieldMapping.notStarted,
                             [fieldMapping.dhq3HEIReportViewed]: fieldMapping.no,
                         };
 
