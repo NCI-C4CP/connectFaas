@@ -8,6 +8,12 @@ const db = admin.firestore();
 
 const API_ROOT = 'https://www.dhq3.org/api-home/root/study-list/';
 
+const dhqCompletionStatusMapping = {
+    [fieldMapping.notStarted]: fieldMapping.dhq3NotYetBegun,
+    [fieldMapping.started]: fieldMapping.dhq3InProgress,
+    [fieldMapping.submitted]: fieldMapping.dhq3Completed,
+}
+
 const getDHQHeaders = (method, dhqToken) => {
     return method === "GET"
         ? { "Authorization": "Token " + dhqToken }
@@ -179,11 +185,11 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
         const results = await fetchDHQAPIData(url, method, headers, data);
 
         // If the the survey is completed in DHQ, update the participant profile with the completed timestamp and flag.
-        if (results?.questionnaire_status === 3 && (dhq3SurveyStatus !== fieldMapping.submitted || dhq3SurveyStatusExternal !== fieldMapping.submitted)) {
+        if (results?.questionnaire_status === 3 && (dhq3SurveyStatus !== fieldMapping.submitted || dhq3SurveyStatusExternal !== fieldMapping.dhq3Completed)) {
             await updateDHQ3ProgressStatus(true, fieldMapping.submitted, results?.status_date || '', uid);
 
         // If the survey is only started in DHQ, sanity-check the status with the participant profile. This should always be set on the survey's 'start' click in the PWA.
-        } else if (results?.questionnaire_status === 2 && (dhq3SurveyStatus !== fieldMapping.started || dhq3SurveyStatusExternal !== fieldMapping.started)) {
+        } else if (results?.questionnaire_status === 2 && (dhq3SurveyStatus !== fieldMapping.started || dhq3SurveyStatusExternal !== fieldMapping.dhq3InProgress)) {
             await updateDHQ3ProgressStatus(false, fieldMapping.started, results?.status_date || '', uid);
         }
 
@@ -208,7 +214,7 @@ const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmit
     try {
         let updateData = {
             [fieldMapping.dhq3SurveyStatus]: completionStatus,
-            [fieldMapping.dhq3SurveyStatusExternal]: completionStatus,
+            [fieldMapping.dhq3SurveyStatusExternal]: dhqCompletionStatusMapping[completionStatus],
         };
 
         if (isSubmitted) {
@@ -305,7 +311,7 @@ const allocateDHQ3Credential = async (availableCredentialPools, uid) => {
                             [fieldMapping.dhq3Username]: credentialData.username,
                             [fieldMapping.dhq3UUID]: credentialDoc.id,
                             [fieldMapping.dhq3SurveyStatus]: fieldMapping.notStarted,
-                            [fieldMapping.dhq3SurveyStatusExternal]: fieldMapping.notStarted,
+                            [fieldMapping.dhq3SurveyStatusExternal]: fieldMapping.dhq3NotYetBegun,
                             [fieldMapping.dhq3HEIReportViewed]: fieldMapping.no,
                         };
 
