@@ -273,7 +273,7 @@ const allocateDHQ3Credential = async (availableCredentialPools, uid) => {
                 [fieldMapping.dhq3Username]: participant?.[fieldMapping.dhq3Username],
                 [fieldMapping.dhq3UUID]: participant?.[fieldMapping.dhq3UUID],
                 [fieldMapping.dhq3SurveyStatus]: participant?.[fieldMapping.dhq3SurveyStatus],
-                [fieldMapping.dhq3SurveyStatusExternal]: participant?.[fieldMapping.dhq3NotYetBegun],
+                [fieldMapping.dhq3SurveyStatusExternal]: participant?.[fieldMapping.dhq3SurveyStatusExternal],
                 [fieldMapping.dhq3SurveyStartTime]: participant?.[fieldMapping.dhq3SurveyStartTime],
                 [fieldMapping.dhq3HEIReportViewed]: participant?.[fieldMapping.dhq3HEIReportViewed],
             };
