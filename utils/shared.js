@@ -254,6 +254,7 @@ const moduleConceptsToCollections = {
     "D_601305072" :     "promis_v1",
     "D_506648060" :     "experience2024",
     "D_369168474":      "cancerScreeningHistorySurvey",
+    "D_497020618" :     "dhq3Survey",
 };
 
 const moduleStatusConcepts = {
@@ -269,7 +270,8 @@ const moduleStatusConcepts = {
     "547363263" :       "mouthwash",
     "320303124" :       "promis",
     "956490759" :       "experience2024",
-    "176068627":       "cancerScreeningHistorySurvey"
+    "176068627":        "cancerScreeningHistorySurvey",
+    "497020618":        "dhq3Survey",
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -288,7 +290,8 @@ const listOfCollectionsRelatedToDataDestruction = [
     "mouthwash_v1",
     "ssn",
     "experience2024",
-    "cancerScreeningHistorySurvey"
+    "cancerScreeningHistorySurvey",
+    // TODO: DHQ Phase 2 - add "dhq3Survey" here once data is in Firestore. Return data only. Not credential pool data.
 ];
 
 const incentiveConcepts = {
@@ -2233,6 +2236,22 @@ const uspsUrl = {
     addresses: 'https://apis.usps.com/addresses/v3/address'
 } 
 
+/**
+ * Sanitizes an object by removing potentially dangerous keys to prevent prototype pollution.
+ *
+ * @param {Object} obj - The object to sanitize.
+ * @returns {Object} - A new sanitized object with dangerous keys removed.
+ */
+const sanitizeObject = (obj) => {
+    const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
+    return Object.keys(obj).reduce((sanitized, key) => {
+        if (!dangerousKeys.includes(key)) {
+            sanitized[key] = obj[key];
+        }
+        return sanitized;
+    }, {});
+};
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -2307,5 +2326,6 @@ module.exports = {
     getAdjustedTime,
     handleNorcBirthdayCard,
     safeJSONParse,
-    uspsUrl
+    uspsUrl,
+    sanitizeObject
 };

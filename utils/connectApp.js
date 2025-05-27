@@ -2,7 +2,7 @@ const { getResponseJSON, setHeadersDomainRestricted, getUserProfile, safeJSONPar
 const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
 const { retrievePhysicalActivityReport } = require('./reports');
-const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation } = require('./validation');
+const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation, validateToken } = require('./validation');
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -84,6 +84,19 @@ const connectApp = async (req, res) => {
       return await validatePin(res, body, uid);
     }
 
+    else if (api === 'validateToken') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const body = safeJSONParse(req.body);
+      if (!body || Object.keys(body).length === 0) {
+        return res.status(400).json(getResponseJSON('Bad request: empty submission', 400));
+      }
+
+      return validateToken(res, body, uid);
+    }
+
     else if (api === 'createParticipantRecord') {
       if (req.method !== 'POST') {
         return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -162,6 +175,38 @@ const connectApp = async (req, res) => {
       const shaResult = await getSHAFromGitHubCommitData(surveyStartTimestamp, path);
       
       return res.status(200).json({data: shaResult, code: 200});
+    }
+
+    else if (api === 'syncDHQ3RespondentInfo') {
+      if (req.method !== 'POST') { // NOTE: DHQ respondent info is fetched via POST request
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const { studyID, respondentUsername, dhqSurveyStatus, dhqSurveyStatusExternal } = safeJSONParse(req.body);      
+      if (!respondentUsername || !studyID || !dhqSurveyStatus) {
+        return res.status(400).json(getResponseJSON('DHQ respondent username and study ID parameters are required!', 400));
+      }
+
+      const { syncDHQ3RespondentInfo } = require('./dhq');
+      const respondentInfo = await syncDHQ3RespondentInfo(studyID, respondentUsername, dhqSurveyStatus, dhqSurveyStatusExternal, uid);
+
+      return res.status(200).json({ data: respondentInfo, code: 200 });
+    }
+
+    else if (api === 'allocateDHQ3Credential') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const availableCredentialPools = safeJSONParse(req.body);
+      if (!availableCredentialPools || !Array.isArray(availableCredentialPools) || availableCredentialPools.length === 0) {
+        return res.status(400).json(getResponseJSON('Error: The availableCredentialPools array is required.', 400));
+      }
+
+      const { allocateDHQ3Credential } = require('./dhq');
+      const allocationResult = await allocateDHQ3Credential(availableCredentialPools, uid);
+      
+      return res.status(200).json({ data: allocationResult, code: 200 });
     }
 
     else if (api === 'getAppSettings') {

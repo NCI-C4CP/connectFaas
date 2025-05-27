@@ -2,10 +2,6 @@ steps:
 - name: 'google/cloud-sdk:slim'
   entrypoint: 'gcloud'
   args: ['functions', 'deploy', 'sendScheduledNotificationsGen2', '--gen2', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=600s', '--memory=1024MB', '--ingress-settings=internal-only', '--region=us-central1', '--env-vars-file=${_ENV_FILE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'participantsEligibleForIncentive', '--trigger-http', '--runtime=${_RUNTIME}', '--source=${_SOURCE}', '--env-vars-file=${_ENV_FILE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'participantsEligibleForIncentive', '--member=allUsers', '--role=${_ROLE}']
 substitutions:
   _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
   _RUNTIME: nodejs20
