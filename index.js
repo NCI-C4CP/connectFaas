@@ -12,6 +12,7 @@ const { participantDataCleanup } = require('./utils/participantDataCleanup');
 const { webhook } = require('./utils/webhook');
 const { heartbeat } = require('./utils/heartbeat');
 const { physicalActivity } = require('./utils/reports');
+const { scheduledSyncDHQ3Status } = require('./utils/dhq');
 
 // API End-Points for Sites
 
@@ -83,3 +84,6 @@ exports.heartbeat = heartbeat;
 // End-Points for Return of Information
 
 exports.physicalActivity = physicalActivity;
+
+// End-Point for Daily DHQ Status Sync
+exports.scheduledSyncDHQ3Status = onRequest(scheduledSyncDHQ3Status);

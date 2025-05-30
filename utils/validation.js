@@ -107,6 +107,57 @@ const validatePin = async (res, body, uid) => {
 };
 
 /**
+ * Validate the token provided by the participant and link their account if valid.
+ * This function verifies if a token exists and can be linked to the participant's UID.
+ * Possible outcomes: success (link account), duplicate account, token already claimed, 
+ * invalid token, or error.
+ * 
+ * @param {object} res - The response object.
+ * @param {object} body - The request body containing the token and first sign-in timestamp.
+ * @param {string} body.token - The participant's token to validate.
+ * @param {string} body.time - The ISO 8601 timestamp of the participant's first sign-in.
+ * @param {string} uid - The Firebase UID to link with the participant record.
+ * @returns {object} - The response object with the appropriate status code and message.
+ */
+const validateToken = async (res, body, uid) => {
+
+    const { participantExists } = require('./firestore')
+    const userAlreadyExists = await participantExists(uid);
+
+    if (userAlreadyExists){
+        // uid already exists for different token
+        return res.status(401).json(getResponseJSON('Account already exists', 401));
+    }
+
+    const token = body.token?.trim();
+    const firstSignInTimestamp = body.time?.trim();
+
+    if (!firstSignInTimestamp || !validateIso8601Timestamp(firstSignInTimestamp)) {
+       return res.status(400).json(getResponseJSON('Bad request: firstSignInTimestamp required and must be an ISO 8601 timestamp', 400));
+    }
+
+    const { verifyToken, linkParticipantWithFirebaseUID } = require('./firestore');
+    const { isDuplicateAccount, isValid, docId } = await verifyToken({ token });
+
+    if (isDuplicateAccount) {
+        // token is for a duplicate account
+        return res.status(202).json(getResponseJSON('Duplicate account', 202));
+    }
+
+    if (isValid) {
+        await linkParticipantWithFirebaseUID(docId, firstSignInTimestamp, uid);
+        return res.status(200).json(getResponseJSON('Ok', 200));
+    }
+    else if (docId) {
+        // token has already been claimed by different uid
+        return res.status(401).json(getResponseJSON('Token previously claimed', 401));
+    }
+
+    // token doesn't exist
+    return res.status(401).json(getResponseJSON('Invalid token', 401));
+}
+
+/**
  * Create a shell record for the participant in Firestore. The shell record includes healthcare provider.
  * This is used for study invitations. Site sends this API a studyId, the shell participant record is created, PIN and token are returned.
  * @returns {object} - the response object with the studyId, token, and PIN.
@@ -727,9 +778,28 @@ const validateIso8601Timestamp = (timestamp) => {
     return { error: false, message: "" };
 };
 
+/**
+ * Standard Connect ISO 8601 timestamp formatting.
+ * Original Usage: DHQ platform provides timestamp in microseconds. We need to convert to milliseconds to match our expected data format.
+ * E.g. "2025-12-15T12:45:52.123Z".
+ * @param {string} timestamp - the incoming timestamp string.
+ * @returns {string} - the normalized ISO 8601 timestamp.
+ */
+
+const normalizeIso8601Timestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+        throw new Error('Invalid timestamp format');
+    }
+
+    return date.toISOString();
+
+}
+
 module.exports = {
     createParticipantRecord,
     validatePin,
+    validateToken,
     getToken,
     processMouthwashEligibility,
     checkDerivedVariables,
@@ -738,5 +808,6 @@ module.exports = {
     addressValidation,
     updateParticipantFirebaseAuthentication,
     isIsoDate,
+    normalizeIso8601Timestamp,
     validateIso8601Timestamp,
 }
