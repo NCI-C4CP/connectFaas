@@ -1045,20 +1045,21 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
 /**
  * Broken into a separate helper function for easier testing
  */
-const getHomeMWReplacementKitData = (data) => {
-    let fieldPath;
+const getHomeMWKitData = (data) => {
     const {
         collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, 
         kitType, mouthwashKit, dateKitRequested, kitStatus,
-        pending, initialized, addressUndeliverable, addressPrinted, assigned, shipped, received
+        pending, initialized, addressUndeliverable, addressPrinted, assigned, shipped, received,
+        bloodOrUrineCollectedTimestamp
     } = fieldMapping;
+    let fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwash}`;
+    let updatedParticipantObject = {};
+    
     if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
         // If two replacements, they are out of replacement kits; error out.
         throw new Error('Participant has exceeded supported number of replacement kits.');
     }
 
-
-    
    const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
 
    if(!participantIsEligible) {
@@ -1092,12 +1093,22 @@ const getHomeMWReplacementKitData = (data) => {
             default:
                 throw new Error('Unrecognized kit status ' + data[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][kitStatus]);
         }
-    } else if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]) {
-        switch(data[collectionDetails]?.[baseline]?.[bioKitMouthwash][kitStatus]) {
+    } else {
+        switch(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus]) {
+            // Initial kit request
             case undefined:
             case null:
             case pending: {
-                throw new Error('This participant is not yet eligible for a home mouthwash kit');
+                // If this is an initial kit request,
+                // and if bloodOrUrineCollectedTimestamp is not present
+                // it needs to be explicitly set to null
+                // otherwise the == null filtering will not work on it in Firestore
+                // This does not need to be set retroactively, only going forward.
+                if(!data?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp]) {
+                    updatedParticipantObject[`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`] = null;
+                }
+                fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwash}`;
+                break;
             }
             case initialized:
             case addressPrinted:
@@ -1122,7 +1133,7 @@ const getHomeMWReplacementKitData = (data) => {
     const requestedDT = new Date().toISOString();
 
     // Do we need to copy over any other data? What other data do we need to set here?
-    const updatedParticipantObject = {
+    updatedParticipantObject = {...updatedParticipantObject,
         [[fieldPath, kitType].join('.')]: mouthwashKit,
         [[fieldPath, kitStatus].join('.')]: initialized,
         [[fieldPath, dateKitRequested].join('.')]: requestedDT
@@ -1176,15 +1187,15 @@ const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBox
         };
     }
 
-    const hasMouthwash = record[collectionDetails][baseline][bioKitMouthwash] !== undefined;    
+    const hasMouthwash = record?.[collectionDetails]?.[baseline]?.[bioKitMouthwash] !== undefined;    
     // First of all, determine which visit it is
     let visit = 'BL';
-    let requestDate = record[collectionDetails][baseline][bioKitMouthwash]?.[dateKitRequested] || record[collectionDetails][baseline][bioKitMouthwash]?.[bloodOrUrineCollectedTimestamp];
+    let requestDate = record?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested] || record[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[bloodOrUrineCollectedTimestamp];
 
-    if(record[collectionDetails][baseline][bioKitMouthwashBL2]) {
+    if(record?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
         visit = 'BL_2';
         requestDate = record[collectionDetails][baseline][bioKitMouthwashBL2][dateKitRequested];
-    } else if (record[collectionDetails][baseline][bioKitMouthwashBL1]) {
+    } else if (record?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
         visit = 'BL_1';
         requestDate = record[collectionDetails][baseline][bioKitMouthwashBL1][dateKitRequested];
     }
@@ -2281,7 +2292,7 @@ module.exports = {
     bagConceptIDs,
     cleanSurveyData,
     updateBaselineData,
-    getHomeMWReplacementKitData,
+    getHomeMWKitData,
     processParticipantHomeMouthwashKitData,
     refusalWithdrawalConcepts,
     withdrawalConcepts,

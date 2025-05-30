@@ -3,7 +3,7 @@ const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/f
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWReplacementKitData, processParticipantHomeMouthwashKitData, sanitizeObject } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
@@ -2604,27 +2604,66 @@ const participantHomeCollectionKitFields = [
 const queryHomeCollectionAddressesToPrint = async (limit) => {
     try {
         const { bioKitMouthwash, kitStatus, initialized,
-            collectionDetails, baseline, bloodOrUrineCollectedTimestamp } = fieldMapping;
+            collectionDetails, baseline, bloodOrUrineCollectedTimestamp, dateKitRequested } = fieldMapping;
 
         const fiveDaysAgoDateISO = getFiveDaysAgoDateISO();
 
         let query = db.collection('participants')
             .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', initialized)
-            .where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO)
-            .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
-
-        if(limit) {
-            query = query.limit(Math.min(limit, 500));
-        }
+            .where(Filter.or(
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO),
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '==', null)
+            ));
+            // @TODO: Ooh, can we include this sort? Is this value going to be null for manually requested kits?
+            // Maybe we should consider explicitly setting this field to null or something if not already present
+            // when requesting a kit.
+            // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
 
         const snapshot = await query.get();
 
         if (snapshot.size === 0) return [];
 
+        // @TODO: if the dateKitRequested value is set, move it to the top of the list and sort by it
+        // We do not do this in the query because sorting in FireStore removes any entries which 
+        // do not have a value set for the field being sorted by, which is the case for most of these entries
+
+        let manualRequests = [];
+        let otherEntries = [];
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested]) {
+                manualRequests.push(data);
+            } else {
+                otherEntries.push(data);
+            }
+        });
+
+        manualRequests = manualRequests.sort((aData, bData) => {
+            const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
+            const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
+            if(aDate === bDate) {
+                return 0;
+            }
+            return aDate < bDate ? -1 : 1; // Oldest to newest
+        });
+
+        otherEntries = otherEntries.sort((aData, bData) => {
+            const aDate = aData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+            const bDate = bData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+            if(aDate === bDate) {
+                return 0;
+            }
+            return aDate > bDate ? -1 : 1; // Newest to oldest
+        });
 
         // If we have made it to this stage and there is a P.O. Box,
         // we allow it to show in the print labels list to avoid count discrepancies
-        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true, true));
+        let mappedResults = manualRequests.concat(otherEntries).map(doc => processParticipantHomeMouthwashKitData(doc, true, true));
+
+        // Because we are sorting our results ourselves, we have to do the limit here rather than in the query
+        if (limit && limit < mappedResults.length) {
+            mappedResults = mappedResults.slice(0, limit);
+        }
         return mappedResults;
     } catch (error) {
         throw new Error(`Error querying home collection addresses to print`, {cause: error});
@@ -2768,7 +2807,7 @@ const eligibleParticipantsForKitAssignment = async () => {
             db.collection("participants")
                 .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', addressPrinted)
                 .select(...participantHomeCollectionKitFields)
-                .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
+                // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
                 .get(),
             // First replacement home MW kits
             db.collection("participants")
@@ -2786,7 +2825,8 @@ const eligibleParticipantsForKitAssignment = async () => {
         
         // Include the participants who have replacement kits
         // Sort order: oldest replacement kit requests should always be at the top
-        // and then all the regular ones
+        // Then the manually requested initial kits, oldest to newest by requested date
+        // and then all the regular ones, newest to oldest by blood/urine collected
 
         const sortedReplacements = []
             .concat(firstReplacementKitSnapshot.docs)
@@ -2802,13 +2842,42 @@ const eligibleParticipantsForKitAssignment = async () => {
                 return aVal < bVal ? -1 : 1; // Oldest to newest
             });
 
+        let manualRequests = [];
+        let otherEntries = [];
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested]) {
+                manualRequests.push(doc);
+            } else {
+                otherEntries.push(doc);
+            }
+        })
+
+        manualRequests = manualRequests.sort((aData, bData) => {
+            const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
+            const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
+            if(aDate === bDate) {
+                return 0;
+            }
+            return aDate < bDate ? -1 : 1; // Oldest to newest
+        });
+
+        otherEntries = otherEntries.sort((aData, bData) => {
+            const aDate = aData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+            const bDate = bData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+            if(aDate === bDate) {
+                return 0;
+            }
+            return aDate > bDate ? -1 : 1; // Newest to oldest
+        });
 
         let allPts = sortedReplacements
-            .concat(snapshot.docs);
+            .concat(manualRequests)
+            .concat(otherEntries);
 
 
         if (allPts.length === 0) return [];
-        // Once we get to this stage, we want any PO Boxes which have made it this far far to appear
+        // Once we get to this stage, we want any PO Boxes which have made it this far to appear
         // so that they can manually be marked as undeliverable
         const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false, true));
         return mappedResults.filter(result => result !== null);
@@ -2816,6 +2885,34 @@ const eligibleParticipantsForKitAssignment = async () => {
     } catch(error) {
         throw new Error('Error getting Eligible Kit Assignment Participants.', {cause: error});
     }
+}
+
+const requestHomeKit = async(connectId) => {
+    return await db.runTransaction(async transaction => {
+        // First find the user
+        const participantQuery = db.collection('participants').where('Connect_ID', '==', connectId);
+        const participantSnapshot = await transaction.get(participantQuery);
+        if(!participantSnapshot.size) {
+            throw new Error('Could not find participant ' + connectId);
+        }
+        const data = participantSnapshot.docs[0].data();
+        
+        try {
+            if (data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
+                throw new Error('Participant has withdrawn consent.');
+            } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
+                throw new Error('Participant is deceased.');
+            }
+            // Do we need to copy over any other data? What other data do we need to set here?
+            const updatedParticipantObject = getHomeMWKitData(data);
+            console.log('updatedParticipantObject', JSON.stringify(updatedParticipantObject, null, '\t'));
+            transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
+            return true;
+        } catch(err) {
+            console.error('Error getting participant replacement kit', err);
+            throw err;
+        }
+    });
 }
 
 const requestHomeMWReplacementKit = async (connectId) => {
@@ -2835,7 +2932,7 @@ const requestHomeMWReplacementKit = async (connectId) => {
                 throw new Error('Participant is deceased.');
             }
             // Do we need to copy over any other data? What other data do we need to set here?
-            const updatedParticipantObject = getHomeMWReplacementKitData(data);
+            const updatedParticipantObject = getHomeMWKitData(data);
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
             return true;
         } catch(err) {
@@ -4649,6 +4746,7 @@ module.exports = {
     markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
     requestHomeMWReplacementKit,
+    requestHomeKit,
     processSendGridEvent,
     processTwilioEvent,
     getSpecimenAndParticipant,
