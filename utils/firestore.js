@@ -2614,16 +2614,12 @@ const queryHomeCollectionAddressesToPrint = async (limit) => {
                 Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO),
                 Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '==', null)
             ));
-            // @TODO: Ooh, can we include this sort? Is this value going to be null for manually requested kits?
-            // Maybe we should consider explicitly setting this field to null or something if not already present
-            // when requesting a kit.
-            // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
 
         const snapshot = await query.get();
 
         if (snapshot.size === 0) return [];
 
-        // @TODO: if the dateKitRequested value is set, move it to the top of the list and sort by it
+        // If the dateKitRequested value is set, move it to the top of the list and sort by it
         // We do not do this in the query because sorting in FireStore removes any entries which 
         // do not have a value set for the field being sorted by, which is the case for most of these entries
 
@@ -2810,7 +2806,6 @@ const eligibleParticipantsForKitAssignment = async () => {
             db.collection("participants")
                 .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', addressPrinted)
                 .select(...participantHomeCollectionKitFields)
-                // .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
                 .get(),
             // First replacement home MW kits
             db.collection("participants")
@@ -2906,9 +2901,7 @@ const requestHomeKit = async(connectId) => {
             } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
                 throw new Error('Participant is deceased.');
             }
-            // Do we need to copy over any other data? What other data do we need to set here?
             const updatedParticipantObject = getHomeMWKitData(data);
-            console.log('updatedParticipantObject', JSON.stringify(updatedParticipantObject, null, '\t'));
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
             return true;
         } catch(err) {
@@ -2934,7 +2927,6 @@ const requestHomeMWReplacementKit = async (connectId) => {
             } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
                 throw new Error('Participant is deceased.');
             }
-            // Do we need to copy over any other data? What other data do we need to set here?
             const updatedParticipantObject = getHomeMWKitData(data);
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
             return true;

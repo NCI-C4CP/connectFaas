@@ -1161,7 +1161,6 @@ describe('biospecimen', async () => {
     });
 
     describe('getHomeMWKitData', () => {
-        // @TODO: Updates for new behavior for requesting initial kits
         describe('First replacement kit', () => {
             it('Should set a first replacement kit', () => {
                 const statuses = [

@@ -1132,7 +1132,6 @@ const getHomeMWKitData = (data) => {
 
     const requestedDT = new Date().toISOString();
 
-    // Do we need to copy over any other data? What other data do we need to set here?
     updatedParticipantObject = {...updatedParticipantObject,
         [[fieldPath, kitType].join('.')]: mouthwashKit,
         [[fieldPath, kitStatus].join('.')]: initialized,
