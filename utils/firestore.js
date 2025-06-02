@@ -2911,32 +2911,6 @@ const requestHomeKit = async(connectId) => {
     });
 }
 
-const requestHomeMWReplacementKit = async (connectId) => {
-    return await db.runTransaction(async transaction => {
-        // First find the user
-        const participantQuery = db.collection('participants').where('Connect_ID', '==', connectId);
-        const participantSnapshot = await transaction.get(participantQuery);
-        if(!participantSnapshot.size) {
-            throw new Error('Could not find participant ' + connectId);
-        }
-        const data = participantSnapshot.docs[0].data();
-        
-        try {
-            if (data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
-                throw new Error('Participant has withdrawn consent.');
-            } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
-                throw new Error('Participant is deceased.');
-            }
-            const updatedParticipantObject = getHomeMWKitData(data);
-            transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
-            return true;
-        } catch(err) {
-            console.error('Error getting participant replacement kit', err);
-            throw err;
-        }
-    });
-}
-
 const addKitStatusToParticipant = async (participantsCID) => {
     try {
         const { collectionDetails, baseline, bioKitMouthwash, kitStatus, addressPrinted } = fieldMapping;
@@ -4740,7 +4714,6 @@ module.exports = {
     addKitStatusToParticipantV2,
     markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
-    requestHomeMWReplacementKit,
     requestHomeKit,
     processSendGridEvent,
     processTwilioEvent,
