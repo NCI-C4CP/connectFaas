@@ -1195,10 +1195,9 @@ describe('biospecimen', async () => {
                         60000, 
                         'Date kit requested is within a minute of test completion'
                     );
-                    // console.log('updates', updates);
                     assert.deepEqual(clonedUpdates, {
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitType}`]: 976461859,
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitStatus}`]: 728267588
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized
                       },
                        `Kit status ${status} eligible for replacement kit`);
                 });
@@ -1224,10 +1223,9 @@ describe('biospecimen', async () => {
                     'Date kit requested is within a minute of test completion'
                 );
     
-                // console.log('updates', updates);
                 assert.deepEqual(clonedUpdates, {
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: 976461859,
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: 728267588,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollectedTimestamp}`]: null
                     },
                     `Kit status pending eligible for initial kit`);
@@ -1276,10 +1274,9 @@ describe('biospecimen', async () => {
                     'Date kit requested is within a minute of test completion'
                 );
     
-                // console.log('updates', updates);
                 assert.deepEqual(clonedUpdates, {
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: 976461859,
-                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: 728267588,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollectedTimestamp}`]: null
                     },
                     `Kit status ${status} eligible for initial kit`);
@@ -1394,10 +1391,9 @@ describe('biospecimen', async () => {
                         'Date kit requested is within a minute of test completion'
                     );
         
-                    // console.log('updates', updates);
                     assert.deepEqual(clonedUpdates, {
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitType}`]: 976461859,
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitStatus}`]: 728267588
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized
                       },
                        `Kit status ${status} eligible for replacement kit`);
                 });
