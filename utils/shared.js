@@ -1190,13 +1190,16 @@ const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBox
     // First of all, determine which visit it is
     let visit = 'BL';
     let requestDate = record?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested] || record[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[bloodOrUrineCollectedTimestamp];
+    const bl2Record = record?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2];
+    const bl1Record = record?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1];
 
-    if(record?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
+
+    if(bl2Record) {
         visit = 'BL_2';
-        requestDate = record[collectionDetails][baseline][bioKitMouthwashBL2][dateKitRequested];
-    } else if (record?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
+        requestDate = bl2Record[dateKitRequested];
+    } else if (bl1Record) {
         visit = 'BL_1';
-        requestDate = record[collectionDetails][baseline][bioKitMouthwashBL1][dateKitRequested];
+        requestDate = bl1Record[dateKitRequested];
     }
     const processedRecord = {
         first_name: record[firstName],
