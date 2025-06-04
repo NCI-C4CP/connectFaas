@@ -1141,6 +1141,36 @@ const getHomeMWKitData = (data) => {
     return updatedParticipantObject;
 }
 
+const replacementKitSort = (aData, bData) => {
+    const { bioKitMouthwashBL2, bioKitMouthwashBL1, collectionDetails, baseline, dateKitRequested } = fieldMapping;
+    const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+    const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
+    if(aDate === bDate) {
+        return 0;
+    }
+    return aDate < bDate ? -1 : 1; // Oldest to newest
+}
+
+const manualRequestSort = (aData, bData) => {
+    const { bioKitMouthwash, collectionDetails, baseline, dateKitRequested } = fieldMapping;
+    const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
+    const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
+    if(aDate === bDate) {
+        return 0;
+    }
+    return aDate < bDate ? -1 : 1; // Oldest to newest
+}
+
+const standardHomeKitSort = (aData, bData) => {
+    const { collectionDetails, baseline, bloodOrUrineCollectedTimestamp } = fieldMapping;
+    const aDate = aData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+    const bDate = bData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
+    if(aDate === bDate) {
+        return 0;
+    }
+    return aDate > bDate ? -1 : 1; // Newest to oldest
+}
+
 // Note: existing snake_casing follows through to BPTL CSV reporting. Do not update to camelCase without prior communication.
 const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBoxes) => {
     const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
@@ -2295,6 +2325,9 @@ module.exports = {
     cleanSurveyData,
     updateBaselineData,
     getHomeMWKitData,
+    replacementKitSort,
+    manualRequestSort,
+    standardHomeKitSort,
     processParticipantHomeMouthwashKitData,
     refusalWithdrawalConcepts,
     withdrawalConcepts,

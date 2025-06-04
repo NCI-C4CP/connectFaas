@@ -3,7 +3,7 @@ const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/f
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
@@ -2634,23 +2634,9 @@ const queryHomeCollectionAddressesToPrint = async (limit) => {
             }
         });
 
-        manualRequests = manualRequests.sort((aData, bData) => {
-            const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
-            const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
-            if(aDate === bDate) {
-                return 0;
-            }
-            return aDate < bDate ? -1 : 1; // Oldest to newest
-        });
+        manualRequests = manualRequests.sort(manualRequestSort);
 
-        otherEntries = otherEntries.sort((aData, bData) => {
-            const aDate = aData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
-            const bDate = bData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
-            if(aDate === bDate) {
-                return 0;
-            }
-            return aDate > bDate ? -1 : 1; // Newest to oldest
-        });
+        otherEntries = otherEntries.sort(standardHomeKitSort);
 
         // If we have made it to this stage and there is a P.O. Box,
         // we allow it to show in the print labels list to avoid count discrepancies
@@ -2729,14 +2715,7 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 
 
         let mappedResults = snapshot1.docs.map(doc => doc.data()).concat(snapshot2.docs.map(doc => doc.data()))
-            .sort((aData, bData) => {
-                const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                if(aDate === bDate) {
-                    return 0;
-                }
-                return aDate < bDate ? -1 : 1; // Oldest to newest
-            });
+            .sort(replacementKitSort);
         if (limit && limit < mappedResults.length) {
             mappedResults = mappedResults.slice(0, limit);
         }
@@ -2832,12 +2811,7 @@ const eligibleParticipantsForKitAssignment = async () => {
             .sort((a, b) => {
                 const aData = a.data();
                 const bData = b.data();
-                const aVal = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                const bVal = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                if(aVal === bVal) {
-                    return 0;
-                }
-                return aVal < bVal ? -1 : 1; // Oldest to newest
+                return replacementKitSort(aData, bData);
             });
 
         let manualRequests = [];
@@ -2851,23 +2825,9 @@ const eligibleParticipantsForKitAssignment = async () => {
             }
         })
 
-        manualRequests = manualRequests.sort((aData, bData) => {
-            const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
-            const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested];
-            if(aDate === bDate) {
-                return 0;
-            }
-            return aDate < bDate ? -1 : 1; // Oldest to newest
-        });
+        manualRequests = manualRequests.sort(manualRequestSort);
 
-        otherEntries = otherEntries.sort((aData, bData) => {
-            const aDate = aData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
-            const bDate = bData?.[collectionDetails]?.[baseline]?.[bloodOrUrineCollectedTimestamp];
-            if(aDate === bDate) {
-                return 0;
-            }
-            return aDate > bDate ? -1 : 1; // Newest to oldest
-        });
+        otherEntries = otherEntries.sort(standardHomeKitSort);
 
         let allPts = sortedReplacements
             .concat(manualRequests)
