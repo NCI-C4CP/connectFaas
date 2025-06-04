@@ -188,7 +188,10 @@ const dashboard = async (req, res) => {
             }
             return res.status(500).json(getResponseJSON(err.message, 500));
         }
-    } else if (api === 'requestHomeMWReplacementKit') {
+    } else if (api === 'requestHomeMWReplacementKit' || api === 'requestHomeKit') {
+        // Keeping the requestHomeMWReplacementKit endpoint for outdated UIs
+        // but updating to use the newer more general purpose logic
+        // and newly named endpoint
         let body = req.body;
 
         if (req.method !== 'POST') {
@@ -199,14 +202,16 @@ const dashboard = async (req, res) => {
         if(!connectId) {
             return res.status(405).json(getResponseJSON('Missing connect ID!', 405));
         }
+
         try {
-            const {requestHomeMWReplacementKit} = require('./firestore');
-            await requestHomeMWReplacementKit(connectId);
+            const {requestHomeKit} = require('./firestore');
+            await requestHomeKit(connectId);
             return res.status(200).json(getResponseJSON('Success!', 200));
         } catch(err) {
             console.error('Error', err);
             return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
         }
+
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
