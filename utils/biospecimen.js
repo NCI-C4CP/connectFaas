@@ -918,14 +918,20 @@ const biospecimenAPIs = async (req, res) => {
         return res.status(200).json({data: response, code:200})
     }
 
-    else if(api === 'getParticipantsByKitStatus') {
+    else if(api === 'getParticipantsByKitStatus') { // reports name change?
         if(req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
         }
         try {
             const statusType = req.query.type;
-            const kitStatusOptions = [fieldMapping.pending.toString(), fieldMapping.addressPrinted.toString(), 
-                fieldMapping.assigned.toString(),fieldMapping.shipped.toString(), fieldMapping.received.toString()];
+            console.log("🚀 ~ biospecimenAPIs ~ statusType:", statusType)
+            const kitStatusOptions = [
+                fieldMapping.pending.toString(),
+                fieldMapping.assigned.toString(),
+                fieldMapping.shipped.toString(),
+                fieldMapping.received.toString()
+            ];
+            console.log("🚀 ~ biospecimenAPIs ~ kitStatusOptions:", kitStatusOptions)
             
             if (!statusType) return res.status(400).json(getResponseJSON('The type of kit status value is empty.', 400));
             if (!kitStatusOptions.includes(statusType)) return res.status(400).json(getResponseJSON('The type of kit status value is not one of the available options.', 400));
@@ -933,7 +939,7 @@ const biospecimenAPIs = async (req, res) => {
             const { getParticipantsByKitStatus } = require('./firestore');
             const response = await getParticipantsByKitStatus(statusType);
             
-            if(!response) return res.status(404).json(getResponseJSON('No matching document found!', 404));
+            if (!response) return res.status(404).json(getResponseJSON('No matching document found!', 404));
             return res.status(200).json({data: response, code:200});
         } catch (error) { 
             console.error(error);
