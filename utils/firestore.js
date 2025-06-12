@@ -3507,12 +3507,15 @@ const getParticipantsByKitStatus = async (statusType) => {
     
 
     try {
-        if (statusType === fieldMapping.shipped.toString()) { // For now this will be the only status enabled for this function, more status types to be added later
-            return await shippedKitStatusParticipants();
-        } else if (statusType === fieldMapping.pending.toString()) {
+        if (statusType === fieldMapping.pending.toString()) {
             return await pendingKitStatus();
-        } else if (statusType === fieldMapping.assigned.toString()) {
+        } else if (statusType === fieldMapping.shipped.toString()) { // For now this will be the only status enabled for this function, more status types to be added later
+            return await shippedKitStatusParticipants();
+        } 
+        else if (statusType === fieldMapping.assigned.toString()) {
             return await assignedKitStatusParticipants();
+        } else if (statusType === fieldMapping.received.toString()) { 
+            return await receivedKitStatusParticipants();
         }
         return [];
     } catch (error){
@@ -3534,7 +3537,7 @@ const pendingKitStatus = async () => {
     try { 
         const snapshot = await db.collection("kitAssembly")
                             .where(`${kitStatus}`, '==', pending)
-                            .orderBy(`${pendingDateTimeStamp}`, 'asc')
+                            .orderBy(`${pendingDateTimeStamp}`, 'desc')
                             .select(
                                 `${pendingDateTimeStamp}`,
                                 `${returnKitTrackingNum}`,
@@ -3554,10 +3557,9 @@ const pendingKitStatus = async () => {
 };
 
 // assigned
-
 const assignedKitStatusParticipants = async () => {
-
-    const {
+    try {
+        const {
         collectionDetails, 
         baseline, 
         bioKitMouthwash, 
@@ -3566,80 +3568,142 @@ const assignedKitStatusParticipants = async () => {
         kitStatus, 
         assigned,
         firstName,
-        middleName,
         lastName,
-        address1,
-        address2,
-        city,
-        state,
-        zip,
-        healthCareProvider
-    } = fieldMapping;
-
-    const snapshot = await db.collection("participants")
-                        .where(Filter.or(
-                            Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', assigned),
-                            Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', assigned),
-                            Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', assigned)
-                        ))
-                        .select(
-                            'Connect_ID',
-                            `${firstName}`,
-                            `${middleName}`,
-                            `${lastName}`,
-                            `${address1}`,
-                            `${address2}`,
-                            `${city}`,
-                            `${state}`,
-                            `${zip}`,
-                            `${healthCareProvider}`
-                        )
-                        .get();
-    printDocsCount(snapshot, "assignedKitStatusParticipants");
-
-    if (!snapshot.empty) {
-        const participants = {};
-        const toReturn = [];
-        const kitLookupByParticipant = {};
-        const kitAssemblyPromises = [];
-        
-        // get the needed kitAssembly fields
-        const { 
-            supplyKitId,
-            collectionCardId,
-            supplyKitTrackingNum,
-            returnKitTrackingNum,
-            kitType
+        healthCareProvider,
+        pendingDateTimeStamp // maybe?
         } = fieldMapping;
 
+        const snapshot = await db.collection("participants")
+                            .where(Filter.or(
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', assigned),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', assigned),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', assigned)
+                            ))
+                            .select(
+                                'Connect_ID',
+                                `${firstName}`,
+                                `${lastName}`,
+                                `${healthCareProvider}`,
+                                `${collectionDetails}`
+                            )
+                            // .limit(10) // added because of massive data set
+                            .get();
+        printDocsCount(snapshot, "assignedKitStatusParticipants");
 
-        // add to the participants's object
+        if (!snapshot.empty) {
+            const participants = {};
+            const toReturn = [];
+            const kitLookupByParticipant = {};
+            const kitAssemblyPromises = [];
+            
+            // get the needed Kit Assembly assigned fields
+            const { 
+                supplyKitId,
+                collectionCardId,
+                supplyKitTrackingNum,
+                returnKitTrackingNum,
+                assigned,
+                returnKitId,
+                uniqueKitID
+            } = fieldMapping;
 
-        for (const docs of snapshot.docs) { 
-            const data = docs.data();
 
-            const participantConnectID = data['Connect_ID'];
+            // add to the participants's object
 
-            // add PT connect ID to the participants object
-            participants[participantConnectID] = {
-                "Connect_ID": participantConnectID,
-                [firstName]: data[firstName], 
-                [middleName]: data[middleName], 
-                [lastName]: data[lastName], 
-                [address1]: data[address1],
-                [address2]: data[address2], 
-                [city]: data[city],
-                [state]: data[state],
-                [zip]: data[zip], 
-                [healthCareProvider]: data[healthCareProvider]
-            };
+            for (const docs of snapshot.docs) { 
+                const data = docs.data();
+                // console.log("🚀 ~ assignedKitStatusParticipants ~ data:", data)
 
-            // link participant to their kitAssemly
+                const participantConnectID = data['Connect_ID'];
+
+                // toReturn.push(data);
+
+                // add PT connect ID to the participants object
+                participants[participantConnectID] = {
+                    "Connect_ID": participantConnectID,
+                    [firstName]: data[firstName], 
+                    [lastName]: data[lastName], 
+                    [healthCareProvider]: data[healthCareProvider]
+                };
+
+                // link participant to their kitAssemly
+
+                const kitFields = [
+                    `${supplyKitId}`,
+                    `${collectionCardId}`,
+                    `${supplyKitTrackingNum}`,
+                    `${returnKitId}`,
+                    `${returnKitTrackingNum}`,
+                    `${uniqueKitID}`,
+                    'Connect_ID'
+                ];
+
+                if (data["Connect_ID"] === 9522931059 ) { 
+                    console.log("data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == assigned", data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == assigned)
+                }
+
+                if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == assigned) {
+                            console.log("🚀 ~ assignedKitStatusParticipants ~ data: Initial", data);
+                            const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash];
+                            const kitId = kitData?.[uniqueKitID];
+                            kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: 'Initial' };
+                            kitAssemblyPromises.push(
+                                db.collection("kitAssembly")
+                                    .where(`${uniqueKitID}`, '==', kitId)
+                                    .select(...kitFields)
+                                    .get()
+                            );
+                }
+
+                if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == assigned) {
+                            console.log("🚀 ~ assignedKitStatusParticipants ~ data: 2nd", data);
+                            const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1];
+                            const kitId = kitData?.[uniqueKitID];
+                            kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '2nd' };
+                            kitAssemblyPromises.push(
+                                db.collection("kitAssembly")
+                                    .where(`${uniqueKitID}`, '==', kitId)
+                                    .select(...kitFields)
+                                    .get()
+                            );
+                }
+
+                if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] == assigned) {
+                            console.log("🚀 ~ assignedKitStatusParticipants ~ data: 3rd", data);
+                            const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2];
+                            const kitId = kitData?.[uniqueKitID];
+                            kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '3rd' };
+                            kitAssemblyPromises.push(
+                                db.collection("kitAssembly")
+                                    .where(`${uniqueKitID}`, '==', kitId)
+                                    .select(...kitFields)
+                                    .get()
+                            );
+                }
+
+            }
+            // console.log("🚀 ~ assignedKitStatusParticipants ~ kitAssemblyPromises:", kitAssemblyPromises);
+            const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
+                console.log("🚀 ~ assignedKitStatusParticipants ~ kitAssemblySnapshots:", kitAssemblySnapshots)
+                printDocsCount(kitAssemblySnapshots, "assignedKitStatusParticipants");
+
+                kitAssemblySnapshots.forEach((snapshot) => {
+                    if (!snapshot.empty) {
+                        const kitData = snapshot.docs[0].data();
+                        const { participant, kitIteration } = kitLookupByParticipant[kitData[uniqueKitID]];
+
+                        toReturn.push({ ...participants[participant], ...kitData, kitIteration});
+                    }
+                });
+            console.log("🚀 ~ assignedKitStatusParticipants ~ toReturn:", toReturn, toReturn.length);
+            return toReturn;
         }
-
+    } catch (error) {
+        console.error(error);
+        throw new Error("Error in assignedKitStatusParticipants. ", error);
     }
-
-}
+    
+};
 
 // shipped
 const shippedKitStatusParticipants = async () => { 
@@ -3741,6 +3805,177 @@ const shippedKitStatusParticipants = async () => {
     } catch (error) {
         console.error(error);
         throw new Error("Error in shippedKitStatusParticipants. ", error);
+    }
+}
+
+// received 
+const receivedKitStatusParticipants = async () => { 
+    try {
+        const {
+        collectionDetails, 
+        baseline, 
+        bioKitMouthwash, 
+        bioKitMouthwashBL1, 
+        bioKitMouthwashBL2, 
+        kitStatus, 
+        received,
+        healthCareProvider,
+        receivedDateTime
+        } = fieldMapping;
+
+        const snapshot = await db.collection("participants")
+                            .where(Filter.or(
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', received),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', received),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', received)
+                            ))
+                            .select(
+                                'Connect_ID',
+                                `${healthCareProvider}`,
+                                `${collectionDetails}`
+                            )
+                            // .limit(3) // added because of massive data set
+                            .get();
+        printDocsCount(snapshot, "receivedKitStatusParticipants");
+
+        if (!snapshot.empty) {
+            const participants = {};
+            const toReturn = [];
+            const kitLookupByParticipant = {};
+            const kitAssemblyPromises = [];
+            
+            // get the needed Kit Assembly assigned fields
+            const { 
+                collectionCardId,
+                receivedDateTime,
+                returnKitTrackingNum,
+                received,
+                uniqueKitID
+            } = fieldMapping;
+
+
+            // add to the participants's object
+
+            for (const docs of snapshot.docs) { 
+                const data = docs.data();
+                console.log("🚀 ~ receivedKitStatusParticipants ~ data:", data)
+
+                const participantConnectID = data['Connect_ID'];
+
+                // add PT connect ID to the participants object
+                participants[participantConnectID] = {
+                    "Connect_ID": participantConnectID,
+                };
+
+                // link participant to their kitAssemly
+
+                const kitFields = [
+                    'Connect_ID',
+                    `${collectionCardId}`,
+                    `${receivedDateTime}`,
+                    `${returnKitTrackingNum}`,
+                    `${uniqueKitID}`,
+                ];
+
+                if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == received) {
+                            const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash];
+                            const kitId = kitData?.[uniqueKitID];
+                            // kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: 'Initial' };
+                            // kitAssemblyPromises.push(
+                            //     db.collection("kitAssembly")
+                            //         .where(`${uniqueKitID}`, '==', kitId)
+                            //         .select(...kitFields)
+                            //         .get()
+                            // );
+                            if (kitId) {
+                                kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: 'Initial' };
+                                kitAssemblyPromises.push(
+                                    db.collection("kitAssembly")
+                                        .where(`${uniqueKitID}`, '==', kitId)
+                                        .select(...kitFields)
+                                        .get()
+                                );
+                            } else {
+                                // If kitId is undefined, we log a warning and do nothing, preventing the crash.
+                                console.warn(`SKIPPING a received kit for participant ${participantConnectID} because it has a missing kitId. This may be a data integrity issue.`);
+                            }
+                }
+
+                if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == received) {
+                            const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1];
+                            const kitId = kitData?.[uniqueKitID];
+
+                            
+                            // kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '2nd' };
+                            // kitAssemblyPromises.push(
+                            //     db.collection("kitAssembly")
+                            //         .where(`${uniqueKitID}`, '==', kitId)
+                            //         .select(...kitFields)
+                            //         .get()
+                            // );
+
+                            if (kitId) {
+                                kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '2nd' };
+                                kitAssemblyPromises.push(
+                                    db.collection("kitAssembly")
+                                        .where(`${uniqueKitID}`, '==', kitId)
+                                        .select(...kitFields)
+                                        .get()
+                                );
+                            } else {
+                                // If kitId is undefined, we log a warning and do nothing, preventing the crash.
+                                console.warn(`SKIPPING a received kit for participant ${participantConnectID} because it has a missing kitId. This may be a data integrity issue.`);
+                            }
+                }
+
+                if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] == received) {
+                            const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2];
+                            const kitId = kitData?.[uniqueKitID];
+                            // kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '3rd' };
+                            // kitAssemblyPromises.push(
+                            //     db.collection("kitAssembly")
+                            //         .where(`${uniqueKitID}`, '==', kitId)
+                            //         .select(...kitFields)
+                            //         .get()
+                            // );
+                            if (kitId) {
+                                kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '3rd' };
+                                kitAssemblyPromises.push(
+                                    db.collection("kitAssembly")
+                                        .where(`${uniqueKitID}`, '==', kitId)
+                                        .select(...kitFields)
+                                        .get()
+                                );
+                            } else {
+                                // If kitId is undefined, we log a warning and do nothing, preventing the crash.
+                                console.warn(`SKIPPING a received kit for participant ${participantConnectID} because it has a missing kitId. This may be a data integrity issue.`);
+                            }
+                }
+
+            }
+            const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
+
+            console.log("🚀 ~ receivedKitStatusParticipants ~ kitAssemblySnapshots:", kitAssemblySnapshots, kitAssemblySnapshots.length)
+            printDocsCount(kitAssemblySnapshots, "receivedKitStatusParticipants");
+
+            kitAssemblySnapshots.forEach((snapshot) => {
+                if (!snapshot.empty) {
+                    const kitData = snapshot.docs[0].data();
+                    const { participant, kitIteration } = kitLookupByParticipant[kitData[uniqueKitID]];
+
+                    toReturn.push({ ...participants[participant], ...kitData, kitIteration});
+                }
+            });
+            
+            
+
+        
+            console.log("🚀 ~ receivedKitStatusParticipants ~ toReturn:", toReturn, toReturn.length);
+            return toReturn;
+        }
+    } catch (error) {
+        console.error(error);
+        throw new Error("Error in receivedKitStatusParticipants. ", error);
     }
 }
 
