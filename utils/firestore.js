@@ -2619,6 +2619,7 @@ const queryHomeCollectionAddressesToPrint = async (limit) => {
 
         if (snapshot.size === 0) return [];
 
+
         // If the dateKitRequested value is set, move it to the top of the list and sort by it
         // We do not do this in the query because sorting in FireStore removes any entries which 
         // do not have a value set for the field being sorted by, which is the case for most of these entries
@@ -2660,7 +2661,10 @@ const queryCountHomeCollectionAddressesToPrint = async () => {
 
         const snapshot = await db.collection('participants')
             .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', initialized)
-            .where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO)
+            .where(Filter.or(
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO),
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '==', null)
+            ))
             .count()
             .get();
 
