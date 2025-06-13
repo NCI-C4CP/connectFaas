@@ -38,9 +38,12 @@ const fetchDHQAPIData = async (url, method, headers, data) => {
         switch (contentType) {
             case "application/json":
                 return await response.json();
+            case "application/pdf":
             case "application/zip":
-                const blob = await response.blob();
-                return await blob.arrayBuffer();
+                const responseBlob = await response.blob();
+                const arrayBuffer = await responseBlob.arrayBuffer();
+                const base64String = Buffer.from(arrayBuffer).toString('base64');
+                return { data: base64String, contentType: contentType };
             default:
                 return await response.text();
         }
@@ -103,7 +106,7 @@ const scheduledSyncDHQ3Status = async (req, res) => {
             }
             if (!dhq3Username) {
                 console.error(`Participant ${uid} has no DHQ username. Skipping.`);
-                errorCount++; // Count as an error/skip
+                errorCount++;
                 continue;
             }
             if (!dhq3StudyID) {
@@ -159,7 +162,7 @@ const scheduledSyncDHQ3Status = async (req, res) => {
  *     login_durations: [ '00:00:46.688120', '00:04:51.592618' ], 
  *     viewed_rnr_report: bool, 
  *     downloaded_rnr_report: bool 
- *     viewed_hei_report: bool // TODO: support this with reports in phase 2 (post-MVP).
+ *     viewed_hei_report: bool // TODO: support this with reports in phase 3 (post-MVP). Note: DHQ API needs updating to support this.
  *     downloaded_hei_report: bool
  */
 
@@ -186,11 +189,11 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
 
         // If the the survey is completed in DHQ, update the participant profile with the completed timestamp and flag.
         if (results?.questionnaire_status === 3 && (dhq3SurveyStatus !== fieldMapping.submitted || dhq3SurveyStatusExternal !== fieldMapping.dhq3Completed)) {
-            await updateDHQ3ProgressStatus(true, fieldMapping.submitted, results?.status_date || '', uid);
+            await updateDHQ3ProgressStatus(true, fieldMapping.submitted, results?.status_date || '', results?.viewed_hei_report || false, uid);
 
         // If the survey is only started in DHQ, sanity-check the status with the participant profile. This should always be set on the survey's 'start' click in the PWA.
         } else if (results?.questionnaire_status === 2 && (dhq3SurveyStatus !== fieldMapping.started || dhq3SurveyStatusExternal !== fieldMapping.dhq3InProgress)) {
-            await updateDHQ3ProgressStatus(false, fieldMapping.started, results?.status_date || '', uid);
+            await updateDHQ3ProgressStatus(false, fieldMapping.started, results?.status_date || '', results?.viewed_hei_report || false, uid);
         }
 
         return results;
@@ -208,9 +211,10 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
  * @param {boolean} isSubmitted - True if the DHQ3 survey has been completed (API questionnaire_status 3).
  * @param {number} completionStatus - The Connect completion status to set in the participant profile (e.g. fieldMapping.started or fieldMapping.submitted).
  * @param {string} dhqSubmittedTimestamp - The ISO 8601 Timestamp from the DHQ API's status_date field. Populated by DHQ on survey completion.
+ * @param {boolean} viewedHEIReport - True if the participant has viewed the HEI report (from DHQ API).
  */
 
-const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmittedTimestamp, uid) => {
+const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmittedTimestamp, viewedHEIReport, uid) => {
     try {
         let updateData = {
             [fieldMapping.dhq3SurveyStatus]: completionStatus,
@@ -225,6 +229,12 @@ const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmit
             } else {
                 updateData[fieldMapping.dhq3SurveyCompletionTime] = new Date().toISOString();
             }
+
+            const viewedStatus = viewedHEIReport === true || viewedHEIReport === 'true' ? fieldMapping.reportStatus.viewed : fieldMapping.reportStatus.unread;
+
+            // Trigger the report availability at survey completion
+            updateData[fieldMapping.dhq3HEIReportStatusInternal] = fieldMapping.reportStatus.unread;
+            updateData[fieldMapping.dhq3HEIReportStatusExternal] = viewedStatus;
         }
 
         const participantSnapshot = await db.collection('participants')
@@ -243,6 +253,131 @@ const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmit
     } catch (error) {
         console.error("Error: updateDHQ3ProgressStatus():", error);
         throw new Error(`Failed to update DHQ3 progress status: ${error.message}`);
+    }
+}
+
+const updateDHQReportViewedStatus = async (uid, studyID, respondentUsername, isDeclined = false, dhqToken = null) => {
+
+    try {
+        if (!dhqToken) {
+            dhqToken = await getSecret(process.env.DHQ_TOKEN);
+            if (!dhqToken) {
+                console.error('DHQ API token not found in secret manager.');
+                throw new Error('DHQ API token not found.');
+            }
+        }
+
+        studyID = studyID.replace(/^study_/, '');
+
+        const url = `${API_ROOT}${studyID}/respondent-get-information/`;
+        const method = "POST";
+        const headers = getDHQHeaders(method, dhqToken);
+        const data = { respondent_username: respondentUsername };
+
+        const [dhqAPIResults, participantSnapshot] = await Promise.all([
+            !isDeclined ? fetchDHQAPIData(url, method, headers, data) : Promise.resolve(null),
+            db.collection('participants').where('state.uid', '==', uid)
+                .select(
+                    fieldMapping.dhq3HEIReportStatusInternal.toString(),
+                    fieldMapping.dhq3HEIReportStatusExternal.toString(),
+                    fieldMapping.dhq3HEIReportFirstViewedISOTime.toString(),
+                    fieldMapping.dhq3HEIReportFirstDeclinedISOTime.toString()
+                )
+                .get()
+        ]);
+
+        if (participantSnapshot.empty) {
+            console.error(`Error: No participant found with UID ${uid}.`);
+            throw new Error(`Participant with UID ${uid} not found.`);
+        }
+
+        if (!isDeclined && dhqAPIResults?.viewed_hei_report !== true) {
+            console.warn(`DHQ API Bug: Participant ${uid} viewed the report, but the API has not yet registered it as viewed.`);
+        }
+
+        const participantDocRef = participantSnapshot.docs[0].ref;
+        const participantData = participantSnapshot.docs[0].data();
+
+        const currentViewedInternalStatus = participantData[fieldMapping.dhq3HEIReportStatusInternal];
+        const currentViewedExternalStatus = participantData[fieldMapping.dhq3HEIReportStatusExternal];
+        const currentFirstViewedISOTime = participantData[fieldMapping.dhq3HEIReportFirstViewedISOTime];
+        const currentFirstDeclinedISOTime = participantData[fieldMapping.dhq3HEIReportFirstDeclinedISOTime];
+
+        let updateObj = {};
+
+        // Declined path (Only set declined timestamp on the first decline action)
+        if (isDeclined) {
+            if (currentViewedInternalStatus !== fieldMapping.reportStatus.declined) {
+                updateObj[fieldMapping.dhq3HEIReportStatusInternal] = fieldMapping.reportStatus.declined;
+            }
+
+            if (!currentFirstDeclinedISOTime) {
+                updateObj[fieldMapping.dhq3HEIReportFirstDeclinedISOTime] = new Date().toISOString();
+            }
+            
+        // Viewed path (Only set viewed timestamp on the first view action)
+        // Update the external status based on the DHQ API results.
+        } else {
+            if (currentViewedExternalStatus !== fieldMapping.reportStatus.viewed) {
+                updateObj[fieldMapping.dhq3HEIReportStatusExternal] = dhqAPIResults?.viewed_hei_report === true || dhqAPIResults?.viewed_hei_report === 'true'
+                    ? fieldMapping.reportStatus.viewed
+                    : fieldMapping.reportStatus.unread;
+            }
+
+            if (currentViewedInternalStatus !== fieldMapping.reportStatus.viewed) {
+                updateObj[fieldMapping.dhq3HEIReportStatusInternal] = fieldMapping.reportStatus.viewed;
+            }
+
+            if (!currentFirstViewedISOTime) {
+                updateObj[fieldMapping.dhq3HEIReportFirstViewedISOTime] = new Date().toISOString();
+            }
+        }
+
+        if (Object.keys(updateObj).length > 0) {
+            await participantDocRef.update(updateObj);
+        }
+
+    } catch (error) {
+        console.error("Error: updateDHQ3ReportViewedStatus():", error);
+        throw new Error(`Failed to update DHQ3 report viewed status: ${error.message}`);
+    }
+}
+
+/**
+ * Retrieve the DHQ HEI report for a participant.
+ * @param {string} studyID - The DHQ study ID.
+ * @param {string} respondentUsername - The respondent's DHQ username.
+ * @returns {Promise<Object>} - The DHQ HEI report data.
+ */
+
+const retrieveDHQHEIReport = async (studyID, respondentUsername) => {
+    try {
+        const dhqToken = await getSecret(process.env.DHQ_TOKEN);
+        if (!dhqToken) {
+            console.error('DHQ API token not found in secret manager.');
+            throw new Error('DHQ API token not found.');
+        }
+
+        studyID = studyID.replace(/^study_/, '');
+        
+        const url = `${API_ROOT}${studyID}/download-hei-report/`;
+        const method = "POST";
+        const headers = getDHQHeaders(method, dhqToken);
+        const data = { respondent_username: respondentUsername };
+
+        // Returns the HEI report as a base64-encoded string.
+        // { data: Base64-encoded PDF data, contentType: 'application/pdf' }
+        const reportData = await fetchDHQAPIData(url, method, headers, data);
+        
+        if (!reportData || reportData.contentType !== 'application/pdf') {
+            throw new Error('Failed to retrieve HEI report or report is not a PDF.');
+        }
+
+        return reportData;
+
+    } catch (error) {
+        console.error("Error: retrieveDHQHEIReport():", error);
+        throw new Error(`Failed to retrieve DHQ HEI report: ${error.message}`);
     }
 }
 
@@ -275,7 +410,6 @@ const allocateDHQ3Credential = async (availableCredentialPools, uid) => {
                 [fieldMapping.dhq3SurveyStatus]: participant?.[fieldMapping.dhq3SurveyStatus],
                 [fieldMapping.dhq3SurveyStatusExternal]: participant?.[fieldMapping.dhq3SurveyStatusExternal],
                 [fieldMapping.dhq3SurveyStartTime]: participant?.[fieldMapping.dhq3SurveyStartTime],
-                [fieldMapping.dhq3HEIReportViewed]: participant?.[fieldMapping.dhq3HEIReportViewed],
             };
         }
 
@@ -312,7 +446,6 @@ const allocateDHQ3Credential = async (availableCredentialPools, uid) => {
                             [fieldMapping.dhq3UUID]: credentialDoc.id,
                             [fieldMapping.dhq3SurveyStatus]: fieldMapping.notStarted,
                             [fieldMapping.dhq3SurveyStatusExternal]: fieldMapping.dhq3NotYetBegun,
-                            [fieldMapping.dhq3HEIReportViewed]: fieldMapping.no,
                         };
 
                         transaction.delete(credentialDoc.ref);
@@ -383,8 +516,94 @@ const markDHQ3CredentialAsDepleted = async (studyID) => {
     }
 }
 
+/**
+ * Scheduled function to count available DHQ credentials.
+ * Count until we hit the 1000 credential threshold.
+ * If >= 1000 credentials remain, stop counting. If < 1000, send a warning email to the Connect team.
+ * Credentials are refreshed with a locally run function after the Connect team creates a new 'study' in DHQ.
+ */
+
+const scheduledCountDHQ3Credentials = async (req, res) => {
+    console.log('Scheduled count of available DHQ credentials started.');
+    
+    try {
+        const appSettingsQuery = await db.collection('appSettings')
+            .where('appName', '==', 'connectApp')
+            .select('dhq')
+            .get();
+
+        if (appSettingsQuery.empty) {
+            console.error('No app settings found for connectApp.');
+            return res.status(500).json(getResponseJSON("App settings not found.", 500));
+        }
+
+        const appSettingsData = appSettingsQuery.docs[0].data();
+        const lowCredentialWarningThreshold = appSettingsData.dhq.lowCredentialWarningThreshold || 1000;
+        const dhqStudyIDs = appSettingsData.dhq.dhqStudyIDs || [];                      // List of DHQ study IDs from appSettings.
+        const depletedDHQStudyIDs = appSettingsData.dhq.dhqDepletedCredentials || [];   // List of DHQ study IDs without availableCredentials (skip these in credential search).
+        const availableCredentialPools = dhqStudyIDs.filter(studyID => !depletedDHQStudyIDs.includes(studyID));
+        let runningCredentialCount = 0;
+
+        for (const studyID of availableCredentialPools) {
+            const credentialCollectionRef = db.collection('dhq3SurveyCredentials').doc(studyID).collection('availableCredentials');
+            const credentialCount = await credentialCollectionRef.count().get().then(snapshot => snapshot.data().count);
+            runningCredentialCount += credentialCount;
+            
+            // Break if we hit the threshold. Will return from here in the vast majority of cases.
+            if (runningCredentialCount >= lowCredentialWarningThreshold) {
+                console.log(`Running credential count is above threshold. ${runningCredentialCount} credentials remaining. Last checked study: ${studyID}. No action needed.`);
+                return res.status(200).json(getResponseJSON("Running credential count is above threshold. No action needed.", 200));
+            }
+        }
+
+        // Create an email warning for the CCC team. This will run daily until the credentials are replenished.
+        console.warn(`Running credential count is below threshold: ${runningCredentialCount} Credentials remaining. Sending warning email.`);
+
+        const sendGridSecret = await getSecret(process.env.GCLOUD_SENDGRID_SECRET);
+        const sgMail = require('@sendgrid/mail');
+        sgMail.setApiKey(sendGridSecret);
+
+        const emailTo = 'ConnectCC@nih.gov';
+
+        const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
+            ? 'PROD'
+            : process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-stg-5519'
+                ? 'STAGE'
+                : 'DEV';
+
+        const warningEmail = {
+            to: emailTo, 
+            from: {
+                name: process.env.SG_FROM_NAME || 'Connect for Cancer Prevention Study',
+                email: process.env.SG_FROM_EMAIL || 'donotreply@myconnect.cancer.gov'
+            },
+            subject: `Low DHQ3 Credential Pool Warning: DHQ3 credentials are running low in ${developmentTier}.`,
+            html: `<p>Dear Connect Team,</p>
+                <p>This is an automated WARNING message to inform you that the available DHQ3 credentials are running low in ${developmentTier}. </p>
+                <p>Please take action to replenish the credentials as soon as possible.</p>
+                <p>Thank you,</p>
+                <p>Connect for Cancer Prevention Study Team</p>`,
+        };
+
+        sgMail.send(warningEmail).then(() => {
+            console.log('Email sent to ' + emailTo)
+        }).catch((error) => {
+            throw new Error(`Error: scheduledCountDHQ3Credentials Failed to send warning email: ${error.message}`);
+        });
+
+        return res.status(200).json(getResponseJSON(`Available DHQ credentials check completed successfully. Low credential warning email sent to ${emailTo}`, 200));
+
+    } catch (error) {
+        console.error("Error updating available DHQ credentials count:", error);
+        return res.status(500).json(getResponseJSON("Failed to complete available DHQ credentials count.", 500));
+    }
+};
+
 module.exports = {
     scheduledSyncDHQ3Status,
     syncDHQ3RespondentInfo,
     allocateDHQ3Credential,
+    retrieveDHQHEIReport,
+    updateDHQReportViewedStatus,
+    scheduledCountDHQ3Credentials,
 }
