@@ -3,7 +3,7 @@ const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/f
 admin.initializeApp();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWReplacementKitData, processParticipantHomeMouthwashKitData, sanitizeObject } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
@@ -654,32 +654,69 @@ const getCursorDocument = async (collection, cursor) => {
     }
 }
 
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
-const retrieveParticipantsEligibleForIncentives = async (siteCode, roundType, isParent, limit, page) => {
+/**
+ * Retrieves participants who are eligible for incentives based on specified criteria.
+ *
+ * @async
+ * @function retrieveParticipantsEligibleForIncentives
+ * @param {string} siteCode - The site code(s) to filter participants by.
+ * @param {string} roundType - The incentive round type to check eligibility for (e.g., 'baseline', 'module1').
+ * @param {boolean} isParent - Indicates if the request is from a parent entity. Determines whether to use 'in' or '==' operator for site code filtering.
+ * @param {number} limit - The maximum number of participants to retrieve.
+ * @param {string} [cursor] - Optional cursor for pagination, representing the last document ID from a previous query.
+ * 
+ * @returns {Promise<Object|Error>} A promise that resolves to:
+ *   - An object containing:
+ *     - {Array<Object>} docs - Array of eligible participant objects with firstName, email, token, and site properties.
+ *     - {string} [cursor] - ID of the last document in the result set (for pagination), if more results exist.
+ *   - Or an Error object if the query fails.
+ * 
+ * @throws {Error} Will throw an error if the query or document retrieval fails.
+ */
+const retrieveParticipantsEligibleForIncentives = async (siteCode, roundType, isParent, limit, cursor) => {
     try {
 
         const operator = isParent ? 'in' : '==';
-        const offset = (page-1)*limit;
 
         const { incentiveConcepts } = require('./shared');
-        const object = incentiveConcepts[roundType]
+        const object = incentiveConcepts[roundType];
         
-        const snapshot = await db.collection('participants')
-                                .where('827220437', operator, siteCode)
-                                .where('821247024', '==', 197316935)
-                                .where(`${object}.222373868`, "==", 353358909)
-                                .where(`${object}.648936790`, '==', 104430631)
-                                .where(`${object}.648228701`, '==', 104430631)
-                                .orderBy('Connect_ID', 'asc')
-                                .offset(offset)
-                                .limit(limit)
-                                .get();
-        printDocsCount(snapshot, `retrieveParticipantsEligibleForIncentives; offset: ${offset}`);
+        let query = db.collection('participants')
+                        .where('827220437', operator, siteCode)
+                        .where('821247024', '==', 197316935)
+                        .where(`${object}.222373868`, "==", 353358909)
+                        .where(`${object}.648936790`, '==', 104430631)
+                        .where(`${object}.648228701`, '==', 104430631)
+                        .orderBy('Connect_ID', 'asc');
+                                
+        if (cursor) {
+            const collection = 'participants';
+            const doc = await getCursorDocument(collection, cursor);
 
-        return snapshot.docs.map(document => {
+            if (doc instanceof Error) {
+                return new Error(`Document with ID ${cursor} not found`);
+            }
+
+            query = query.startAfter(doc);
+        }
+        
+        query = query.limit(limit);
+
+        const snapshot = await query.get();
+        const results = {};
+
+        printDocsCount(snapshot, `retrieveParticipantsEligibleForIncentives`);
+
+        results.docs = snapshot.docs.map(document => {
             let data = document.data();
             return {firstName: data['399159511'], email: data['869588347'], token: data['token'], site: data['827220437']}
         });
+
+        if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
+            results.cursor = snapshot.docs[snapshot.docs.length - 1].id;
+        }
+
+        return results;
     } catch (error) {
         console.error(error);
         return new Error(error)
@@ -2604,27 +2641,49 @@ const participantHomeCollectionKitFields = [
 const queryHomeCollectionAddressesToPrint = async (limit) => {
     try {
         const { bioKitMouthwash, kitStatus, initialized,
-            collectionDetails, baseline, bloodOrUrineCollectedTimestamp } = fieldMapping;
+            collectionDetails, baseline, bloodOrUrineCollectedTimestamp, dateKitRequested } = fieldMapping;
 
         const fiveDaysAgoDateISO = getFiveDaysAgoDateISO();
 
         let query = db.collection('participants')
             .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', initialized)
-            .where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO)
-            .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc');
-
-        if(limit) {
-            query = query.limit(Math.min(limit, 500));
-        }
+            .where(Filter.or(
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO),
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '==', null)
+            ));
 
         const snapshot = await query.get();
 
         if (snapshot.size === 0) return [];
 
 
+        // If the dateKitRequested value is set, move it to the top of the list and sort by it
+        // We do not do this in the query because sorting in FireStore removes any entries which 
+        // do not have a value set for the field being sorted by, which is the case for most of these entries
+
+        let manualRequests = [];
+        let otherEntries = [];
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested]) {
+                manualRequests.push(data);
+            } else {
+                otherEntries.push(data);
+            }
+        });
+
+        manualRequests = manualRequests.sort(manualRequestSort);
+
+        otherEntries = otherEntries.sort(standardHomeKitSort);
+
         // If we have made it to this stage and there is a P.O. Box,
         // we allow it to show in the print labels list to avoid count discrepancies
-        const mappedResults = snapshot.docs.map(doc => processParticipantHomeMouthwashKitData(doc.data(), true, true));
+        let mappedResults = manualRequests.concat(otherEntries).map(doc => processParticipantHomeMouthwashKitData(doc, true, true));
+
+        // Because we are sorting our results ourselves, we have to do the limit here rather than in the query
+        if (limit && limit < mappedResults.length) {
+            mappedResults = mappedResults.slice(0, limit);
+        }
         return mappedResults;
     } catch (error) {
         throw new Error(`Error querying home collection addresses to print`, {cause: error});
@@ -2639,7 +2698,10 @@ const queryCountHomeCollectionAddressesToPrint = async () => {
 
         const snapshot = await db.collection('participants')
             .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', initialized)
-            .where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO)
+            .where(Filter.or(
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '<=', fiveDaysAgoDateISO),
+                Filter.where(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, '==', null)
+            ))
             .count()
             .get();
 
@@ -2694,14 +2756,7 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 
 
         let mappedResults = snapshot1.docs.map(doc => doc.data()).concat(snapshot2.docs.map(doc => doc.data()))
-            .sort((aData, bData) => {
-                const aDate = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                const bDate = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                if(aDate === bDate) {
-                    return 0;
-                }
-                return aDate < bDate ? -1 : 1; // Oldest to newest
-            });
+            .sort(replacementKitSort);
         if (limit && limit < mappedResults.length) {
             mappedResults = mappedResults.slice(0, limit);
         }
@@ -2715,48 +2770,51 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 }
 
 const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
-    try {
-        const biospecSnapshot = await db.collection('biospecimen').where(`${fieldMapping.tubesBagsCids.mouthwashTube1}.${fieldMapping.receivedDateTime}`, '==', receivedDateTimestamp).get();
-        // Because kitLevel is needed by this report and is stored only on the kitAssembly and not the biospecimen record
-        // we must look up the corresponding kitAssembly records and match them up
-        const kitIds = [];
-        const kitDict = {};
+    // No try/catch; this is already handled in the endpoint which uses this
+    const biospecSnapshot = await db.collection('biospecimen').where(`${fieldMapping.tubesBagsCids.mouthwashTube1}.${fieldMapping.receivedDateTime}`, '==', receivedDateTimestamp).get();
+    // Because kitLevel is needed by this report and is stored only on the kitAssembly and not the biospecimen record
+    // we must look up the corresponding kitAssembly records and match them up
+    const kitIds = [];
+    const kitDict = {};
 
-        biospecSnapshot.docs.forEach(document => {
-            // Store each data object in kitDict to match up to kit records later
-            const data = document.data();
-            const kitId = data[fieldMapping.uniqueKitID];
+    biospecSnapshot.docs.forEach(document => {
+        // Store each data object in kitDict to match up to kit records later
+        const data = document.data();
+        const kitId = data[fieldMapping.uniqueKitID];
+        if(kitId) {
             kitDict[kitId] = data;
             kitIds.push(kitId);
-        });
+        }
+    });
 
-        // Find the corresponding kit using conceptIds.uniqueKitID values
-        let kitSnapshot;
-        let start = 0;
+    // Find the corresponding kit using conceptIds.uniqueKitID values
+    let kitSnapshot;
+    let start = 0;
 
-        // Run this in chunks of 30 to avoid exceeding the max allowed size for IN queries if we have more than 30 kits
-        const maxSize = 30;
-        do {
-            let query = db.collection('kitAssembly')
-                .where(`${fieldMapping.uniqueKitID}`, 'in', kitIds.slice(start, Math.min(maxSize, kitIds.length)));
-            kitSnapshot = await query.get();
-            for (const doc of kitSnapshot.docs) {
-                // For each kit, attach the kitLevel to the kit data found
-                const kitData = doc.data();
-                const kitLevel = kitData?.[fieldMapping.kitLevel] || fieldMapping.initialKit;
-                const kitId = kitData[fieldMapping.uniqueKitID];
-                kitDict[kitId][fieldMapping.kitLevel] = kitLevel;
-            }
-            start += maxSize;
+    // Run this in chunks of 30 to avoid exceeding the max allowed size for IN queries if we have more than 30 kits
+    const maxSize = 30;
+    do {
+        const inArr = kitIds.slice(start, Math.min(maxSize, kitIds.length));
+        if(!inArr.length) {
+            break;
+        }
+        let query = db.collection('kitAssembly')
+            .where(`${fieldMapping.uniqueKitID}`, 'in', inArr);
+        kitSnapshot = await query.get();
+        for (const doc of kitSnapshot.docs) {
+            // For each kit, attach the kitLevel to the kit data found
+            const kitData = doc.data();
+            const kitLevel = kitData?.[fieldMapping.kitLevel] || fieldMapping.initialKit;
+            const kitId = kitData[fieldMapping.uniqueKitID];
+            kitDict[kitId][fieldMapping.kitLevel] = kitLevel;
+        }
+        start += maxSize;
 
-        } while (kitSnapshot.size === maxSize);
+    } while (kitSnapshot.size === maxSize);
 
-        // Because there are no sorts on biospecSnapshot, we don't need to care about order,
-        // so just whatever order is returned here is fine
-        return Object.keys(kitDict).map(key => kitDict[key]);
-    } catch (error) {
-        return new Error(error);
-    }
+    // Because there are no sorts on biospecSnapshot, we don't need to care about order,
+    // so just whatever order is returned here is fine
+    return Object.keys(kitDict).map(key => kitDict[key]);
 }
 
 const eligibleParticipantsForKitAssignment = async () => {
@@ -2768,7 +2826,6 @@ const eligibleParticipantsForKitAssignment = async () => {
             db.collection("participants")
                 .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', addressPrinted)
                 .select(...participantHomeCollectionKitFields)
-                .orderBy(`${collectionDetails}.${baseline}.${bloodOrUrineCollectedTimestamp}`, 'desc')
                 .get(),
             // First replacement home MW kits
             db.collection("participants")
@@ -2786,7 +2843,8 @@ const eligibleParticipantsForKitAssignment = async () => {
         
         // Include the participants who have replacement kits
         // Sort order: oldest replacement kit requests should always be at the top
-        // and then all the regular ones
+        // Then the manually requested initial kits, oldest to newest by requested date
+        // and then all the regular ones, newest to oldest by blood/urine collected
 
         const sortedReplacements = []
             .concat(firstReplacementKitSnapshot.docs)
@@ -2794,21 +2852,31 @@ const eligibleParticipantsForKitAssignment = async () => {
             .sort((a, b) => {
                 const aData = a.data();
                 const bData = b.data();
-                const aVal = aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || aData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                const bVal = bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[dateKitRequested] || bData?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[dateKitRequested];
-                if(aVal === bVal) {
-                    return 0;
-                }
-                return aVal < bVal ? -1 : 1; // Oldest to newest
+                return replacementKitSort(aData, bData);
             });
 
+        let manualRequests = [];
+        let otherEntries = [];
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dateKitRequested]) {
+                manualRequests.push(doc);
+            } else {
+                otherEntries.push(doc);
+            }
+        })
+
+        manualRequests = manualRequests.sort(manualRequestSort);
+
+        otherEntries = otherEntries.sort(standardHomeKitSort);
 
         let allPts = sortedReplacements
-            .concat(snapshot.docs);
+            .concat(manualRequests)
+            .concat(otherEntries);
 
 
         if (allPts.length === 0) return [];
-        // Once we get to this stage, we want any PO Boxes which have made it this far far to appear
+        // Once we get to this stage, we want any PO Boxes which have made it this far to appear
         // so that they can manually be marked as undeliverable
         const mappedResults = allPts.map(doc => processParticipantHomeMouthwashKitData(doc.data(), false, true));
         return mappedResults.filter(result => result !== null);
@@ -2818,7 +2886,7 @@ const eligibleParticipantsForKitAssignment = async () => {
     }
 }
 
-const requestHomeMWReplacementKit = async (connectId) => {
+const requestHomeKit = async(connectId) => {
     return await db.runTransaction(async transaction => {
         // First find the user
         const participantQuery = db.collection('participants').where('Connect_ID', '==', connectId);
@@ -2834,8 +2902,7 @@ const requestHomeMWReplacementKit = async (connectId) => {
             } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
                 throw new Error('Participant is deceased.');
             }
-            // Do we need to copy over any other data? What other data do we need to set here?
-            const updatedParticipantObject = getHomeMWReplacementKitData(data);
+            const updatedParticipantObject = getHomeMWKitData(data);
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
             return true;
         } catch(err) {
@@ -4648,7 +4715,7 @@ module.exports = {
     addKitStatusToParticipantV2,
     markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
-    requestHomeMWReplacementKit,
+    requestHomeKit,
     processSendGridEvent,
     processTwilioEvent,
     getSpecimenAndParticipant,
