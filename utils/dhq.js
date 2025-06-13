@@ -518,8 +518,8 @@ const markDHQ3CredentialAsDepleted = async (studyID) => {
 
 /**
  * Scheduled function to count available DHQ credentials.
- * Count until we hit the 1000 credential threshold.
- * If >= 1000 credentials remain, stop counting. If < 1000, send a warning email to the Connect team.
+ * Count until we hit the lowCredentialWarningThreshold. This threshold is stored in Firestore -> appSettings -> dhq.
+ * If >= lowCredentialWarningThreshold credentials remain, stop counting. If < lowCredentialWarningThreshold, send a warning email to the Connect team.
  * Credentials are refreshed with a locally run function after the Connect team creates a new 'study' in DHQ.
  */
 

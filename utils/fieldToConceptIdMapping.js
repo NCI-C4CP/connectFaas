@@ -548,7 +548,6 @@ module.exports = {
 
     dhq3HEIReportStatusInternal: 542983589, // [unread, viewed, declined]
     dhq3HEIReportStatusExternal: 892697201, // [unread, viewed]
-
     dhq3HEIReportFirstViewedISOTime: 600958089,
     dhq3HEIReportFirstDeclinedISOTime: 404613256,
 };
