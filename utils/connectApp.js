@@ -195,7 +195,7 @@ const connectApp = async (req, res) => {
 
     else if (api === 'retrieveDHQHEIReport') {
       if (req.method !== 'POST') {
-        return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
       }
 
       const dhqData = req.body;
