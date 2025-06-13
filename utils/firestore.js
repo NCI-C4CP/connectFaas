@@ -3508,10 +3508,9 @@ const getParticipantsByKitStatus = async (statusType, filters) => {
     try {
         if (statusType === fieldMapping.pending.toString()) {
             return await pendingKitStatus();
-        } 
-        else if (statusType === fieldMapping.assigned.toString()) {
+        } else if (statusType === fieldMapping.assigned.toString()) {
             return await assignedKitStatusParticipants();
-        } else if (statusType === fieldMapping.shipped.toString()) { // For now this will be the only status enabled for this function, more status types to be added later
+        } else if (statusType === fieldMapping.shipped.toString()) {
             return await shippedKitStatusParticipants();
         } else if (statusType === fieldMapping.received.toString()) { 
             return await receivedKitStatusParticipants(filters);
@@ -3521,7 +3520,7 @@ const getParticipantsByKitStatus = async (statusType, filters) => {
         console.error(`Error in getParticipantsByKitStatus:`, error);
         throw new Error("getParticipantsByKitStatus", error);
     }
-}
+};
 
 
 const pendingKitStatus = async () => {
@@ -3626,7 +3625,6 @@ const assignedKitStatusParticipants = async () => {
                 ];
 
                 if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == assigned) {
-                            console.log("🚀 ~ assignedKitStatusParticipants ~ data: Initial", data);
                             const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash];
                             const kitId = kitData?.[uniqueKitID];
                             kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: 'Initial' };
@@ -3639,7 +3637,6 @@ const assignedKitStatusParticipants = async () => {
                 }
 
                 if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == assigned) {
-                            console.log("🚀 ~ assignedKitStatusParticipants ~ data: 2nd", data);
                             const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1];
                             const kitId = kitData?.[uniqueKitID];
                             kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '2nd' };
@@ -3652,7 +3649,6 @@ const assignedKitStatusParticipants = async () => {
                 }
 
                 if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] == assigned) {
-                            console.log("🚀 ~ assignedKitStatusParticipants ~ data: 3rd", data);
                             const kitData = data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2];
                             const kitId = kitData?.[uniqueKitID];
                             kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: '3rd' };
@@ -3663,9 +3659,8 @@ const assignedKitStatusParticipants = async () => {
                                     .get()
                             );
                 }
-
             }
-           
+
             const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
                 printDocsCount(kitAssemblySnapshots, "assignedKitStatusParticipants");
 

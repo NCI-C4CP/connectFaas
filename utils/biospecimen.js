@@ -918,7 +918,7 @@ const biospecimenAPIs = async (req, res) => {
         return res.status(200).json({data: response, code:200})
     }
 
-    else if(api === 'getParticipantsByKitStatus') { // reports name change?
+    else if(api === 'getParticipantsByKitStatus') {
         if(req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
         }
