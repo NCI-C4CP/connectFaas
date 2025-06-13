@@ -924,20 +924,31 @@ const biospecimenAPIs = async (req, res) => {
         }
         try {
             const statusType = req.query.type;
-            console.log("🚀 ~ biospecimenAPIs ~ statusType:", statusType)
+            
+            const collectionId = req.query.collectionId;
+            const connectId = req.query.connectId;
+            const returnKitTrackingNumber = req.query.returnKitTrackingNum;
+            const dateReceived = req.query.dateReceived;
+
+            const filters = {
+                collectionId: collectionId,
+                connectId: connectId,
+                returnKitTrackingNumber: returnKitTrackingNumber,
+                receivedDateTime: dateReceived
+            };
+
             const kitStatusOptions = [
                 fieldMapping.pending.toString(),
                 fieldMapping.assigned.toString(),
                 fieldMapping.shipped.toString(),
                 fieldMapping.received.toString()
             ];
-            console.log("🚀 ~ biospecimenAPIs ~ kitStatusOptions:", kitStatusOptions)
             
             if (!statusType) return res.status(400).json(getResponseJSON('The type of kit status value is empty.', 400));
             if (!kitStatusOptions.includes(statusType)) return res.status(400).json(getResponseJSON('The type of kit status value is not one of the available options.', 400));
             
             const { getParticipantsByKitStatus } = require('./firestore');
-            const response = await getParticipantsByKitStatus(statusType);
+            const response = await getParticipantsByKitStatus(statusType, filters);
             
             if (!response) return res.status(404).json(getResponseJSON('No matching document found!', 404));
             return res.status(200).json({data: response, code:200});

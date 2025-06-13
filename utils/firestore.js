@@ -3501,21 +3501,22 @@ const addPrintAddressesParticipants = async (data) => {
 /**
  * Returns an array of custom objects based on the participants biomouthwash kit status
  * @param {string} statusType - concept id of the kit status's type
+ * @param {Object} filters - optional filters to apply to the query, currently used only by received status
  * @returns {Array} - Array of object(s) and/or array(s) based on processParticipantData statusType.
 */
-const getParticipantsByKitStatus = async (statusType) => {
-    
+const getParticipantsByKitStatus = async (statusType, filters) => {
+    console.log(`getParticipantsByKitStatus called with statusType: ${statusType} and filters:`, filters);   
 
     try {
         if (statusType === fieldMapping.pending.toString()) {
             return await pendingKitStatus();
-        } else if (statusType === fieldMapping.shipped.toString()) { // For now this will be the only status enabled for this function, more status types to be added later
-            return await shippedKitStatusParticipants();
         } 
         else if (statusType === fieldMapping.assigned.toString()) {
             return await assignedKitStatusParticipants();
+        } else if (statusType === fieldMapping.shipped.toString()) { // For now this will be the only status enabled for this function, more status types to be added later
+            return await shippedKitStatusParticipants();
         } else if (statusType === fieldMapping.received.toString()) { 
-            return await receivedKitStatusParticipants();
+            return await receivedKitStatusParticipants(filters);
         }
         return [];
     } catch (error){
@@ -3809,28 +3810,88 @@ const shippedKitStatusParticipants = async () => {
 }
 
 // received 
-const receivedKitStatusParticipants = async () => { 
+const receivedKitStatusParticipants = async (filters) => { 
     try {
         const {
-        collectionCardId, 
-        receivedDateTime, 
-        returnKitTrackingNum,
-        received,
-        kitStatus,
-        kitLevel,
-    
+            collectionCardId, 
+            receivedDateTime, 
+            returnKitTrackingNum,
+            received,
+            kitStatus,
+            kitLevel,
         } = fieldMapping;
 
+        
+        // check if filters have an active value
+        const hasActiveFilters = (filters) => {
+            if (!filters || typeof filters !== 'object') {
+                return false;
+            } else {
+                // values to be considered empty fitler inputs
+                const emptyValues = [null, undefined, ''];
+                return Object.values(filters).some(value => !emptyValues.includes(value));
+            }
+        }
 
-        // snapshot for the kitAssembly collection
-        // kit status received
-        // filter seven days ago
-        // order by receivedDateTime descending, newest first
+        console.log("🚀 ~ receivedKitStatusParticipants ~ hasActiveFilters:", hasActiveFilters(filters));
+
+
+
         const toReturn = [];
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        let snapshot;
+        
+        if (hasActiveFilters(filters)) { 
+            if (filters) {
+                query = db.collection("kitAssembly")
+                    // .where(`${kitStatus}`, '==', received)
+                
+                if (filters.connectId) {
+                    console.log(`Adding filter: Connect_ID == ${filters.connectId}`);
+                    query = query.where('Connect_ID', '==', parseInt(filters.connectId, 10)); // convert concept ID string to number
+                }
 
-        const snapshot = await db.collection("kitAssembly")
+                if (filters.collectionId) {
+                    console.log(`Adding filter: collectionCardId == ${filters.collectionId}`);
+                    query = query.where( `${collectionCardId}`, '==', filters.collectionId);
+                }
+                if (filters.returnKitTrackingNumber) {
+                    console.log(`Adding filter: returnKitTrackingNum == ${filters.returnKitTrackingNumber}`);
+                    query = query.where( `${returnKitTrackingNum}`, '==', filters.returnKitTrackingNumber);
+                }
+
+                if (filters.receivedDateTime) {
+                    // Ensure startOfDay and endOfDay are in ISO format and as a string data type
+                    const startOfDay = `${filters.receivedDateTime}T00:00:00.000Z`
+                    const endOfDay = `${filters.receivedDateTime}T23:59:59.999Z`
+                        console.log("🚀 ~ receivedKitStatusParticipants ~ startOfDay:", startOfDay, typeof startOfDay)
+                        console.log("🚀 ~ receivedKitStatusParticipants ~ endOfDay:", endOfDay, typeof endOfDay)
+                        console.log("receivedDateTime", `${receivedDateTime}`, typeof `${receivedDateTime}`)
+
+                    query = query.where(`${receivedDateTime}`, '>=', startOfDay)
+                                .where(`${receivedDateTime}`, '<=', endOfDay)
+                                .orderBy(`${receivedDateTime}`, 'desc')
+                }
+                
+
+                const filteredQuery = query
+                    .select(
+                            `Connect_ID`,
+                            `${collectionCardId}`,
+                            `${receivedDateTime}`,
+                            `${returnKitTrackingNum}`,
+                            `${kitLevel}`
+                            )
+                    .get();
+
+                snapshot = await filteredQuery;
+                console.log("🚀 ~ receivedKitStatusParticipants ~ snapshot:", snapshot)
+                
+            }
+        } else {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+            snapshot = await db.collection("kitAssembly")
                             .where(`${kitStatus}`, '==', received)
                             .where(`${receivedDateTime}`, '>=', sevenDaysAgo.toISOString())
                             .orderBy(`${receivedDateTime}`, 'desc')
@@ -3842,6 +3903,7 @@ const receivedKitStatusParticipants = async () => {
                                 `${kitLevel}`
                             )
                             .get();
+        }
 
         if (!snapshot.empty) {
             printDocsCount(snapshot, "receivedKitStatusParticipants");
@@ -3855,11 +3917,10 @@ const receivedKitStatusParticipants = async () => {
                     [kitLevel]: data[kitLevel]
                 };
                 toReturn.push(kitData);
-            }
-            ;
+            };   
             return toReturn;
         }
-        
+        return toReturn;
     } catch (error) {
         console.error(error);
         throw new Error("Error in receivedKitStatusParticipants. ", error);
