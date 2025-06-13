@@ -924,16 +924,33 @@ const biospecimenAPIs = async (req, res) => {
         }
         try {
             const statusType = req.query.type;
-            const kitStatusOptions = [fieldMapping.pending.toString(), fieldMapping.addressPrinted.toString(), 
-                fieldMapping.assigned.toString(),fieldMapping.shipped.toString(), fieldMapping.received.toString()];
+            
+            const collectionId = req.query.collectionId;
+            const connectId = req.query.connectId;
+            const returnKitTrackingNumber = req.query.returnKitTrackingNum;
+            const dateReceived = req.query.dateReceived;
+
+            const filters = {
+                collectionId: collectionId,
+                connectId: connectId,
+                returnKitTrackingNumber: returnKitTrackingNumber,
+                receivedDateTime: dateReceived
+            };
+
+            const kitStatusOptions = [
+                fieldMapping.pending.toString(),
+                fieldMapping.assigned.toString(),
+                fieldMapping.shipped.toString(),
+                fieldMapping.received.toString()
+            ];
             
             if (!statusType) return res.status(400).json(getResponseJSON('The type of kit status value is empty.', 400));
             if (!kitStatusOptions.includes(statusType)) return res.status(400).json(getResponseJSON('The type of kit status value is not one of the available options.', 400));
             
             const { getParticipantsByKitStatus } = require('./firestore');
-            const response = await getParticipantsByKitStatus(statusType);
+            const response = await getParticipantsByKitStatus(statusType, filters);
             
-            if(!response) return res.status(404).json(getResponseJSON('No matching document found!', 404));
+            if (!response) return res.status(404).json(getResponseJSON('No matching document found!', 404));
             return res.status(200).json({data: response, code:200});
         } catch (error) { 
             console.error(error);
