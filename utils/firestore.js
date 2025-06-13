@@ -3505,8 +3505,6 @@ const addPrintAddressesParticipants = async (data) => {
  * @returns {Array} - Array of object(s) and/or array(s) based on processParticipantData statusType.
 */
 const getParticipantsByKitStatus = async (statusType, filters) => {
-    console.log(`getParticipantsByKitStatus called with statusType: ${statusType} and filters:`, filters);   
-
     try {
         if (statusType === fieldMapping.pending.toString()) {
             return await pendingKitStatus();
@@ -3525,8 +3523,8 @@ const getParticipantsByKitStatus = async (statusType, filters) => {
     }
 }
 
-// pending
-const pendingKitStatus = async () => { 
+
+const pendingKitStatus = async () => {
     const { kitStatus,
             pending, 
             pendingDateTimeStamp,
@@ -3557,21 +3555,19 @@ const pendingKitStatus = async () => {
     }
 };
 
-// assigned
 const assignedKitStatusParticipants = async () => {
     try {
         const {
-        collectionDetails, 
-        baseline, 
-        bioKitMouthwash, 
-        bioKitMouthwashBL1, 
-        bioKitMouthwashBL2, 
-        kitStatus, 
-        assigned,
-        firstName,
-        lastName,
-        healthCareProvider,
-        pendingDateTimeStamp // maybe?
+            collectionDetails, 
+            baseline, 
+            bioKitMouthwash, 
+            bioKitMouthwashBL1, 
+            bioKitMouthwashBL2, 
+            kitStatus, 
+            assigned,
+            firstName,
+            lastName,
+            healthCareProvider,
         } = fieldMapping;
 
         const snapshot = await db.collection("participants")
@@ -3587,7 +3583,6 @@ const assignedKitStatusParticipants = async () => {
                                 `${healthCareProvider}`,
                                 `${collectionDetails}`
                             )
-                            // .limit(10) // added because of massive data set
                             .get();
         printDocsCount(snapshot, "assignedKitStatusParticipants");
 
@@ -3608,18 +3603,10 @@ const assignedKitStatusParticipants = async () => {
                 uniqueKitID
             } = fieldMapping;
 
-
-            // add to the participants's object
-
             for (const docs of snapshot.docs) { 
                 const data = docs.data();
-                // console.log("🚀 ~ assignedKitStatusParticipants ~ data:", data)
-
                 const participantConnectID = data['Connect_ID'];
 
-                // toReturn.push(data);
-
-                // add PT connect ID to the participants object
                 participants[participantConnectID] = {
                     "Connect_ID": participantConnectID,
                     [firstName]: data[firstName], 
@@ -3627,8 +3614,7 @@ const assignedKitStatusParticipants = async () => {
                     [healthCareProvider]: data[healthCareProvider]
                 };
 
-                // link participant to their kitAssemly
-
+                // link participant to their kitAssembly documents
                 const kitFields = [
                     `${supplyKitId}`,
                     `${collectionCardId}`,
@@ -3638,10 +3624,6 @@ const assignedKitStatusParticipants = async () => {
                     `${uniqueKitID}`,
                     'Connect_ID'
                 ];
-
-                if (data["Connect_ID"] === 9522931059 ) { 
-                    console.log("data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == assigned", data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[kitStatus] == assigned)
-                }
 
                 if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == assigned) {
                             console.log("🚀 ~ assignedKitStatusParticipants ~ data: Initial", data);
@@ -3683,9 +3665,8 @@ const assignedKitStatusParticipants = async () => {
                 }
 
             }
-            // console.log("🚀 ~ assignedKitStatusParticipants ~ kitAssemblyPromises:", kitAssemblyPromises);
+           
             const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
-                console.log("🚀 ~ assignedKitStatusParticipants ~ kitAssemblySnapshots:", kitAssemblySnapshots)
                 printDocsCount(kitAssemblySnapshots, "assignedKitStatusParticipants");
 
                 kitAssemblySnapshots.forEach((snapshot) => {
@@ -3696,7 +3677,6 @@ const assignedKitStatusParticipants = async () => {
                         toReturn.push({ ...participants[participant], ...kitData, kitIteration});
                     }
                 });
-            console.log("🚀 ~ assignedKitStatusParticipants ~ toReturn:", toReturn, toReturn.length);
             return toReturn;
         }
     } catch (error) {
@@ -3706,7 +3686,6 @@ const assignedKitStatusParticipants = async () => {
     
 };
 
-// shipped
 const shippedKitStatusParticipants = async () => { 
     try {
         const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, 
@@ -3809,7 +3788,6 @@ const shippedKitStatusParticipants = async () => {
     }
 }
 
-// received 
 const receivedKitStatusParticipants = async (filters) => { 
     try {
         const {
@@ -3833,29 +3811,24 @@ const receivedKitStatusParticipants = async (filters) => {
             }
         }
 
-        console.log("🚀 ~ receivedKitStatusParticipants ~ hasActiveFilters:", hasActiveFilters(filters));
-
-
-
         const toReturn = [];
         let snapshot;
         
         if (hasActiveFilters(filters)) { 
             if (filters) {
                 query = db.collection("kitAssembly")
-                    // .where(`${kitStatus}`, '==', received)
+                    .where(`${kitStatus}`, '==', received)
                 
+                // append filters to the query if they exist
                 if (filters.connectId) {
-                    console.log(`Adding filter: Connect_ID == ${filters.connectId}`);
                     query = query.where('Connect_ID', '==', parseInt(filters.connectId, 10)); // convert concept ID string to number
                 }
 
                 if (filters.collectionId) {
-                    console.log(`Adding filter: collectionCardId == ${filters.collectionId}`);
                     query = query.where( `${collectionCardId}`, '==', filters.collectionId);
                 }
+
                 if (filters.returnKitTrackingNumber) {
-                    console.log(`Adding filter: returnKitTrackingNum == ${filters.returnKitTrackingNumber}`);
                     query = query.where( `${returnKitTrackingNum}`, '==', filters.returnKitTrackingNumber);
                 }
 
@@ -3863,9 +3836,6 @@ const receivedKitStatusParticipants = async (filters) => {
                     // Ensure startOfDay and endOfDay are in ISO format and as a string data type
                     const startOfDay = `${filters.receivedDateTime}T00:00:00.000Z`
                     const endOfDay = `${filters.receivedDateTime}T23:59:59.999Z`
-                        console.log("🚀 ~ receivedKitStatusParticipants ~ startOfDay:", startOfDay, typeof startOfDay)
-                        console.log("🚀 ~ receivedKitStatusParticipants ~ endOfDay:", endOfDay, typeof endOfDay)
-                        console.log("receivedDateTime", `${receivedDateTime}`, typeof `${receivedDateTime}`)
 
                     query = query.where(`${receivedDateTime}`, '>=', startOfDay)
                                 .where(`${receivedDateTime}`, '<=', endOfDay)
@@ -3884,8 +3854,6 @@ const receivedKitStatusParticipants = async (filters) => {
                     .get();
 
                 snapshot = await filteredQuery;
-                console.log("🚀 ~ receivedKitStatusParticipants ~ snapshot:", snapshot)
-                
             }
         } else {
             const sevenDaysAgo = new Date();
@@ -3905,6 +3873,7 @@ const receivedKitStatusParticipants = async (filters) => {
                             .get();
         }
 
+        // return snapshot for either filtered or unfiltered query
         if (!snapshot.empty) {
             printDocsCount(snapshot, "receivedKitStatusParticipants");
             for (const doc of snapshot.docs) { 
