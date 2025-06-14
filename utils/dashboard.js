@@ -1,4 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
+const {uploadPathologyReports, getUploadedPathologyReportNames} = require("./fileUploads");
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -212,6 +213,10 @@ const dashboard = async (req, res) => {
             return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
         }
 
+    } else if (api === "uploadPathologyReports") {
+        return await uploadPathologyReports(req, res);
+    } else if (api === "getUploadedPathologyReportNames") {
+        return await getUploadedPathologyReportNames(req, res);
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }

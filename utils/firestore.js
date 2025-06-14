@@ -4588,6 +4588,59 @@ const processPhysicalActivity = async (dateExpression) => {
     return true;
 }
 
+const savePathologyReportNamesToFirestore = async (dataObj) => {
+  const { bucketName, Connect_ID, successFilenames } = dataObj;
+  const collection = db.collection("pathologyReports");
+  const batch = db.batch();
+
+  for (const filename of successFilenames) {
+    const snapshot = await collection
+      .where("bucketName", "==", bucketName)
+      .where("Connect_ID", "==", Connect_ID)
+      .where(`${fieldMapping.pathologyReportFilename}`, "==", filename)
+      .get();
+      
+    if (snapshot.empty) {
+      const data = {
+        Connect_ID,
+        bucketName,
+        [fieldMapping.pathologyReportFilename]: filename,
+        updatedAt: new Date().toISOString(),
+      };
+      batch.create(collection.doc(), data);
+    } else {
+      for (let i = 0; i < snapshot.size; i++) {
+        const doc = snapshot.docs[i];
+        if (i === 0) {
+          batch.update(doc.ref, {
+            updatedAt: new Date().toISOString(),
+          });
+        } else {
+          batch.delete(doc.ref);
+        }
+      }
+    }
+  }
+
+  await batch.commit();
+};
+
+const getUploadedPathologyReportNamesFromFirestore = async ({ bucketName, Connect_ID }) => {
+  const snapshot = await db
+    .collection("pathologyReports")
+    .where("bucketName", "==", bucketName)
+    .where("Connect_ID", "==", Connect_ID)
+    .get();
+
+  printDocsCount(snapshot, "getUploadedPathologyReportNamesFromFirestore");
+
+  if (snapshot.empty) {
+    return [];
+  }
+
+  return snapshot.docs.map((doc) => doc.data()[`${fieldMapping.pathologyReportFilename}`]);
+};
+
 module.exports = {
     db,
     verifyToken,
@@ -4727,5 +4780,7 @@ module.exports = {
     updateNotifySmsRecord,
     updateSmsPermission,
     updateParticipantIncentiveEligibility,
-    processPhysicalActivity
-}
+    processPhysicalActivity,
+    savePathologyReportNamesToFirestore,
+    getUploadedPathologyReportNamesFromFirestore,
+};

@@ -8,6 +8,7 @@ tmp
 firebase.json
 .firebaserc
 .eslintrc.json
+eslint.config.mjs
 .DS_Store
 firebase-debug.log
 ui-debug.log

@@ -391,6 +391,9 @@ module.exports = {
     dhq3SurveyStartTime: 109610692,
     dhq3SurveyCompletionTime: 610227793,
     
+    // Pathology Reports
+    pathologyReportFilename: 488064292,
+    
     dataDestruction: {
         consentFirstName: 471168198,
         consentMiddleName: 436680969,
