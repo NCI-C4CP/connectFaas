@@ -3564,21 +3564,172 @@ const addPrintAddressesParticipants = async (data) => {
 
 /**
  * Returns an array of custom objects based on the participants biomouthwash kit status
- * @param {string} statusType - concept id of the kit status's type 
+ * @param {string} statusType - concept id of the kit status's type
+ * @param {Object} filters - optional filters to apply to the query, currently used only by received status
  * @returns {Array} - Array of object(s) and/or array(s) based on processParticipantData statusType.
 */
-const getParticipantsByKitStatus = async (statusType) => {
+const getParticipantsByKitStatus = async (statusType, filters) => {
     try {
-        if (statusType === fieldMapping.shipped.toString()) { // For now this will be the only status enabled for this function, more status types to be added later
+        if (statusType === fieldMapping.pending.toString()) {
+            return await pendingKitStatus();
+        } else if (statusType === fieldMapping.assigned.toString()) {
+            return await assignedKitStatusParticipants();
+        } else if (statusType === fieldMapping.shipped.toString()) {
             return await shippedKitStatusParticipants();
+        } else if (statusType === fieldMapping.received.toString()) { 
+            return await receivedKitStatusParticipants(filters);
         }
         return [];
     } catch (error){
         console.error(`Error in getParticipantsByKitStatus:`, error);
         throw new Error("getParticipantsByKitStatus", error);
     }
-}
+};
 
+
+const pendingKitStatus = async () => {
+    const { kitStatus,
+            pending, 
+            pendingDateTimeStamp,
+            returnKitTrackingNum,
+            supplyKitId,
+            returnKitId,
+            collectionCupId,
+            collectionCardId } = fieldMapping;  
+    try { 
+        const snapshot = await db.collection("kitAssembly")
+                            .where(`${kitStatus}`, '==', pending)
+                            .orderBy(`${pendingDateTimeStamp}`, 'desc')
+                            .select(
+                                `${pendingDateTimeStamp}`,
+                                `${returnKitTrackingNum}`,
+                                `${supplyKitId}`,
+                                `${returnKitId}`,
+                                `${collectionCupId}`,
+                                `${collectionCardId}`,
+                            )
+                            .get();
+        if (!snapshot.empty) {
+            return snapshot.docs.map(doc => doc.data());
+        }
+    } catch (error) {
+        console.error(error);
+        throw new Error("Error in pendingKitStatus. ", error);
+    }
+};
+
+const assignedKitStatusParticipants = async () => {
+    try {
+        const {
+            collectionDetails, 
+            baseline, 
+            bioKitMouthwash, 
+            bioKitMouthwashBL1, 
+            bioKitMouthwashBL2, 
+            kitStatus, 
+            assigned,
+            firstName,
+            lastName,
+            healthCareProvider,
+        } = fieldMapping;
+
+        const snapshot = await db.collection("participants")
+                            .where(Filter.or(
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitStatus}`, '==', assigned),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${kitStatus}`, '==', assigned),
+                                Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${kitStatus}`, '==', assigned)
+                            ))
+                            .select(
+                                'Connect_ID',
+                                `${firstName}`,
+                                `${lastName}`,
+                                `${healthCareProvider}`,
+                                `${collectionDetails}`
+                            )
+                            .get();
+        printDocsCount(snapshot, "assignedKitStatusParticipants");
+
+        if (!snapshot.empty) {
+            const participants = {};
+            const toReturn = [];
+            const kitLookupByParticipant = {};
+            const kitAssemblyPromises = [];
+            
+            // get the needed Kit Assembly assigned fields
+            const { 
+                supplyKitId,
+                collectionCardId,
+                supplyKitTrackingNum,
+                returnKitTrackingNum,
+                assigned,
+                returnKitId,
+                uniqueKitID
+            } = fieldMapping;
+
+            for (const docs of snapshot.docs) { 
+                const data = docs.data();
+                const participantConnectID = data['Connect_ID'];
+
+                participants[participantConnectID] = {
+                    "Connect_ID": participantConnectID,
+                    [firstName]: data[firstName], 
+                    [lastName]: data[lastName], 
+                    [healthCareProvider]: data[healthCareProvider]
+                };
+
+                // link participant to their kitAssembly documents
+                const kitFields = [
+                    `${supplyKitId}`,
+                    `${collectionCardId}`,
+                    `${supplyKitTrackingNum}`,
+                    `${returnKitId}`,
+                    `${returnKitTrackingNum}`,
+                    `${uniqueKitID}`,
+                    'Connect_ID'
+                ];
+
+                const kitTypes = [
+                        { field: bioKitMouthwash, iteration: 'Initial' },
+                        { field: bioKitMouthwashBL1, iteration: '2nd' },
+                        { field: bioKitMouthwashBL2, iteration: '3rd' }
+                ];
+
+                // Loop through each kit type 
+                for (const { field, iteration } of kitTypes) {
+                    if (data?.[collectionDetails]?.[baseline]?.[field]?.[kitStatus] == assigned) {
+                        const kitData = data[collectionDetails][baseline][field];
+                        const kitId = kitData?.[uniqueKitID];
+
+                        kitLookupByParticipant[kitId] = { participant: participantConnectID, kitIteration: iteration };
+                        kitAssemblyPromises.push(
+                            db.collection("kitAssembly")
+                                .where(`${uniqueKitID}`, '==', kitId)
+                                .select(...kitFields)
+                                .get()
+                        );
+                    }
+                }
+            }
+
+            const kitAssemblySnapshots = await Promise.all(kitAssemblyPromises);
+                printDocsCount(kitAssemblySnapshots, "assignedKitStatusParticipants");
+
+                kitAssemblySnapshots.forEach((snapshot) => {
+                    if (!snapshot.empty) {
+                        const kitData = snapshot.docs[0].data();
+                        const { participant, kitIteration } = kitLookupByParticipant[kitData[uniqueKitID]];
+
+                        toReturn.push({ ...participants[participant], ...kitData, kitIteration});
+                    }
+                });
+            return toReturn;
+        }
+    } catch (error) {
+        console.error(error);
+        throw new Error("Error in assignedKitStatusParticipants. ", error);
+    }
+    
+};
 
 const shippedKitStatusParticipants = async () => { 
     try {
@@ -3619,7 +3770,6 @@ const shippedKitStatusParticipants = async () => {
 
                 // Find the home MW kits for the participant, both initial and any replacements
                 // Only include shipped ones
-
                 const kitFields = [`${supplyKitId}`, `${supplyKitTrackingNum}`, `${returnKitTrackingNum}`, `${returnKitId}`, `${collectionCardId}`, `${uniqueKitID}`, 'Connect_ID'];
 
                 if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[kitStatus] == shipped) {
@@ -3680,6 +3830,103 @@ const shippedKitStatusParticipants = async () => {
     } catch (error) {
         console.error(error);
         throw new Error("Error in shippedKitStatusParticipants. ", error);
+    }
+}
+
+const receivedKitStatusParticipants = async (filters) => { 
+    try {
+        const {
+            collectionCardId, 
+            receivedDateTime, 
+            returnKitTrackingNum,
+            received,
+            kitStatus,
+            kitLevel,
+        } = fieldMapping;
+
+        const toReturn = [];
+        let snapshot;
+
+        const hasFilters = (filters && Object.keys(filters).length > 0) ? true : false;
+        
+        if (hasFilters) {
+            let query = db.collection("kitAssembly")
+                .where(`${kitStatus}`, '==', received)
+            
+            // append filters to the query if they exist
+            if (filters.connectId) {
+                query = query.where('Connect_ID', '==', parseInt(filters.connectId, 10)); // convert concept ID string to number
+            }
+
+            if (filters.collectionId) {
+                query = query.where( `${collectionCardId}`, '==', filters.collectionId);
+            }
+
+            if (filters.returnKitTrackingNumber) {
+                query = query.where( `${returnKitTrackingNum}`, '==', filters.returnKitTrackingNumber);
+            }
+
+            if (filters.receivedDateTime) {
+                // Ensure startOfDay and endOfDay are in ISO format and as a string data type
+                const startOfDay = `${filters.receivedDateTime}T00:00:00.000Z`
+                const endOfDay = `${filters.receivedDateTime}T23:59:59.999Z`
+
+                query = query.where(`${receivedDateTime}`, '>=', startOfDay)
+                            .where(`${receivedDateTime}`, '<=', endOfDay)
+                            .orderBy(`${receivedDateTime}`, 'desc')
+            }
+            
+
+            const filteredQuery = query
+                .select(
+                        `Connect_ID`,
+                        `${collectionCardId}`,
+                        `${receivedDateTime}`,
+                        `${returnKitTrackingNum}`,
+                        `${kitLevel}`
+                        )
+                .get();
+
+            snapshot = await filteredQuery;
+
+        } else {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+            snapshot = await db.collection("kitAssembly")
+                            .where(`${kitStatus}`, '==', received)
+                            .where(`${receivedDateTime}`, '>=', sevenDaysAgo.toISOString())
+                            .orderBy(`${receivedDateTime}`, 'desc')
+                            .select(
+                                `Connect_ID`,
+                                `${collectionCardId}`,
+                                `${receivedDateTime}`,
+                                `${returnKitTrackingNum}`,
+                                `${kitLevel}`
+                            )
+                            .get();
+        }
+
+        // return snapshot for either filtered or unfiltered query
+        if (!snapshot.empty) {
+            printDocsCount(snapshot, "receivedKitStatusParticipants");
+            for (const doc of snapshot.docs) { 
+                const data = doc.data();
+                const kitData = {
+                    Connect_ID: data.Connect_ID,
+                    [collectionCardId]: data[collectionCardId],
+                    [receivedDateTime]: data[receivedDateTime],
+                    [returnKitTrackingNum]: data[returnKitTrackingNum],
+                    [kitLevel]: data[kitLevel]
+                };
+                toReturn.push(kitData);
+            };   
+            return toReturn;
+        }
+        return toReturn;
+    } catch (error) {
+        console.error(error);
+        throw new Error("Error in receivedKitStatusParticipants. ", error);
     }
 }
 
