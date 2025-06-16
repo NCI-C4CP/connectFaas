@@ -28,7 +28,6 @@ const uploadPathologyReports = (req, res) => {
 
   const Connect_ID = req.query.Connect_ID;
   const siteAcronymLower = req.query.siteAcronym?.toLowerCase();
-
   if (!Connect_ID || !siteAcronymLower) {
     return res.status(400).json({ message: "Missing Connect_ID or siteAcronym in query parameters", code: 400 });
   }
@@ -36,6 +35,7 @@ const uploadPathologyReports = (req, res) => {
   const bucketName = `${pathologyReports}_${siteAcronymLower}_${tierStr}`;
   const busboy = Busboy({ headers: req.headers });
   const uploadPromises = [];
+  let failureFilenames = [];
   let fields = {};
   let bucket = null;
 
@@ -68,6 +68,7 @@ const uploadPathologyReports = (req, res) => {
       new Promise((resolve, reject) => {
         stream.on("finish", () => resolve(filename));
         stream.on("error", (error) => {
+          failureFilenames.push(filename);
           console.error(`Error streaming file "${filename}" to bucket:`, error);
           reject(error);
         });
@@ -86,12 +87,28 @@ const uploadPathologyReports = (req, res) => {
         return res.status(500).json({ message: "Failed to upload files!", code: 500 });
       }
 
-      await savePathologyReportNamesToFirestore({ bucketName, Connect_ID: parseInt(Connect_ID), filenames: successFilenames });
+      await savePathologyReportNamesToFirestore({
+        bucketName,
+        Connect_ID: parseInt(Connect_ID),
+        filenames: successFilenames,
+      });
 
       const [allFiles] = await bucket.getFiles({ prefix: `${Connect_ID}/` });
-      const allFilenameArray = allFiles.map((f) => f.name.replace(`${Connect_ID}/`, ""));
+      const allFilenames = allFiles.map((f) => f.name.replace(`${Connect_ID}/`, ""));
 
-      return res.status(200).json({ message: "Files uploaded successfully", data: allFilenameArray, code: 200 });
+      if (failureFilenames.length > 0) {
+        return res.status(207).json({
+          message: "Some files failed to upload",
+          data: { successFilenames, failureFilenames, allFilenames },
+          code: 207,
+        });
+      }
+
+      return res.status(200).json({
+        message: "Files uploaded successfully",
+        data: { successFilenames, failureFilenames, allFilenames },
+        code: 200,
+      });
     } catch (error) {
       return res.status(500).json({
         message: "Error uploading files: " + error.message,
