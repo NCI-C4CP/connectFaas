@@ -4596,15 +4596,38 @@ const savePathologyReportNamesToFirestore = async (dataObj) => {
   const { bucketName, Connect_ID, filenames } = dataObj;
   const collection = db.collection("pathologyReports");
   const batch = db.batch();
+  const uniqueFilenames = Array.from(new Set(filenames));
+  const nameChunkArray = createChunkArray(uniqueFilenames, 30); // Max 30 for 'in' queries
+  let existingFilenameToRefObj = {};
 
-  for (const filename of filenames) {
+  for (const nameChunk of nameChunkArray) {
     const snapshot = await collection
       .where("bucketName", "==", bucketName)
       .where("Connect_ID", "==", Connect_ID)
-      .where(`${fieldMapping.pathologyReportFilename}`, "==", filename)
+      .where(`${fieldMapping.pathologyReportFilename}`, "in", nameChunk)
       .get();
-      
+
     if (snapshot.empty) {
+      continue;
+    }
+
+    for (const doc of snapshot.docs) {
+      const existingFilename = doc.data()[`${fieldMapping.pathologyReportFilename}`];
+      if (existingFilenameToRefObj[existingFilename]) {
+        batch.delete(doc.ref);
+        continue;
+      }
+      existingFilenameToRefObj[existingFilename] = doc.ref;
+    }
+  }
+
+  for (const filename of uniqueFilenames) {
+    const docRef = existingFilenameToRefObj[filename];
+    if (docRef) {
+      batch.update(docRef, {
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
       const data = {
         Connect_ID,
         bucketName,
@@ -4612,17 +4635,6 @@ const savePathologyReportNamesToFirestore = async (dataObj) => {
         updatedAt: new Date().toISOString(),
       };
       batch.create(collection.doc(), data);
-    } else {
-      for (let i = 0; i < snapshot.size; i++) {
-        const doc = snapshot.docs[i];
-        if (i === 0) {
-          batch.update(doc.ref, {
-            updatedAt: new Date().toISOString(),
-          });
-        } else {
-          batch.delete(doc.ref);
-        }
-      }
     }
   }
 
