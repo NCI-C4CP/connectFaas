@@ -50,6 +50,51 @@ const dashboard = async (req, res) => {
         const { retrievePhysicalActivityReport } = require('./reports');
         let uid = req.query.uid;
         return await retrievePhysicalActivityReport(req, res, uid);
+
+    } else if (api === 'retrieveDHQHEIReport') {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+
+        const { studyID, respondentUsername } = req.body;
+
+        if (!studyID || !respondentUsername) {
+            return res.status(400).json(getResponseJSON('Missing required body parameters: studyID and/or respondentUsername.', 400));
+        }
+
+        try {
+            const { retrieveDHQHEIReport } = require('./dhq');
+            const reportData = await retrieveDHQHEIReport(studyID, respondentUsername);
+
+            return res.status(200).json({ data: reportData.data, code: 200 });
+
+        } catch (error) {
+            console.error('Error retrieving DHQ HEI report:', error);
+            return res.status(500).json(getResponseJSON('An error occurred while retrieving the DHQ-HEI report. Please try again later.', 500));
+        }
+
+    } else if (api === 'updateDHQReportViewedStatus') {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+
+        const { uid, studyID, respondentUsername } = req.body;
+
+        if (!uid || !studyID || !respondentUsername) {
+            return res.status(400).json(getResponseJSON('Missing required body parameters: uid, studyID, and/or respondentUsername.', 400));
+        }
+
+        try {
+            const { updateDHQReportViewedStatus } = require('./dhq');
+            await updateDHQReportViewedStatus(uid, studyID, respondentUsername);
+
+            return res.status(200).json(getResponseJSON('DHQ report viewed status updated successfully.', 200));
+
+        } catch (error) {
+            console.error('Error updating DHQ report viewed status:', error);
+            return res.status(500).json(getResponseJSON('An error occurred while updating the DHQ report viewed status. Please try again later.', 500));
+        }
+
     } else if (api === 'getFilteredParticipants') {
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
