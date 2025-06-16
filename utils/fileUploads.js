@@ -67,7 +67,10 @@ const uploadPathologyReports = (req, res) => {
     uploadPromises.push(
       new Promise((resolve, reject) => {
         stream.on("finish", () => resolve(filename));
-        stream.on("error", reject);
+        stream.on("error", (error) => {
+          console.error(`Error streaming file "${filename}" to bucket:`, error);
+          reject(error);
+        });
       })
     );
   });
@@ -103,10 +106,6 @@ const uploadPathologyReports = (req, res) => {
 const getUploadedPathologyReportNames = async (req, res) => {
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Only GET requests are accepted!", code: 405 });
-  }
-
-  if (!req.query.Connect_ID || !req.query.siteAcronym) {
-    return res.status(400).json({ message: "Missing Connect_ID or siteAcronym in query parameters", code: 400 });
   }
 
   const Connect_ID = req.query.Connect_ID;

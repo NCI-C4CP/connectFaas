@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const {uploadPathologyReports, getUploadedPathologyReportNames} = require("./fileUploads");
+const { uploadPathologyReports, getUploadedPathologyReportNames } = require('./fileUploads');
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
