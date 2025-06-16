@@ -214,9 +214,16 @@ const dashboard = async (req, res) => {
         }
 
     } else if (api === "uploadPathologyReports") {
-        return await uploadPathologyReports(req, res);
+        try {
+            return await uploadPathologyReports(req, res);
+        } catch (error) {
+            return res.status(500).json(getResponseJSON('Error uploading pathology reports. ' + error.message, 500));
+        }
     } else if (api === "getUploadedPathologyReportNames") {
-        return await getUploadedPathologyReportNames(req, res);
+        try {
+            return await getUploadedPathologyReportNames(req, res);
+        } catch (error) {
+            return res.status(500).json(getResponseJSON('Error retrieving uploaded pathology report names. ' + error.message, 500));}
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }

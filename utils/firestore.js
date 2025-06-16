@@ -4589,11 +4589,11 @@ const processPhysicalActivity = async (dateExpression) => {
 }
 
 const savePathologyReportNamesToFirestore = async (dataObj) => {
-  const { bucketName, Connect_ID, successFilenames } = dataObj;
+  const { bucketName, Connect_ID, filenames } = dataObj;
   const collection = db.collection("pathologyReports");
   const batch = db.batch();
 
-  for (const filename of successFilenames) {
+  for (const filename of filenames) {
     const snapshot = await collection
       .where("bucketName", "==", bucketName)
       .where("Connect_ID", "==", Connect_ID)

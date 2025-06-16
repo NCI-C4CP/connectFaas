@@ -6,6 +6,17 @@ const storage = new Storage();
 const tierStr = process.env.GCLOUD_PROJECT.split("-").slice(3, 5).join("-").toLowerCase();
 const pathologyReports = "pathology-reports";
 
+async function awaitNewBucketReady(bucketName, maxRetries = 10, delayMs = 500) {
+  let retries = 0;
+  while (retries < maxRetries) {
+    const [exists] = await storage.bucket(bucketName).exists();
+    if (exists) return;
+    await new Promise((res) => setTimeout(res, delayMs));
+    retries++;
+  }
+  throw new Error(`Bucket ${bucketName} not ready after ${maxRetries} retries`);
+}
+
 const uploadPathologyReports = (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Only POST requests are accepted!", code: 405 });
@@ -40,6 +51,7 @@ const uploadPathologyReports = (req, res) => {
           location: "US",
           project: storage.projectId,
         });
+        await awaitNewBucketReady(bucketName);
       }
       bucket = storage.bucket(bucketName);
     }
@@ -54,7 +66,7 @@ const uploadPathologyReports = (req, res) => {
 
     uploadPromises.push(
       new Promise((resolve, reject) => {
-        file.on("end", () => resolve(filename));
+        stream.on("finish", () => resolve(filename));
         stream.on("error", reject);
       })
     );
@@ -71,7 +83,7 @@ const uploadPathologyReports = (req, res) => {
         return res.status(500).json({ message: "Failed to upload files!", code: 500 });
       }
 
-      await savePathologyReportNamesToFirestore({ bucketName, Connect_ID, successFilenames });
+      await savePathologyReportNamesToFirestore({ bucketName, Connect_ID: parseInt(Connect_ID), filenames: successFilenames });
 
       const [allFiles] = await bucket.getFiles({ prefix: `${Connect_ID}/` });
       const allFilenameArray = allFiles.map((f) => f.name.replace(`${Connect_ID}/`, ""));
@@ -102,10 +114,10 @@ const getUploadedPathologyReportNames = async (req, res) => {
   if (!Connect_ID || !siteAcronymLower) {
     return res.status(400).json({ message: "Missing Connect_ID or siteAcronym in query parameters", code: 400 });
   }
-
+  
   const bucketName = `${pathologyReports}_${siteAcronymLower}_${tierStr}`;
   try {
-    const filenames = await getUploadedPathologyReportNamesFromFirestore({ bucketName, Connect_ID });
+    const filenames = await getUploadedPathologyReportNamesFromFirestore({ bucketName, Connect_ID: parseInt(Connect_ID) });
 
     return res.status(200).json({ code: 200, data: filenames });
   } catch (error) {
