@@ -25,6 +25,7 @@
     "@google-cloud/storage": "^7.7.0",
     "@sendgrid/eventwebhook": "^8.0.0",
     "@sendgrid/mail": "^8.1.0",
+    "busboy": "^1.6.0",
     "crypto-js": "^4.2.0",
     "fast-crc32c": "^2.0.0",
     "firebase-admin": "^12.1.0",
