@@ -923,19 +923,23 @@ const biospecimenAPIs = async (req, res) => {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
         }
         try {
-            const statusType = req.query.type;
-            
-            const collectionId = req.query.collectionId;
-            const connectId = req.query.connectId;
-            const returnKitTrackingNumber = req.query.returnKitTrackingNum;
-            const dateReceived = req.query.dateReceived;
+            const { 
+                type: statusType,
+                collectionId, 
+                connectId, 
+                returnKitTrackingNum: returnKitTrackingNumber, 
+                dateReceived
+            } = req.query;
 
-            const filters = {
-                collectionId: collectionId,
-                connectId: connectId,
-                returnKitTrackingNumber: returnKitTrackingNumber,
-                receivedDateTime: dateReceived
-            };
+
+            const filters = {};
+
+            // add filters to filters object if they exist
+            if (collectionId) filters["collectionId"] = collectionId;
+            if (connectId) filters["connectId"] = connectId;
+            if (returnKitTrackingNumber) filters["returnKitTrackingNumber"] = returnKitTrackingNumber;
+            if (dateReceived) filters["receivedDateTime"] = dateReceived;
+            
 
             const kitStatusOptions = [
                 fieldMapping.pending.toString(),
