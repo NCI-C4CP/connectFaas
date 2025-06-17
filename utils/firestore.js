@@ -1766,10 +1766,10 @@ const getSpecimenAndParticipant = async (collectionId, siteCode, isBPTL) => {
         const participantSnapshot = await db.collection('participants')
             .where('Connect_ID', '==', specimenData['Connect_ID'])
             .select(
-                fieldMapping.firstName, 
-                fieldMapping.lastName, 
-                fieldMapping.healthCareProvider, 
-                fieldMapping.biospecimenVisit, 
+                `${fieldMapping.firstName}`, 
+                `${fieldMapping.lastName}`, 
+                `${fieldMapping.healthCareProvider}`, 
+                `${fieldMapping.biospecimenVisit}`, 
                 'Connect_ID', 
                 'token'
             )
