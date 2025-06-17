@@ -4839,6 +4839,71 @@ const processPhysicalActivity = async (dateExpression) => {
     return true;
 }
 
+const savePathologyReportNamesToFirestore = async (dataObj) => {
+  const { bucketName, Connect_ID, filenames } = dataObj;
+  const collection = db.collection("pathologyReports");
+  const batch = db.batch();
+  const uniqueFilenames = Array.from(new Set(filenames));
+  const nameChunkArray = createChunkArray(uniqueFilenames, 30); // Max 30 for 'in' queries
+  let existingFilenameToRefObj = {};
+
+  for (const nameChunk of nameChunkArray) {
+    const snapshot = await collection
+      .where("bucketName", "==", bucketName)
+      .where("Connect_ID", "==", Connect_ID)
+      .where(`${fieldMapping.pathologyReportFilename}`, "in", nameChunk)
+      .get();
+
+    if (snapshot.empty) {
+      continue;
+    }
+
+    for (const doc of snapshot.docs) {
+      const existingFilename = doc.data()[`${fieldMapping.pathologyReportFilename}`];
+      if (existingFilenameToRefObj[existingFilename]) {
+        batch.delete(doc.ref);
+        continue;
+      }
+      existingFilenameToRefObj[existingFilename] = doc.ref;
+    }
+  }
+
+  for (const filename of uniqueFilenames) {
+    const docRef = existingFilenameToRefObj[filename];
+    if (docRef) {
+      batch.update(docRef, {
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      const data = {
+        Connect_ID,
+        bucketName,
+        [fieldMapping.pathologyReportFilename]: filename,
+        updatedAt: new Date().toISOString(),
+      };
+      batch.create(collection.doc(), data);
+    }
+  }
+
+  await batch.commit();
+};
+
+const getUploadedPathologyReportNamesFromFirestore = async ({ bucketName, Connect_ID }) => {
+  const snapshot = await db
+    .collection("pathologyReports")
+    .where("bucketName", "==", bucketName)
+    .where("Connect_ID", "==", Connect_ID)
+    .get();
+
+  printDocsCount(snapshot, "getUploadedPathologyReportNamesFromFirestore");
+
+  if (snapshot.empty) {
+    return [];
+  }
+
+  return snapshot.docs.map((doc) => doc.data()[`${fieldMapping.pathologyReportFilename}`]);
+};
+
 module.exports = {
     db,
     verifyToken,
@@ -4978,5 +5043,7 @@ module.exports = {
     updateNotifySmsRecord,
     updateSmsPermission,
     updateParticipantIncentiveEligibility,
-    processPhysicalActivity
-}
+    processPhysicalActivity,
+    savePathologyReportNamesToFirestore,
+    getUploadedPathologyReportNamesFromFirestore,
+};
