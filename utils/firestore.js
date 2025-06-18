@@ -2829,9 +2829,19 @@ const eligibleParticipantsForKitAssignment = async () => {
             }
         })
 
-        manualRequests = manualRequests.sort(manualRequestSort);
+        manualRequests = manualRequests
+            .sort((a, b) => {
+                const aData = a.data();
+                const bData = b.data();
+                return manualRequestSort(aData, bData);
+            });
 
-        otherEntries = otherEntries.sort(standardHomeKitSort);
+        otherEntries = otherEntries
+            .sort((a, b) => {
+                const aData = a.data();
+                const bData = b.data();
+                return standardHomeKitSort(aData, bData);
+            });
 
         let allPts = sortedReplacements
             .concat(manualRequests)
@@ -3389,11 +3399,13 @@ const storeKitReceipt = async (pkg) => {
 
             transaction.update(participantDoc.ref, {
                 [baselineMouthwashCollected]: yes,
-                [allBaselineSamplesCollected]: yes,
-                [`${collectionDetails}.${baseline}.${mouthwashCollectionSetting}`]: biospecimenHome,
-                [`${collectionDetails}.${baseline}.${baselineMouthwashCollectedTime}`]: pkg[collectionDateTimeStamp],
                 [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: received,
-                [`${collectionDetails}.${baseline}.${path}.${receivedDateTime}`]: pkg[receivedDateTime]
+                [`${collectionDetails}.${baseline}.${path}.${receivedDateTime}`]: pkg[receivedDateTime],
+                // For all of these, avoid overwriting if they have already been set
+                // as that means they have had a MW sample submitted already
+                // and our design principle is to always respect the first one
+                [`${collectionDetails}.${baseline}.${mouthwashCollectionSetting}`]: participantDocData?.[collectionDetails]?.[baseline]?.[mouthwashCollectionSetting] || biospecimenHome,
+                [`${collectionDetails}.${baseline}.${baselineMouthwashCollectedTime}`]: participantDocData?.[collectionDetails]?.[baseline]?.[baselineMouthwashCollectedTime] || pkg[collectionDateTimeStamp],
             });
 
             toReturn = {
