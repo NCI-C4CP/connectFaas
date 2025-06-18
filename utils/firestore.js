@@ -2864,6 +2864,8 @@ const requestHomeKit = async(connectId) => {
                 throw new Error('Participant has withdrawn consent.');
             } else if (data[fieldMapping.participantDeceasedNORC] == fieldMapping.yes) {
                 throw new Error('Participant is deceased.');
+            } else if (data[fieldMapping.verificationStatus] !== fieldMapping.verified) {
+                throw new Error('Participant is not verified.');
             }
             const updatedParticipantObject = getHomeMWKitData(data);
             transaction.update(participantSnapshot.docs[0].ref, updatedParticipantObject);
