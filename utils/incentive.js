@@ -127,32 +127,36 @@ const eligibleForIncentive = async (req, res) => {
     logIPAddress(req);
     setHeaders(res);
 
-    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
-    if (req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    if (!req.query.round) return res.status(400).json(getResponseJSON('Round query parameter missing!', 400));
-    if (!['baseline', 'followup1', 'followup2', 'followup3'].includes(req.query.round)) return res.status(400).json(getResponseJSON('Invalid round!', 400)); 
-    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if(req.method === 'OPTIONS') return res.status(200).json({code: 200});
+    if(req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
 
     const authorized = await APIAuthorization(req);
 
-    if (authorized instanceof Error) return res.status(500).json(getResponseJSON(authorized.message, 500));
-    if (!authorized) return res.status(401).json(getResponseJSON('Authorization failed!', 401));
+    if(authorized instanceof Error) return res.status(500).json(getResponseJSON(authorized.message, 500));
+    if(!authorized) return res.status(401).json(getResponseJSON('Authorization failed!', 401));
 
     console.log(`Incentives API: Get Eligible Participants, accessed by: ${authorized.saEmail}`);
 
-    const round     = req.query.round;
-    const limit     = req.query.limit ? parseInt(req.query.limit) : 500;
-    const cursor    = req.query.cursor ?? null;
+    let { round, limit, page } = req.query;
 
-    const { isParent, siteCodes } = await isParentEntity(authorized);
+    if(!round) return res.status(400).json(getResponseJSON('Round query parameter missing!', 400));
+    if(round !== 'baseline' && round !== 'followup1' && round !== 'followup2' && round !== 'followup3') return res.status(400).json(getResponseJSON('Invalid round!', 400));
+    if(limit && parseInt(limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+
+    limit = limit ? parseInt(limit) : 500;
+    page = page ? parseInt(page) : 1;
+
+    const {isParent, siteCodes} = await isParentEntity(authorized);
     
     
     const { retrieveParticipantsEligibleForIncentives } = require('./firestore');
-    const response = await retrieveParticipantsEligibleForIncentives(siteCodes, round, isParent, limit, cursor);
+    const data = await retrieveParticipantsEligibleForIncentives(siteCodes, round, isParent, limit, page);
 
-    if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
+    if(data instanceof Error){
+        return res.status(500).json(getResponseJSON(data.message, 500));
+    }
 
-    return res.status(200).json({data: response.docs, cursor: response.cursor, code: 200});
+    return res.status(200).json({data, code:200, limit, dataSize: data.length})
 }
 
 module.exports = {

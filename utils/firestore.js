@@ -654,69 +654,32 @@ const getCursorDocument = async (collection, cursor) => {
     }
 }
 
-/**
- * Retrieves participants who are eligible for incentives based on specified criteria.
- *
- * @async
- * @function retrieveParticipantsEligibleForIncentives
- * @param {string} siteCode - The site code(s) to filter participants by.
- * @param {string} roundType - The incentive round type to check eligibility for (e.g., 'baseline', 'module1').
- * @param {boolean} isParent - Indicates if the request is from a parent entity. Determines whether to use 'in' or '==' operator for site code filtering.
- * @param {number} limit - The maximum number of participants to retrieve.
- * @param {string} [cursor] - Optional cursor for pagination, representing the last document ID from a previous query.
- * 
- * @returns {Promise<Object|Error>} A promise that resolves to:
- *   - An object containing:
- *     - {Array<Object>} docs - Array of eligible participant objects with firstName, email, token, and site properties.
- *     - {string} [cursor] - ID of the last document in the result set (for pagination), if more results exist.
- *   - Or an Error object if the query fails.
- * 
- * @throws {Error} Will throw an error if the query or document retrieval fails.
- */
-const retrieveParticipantsEligibleForIncentives = async (siteCode, roundType, isParent, limit, cursor) => {
+// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
+const retrieveParticipantsEligibleForIncentives = async (siteCode, roundType, isParent, limit, page) => {
     try {
 
         const operator = isParent ? 'in' : '==';
+        const offset = (page-1)*limit;
 
         const { incentiveConcepts } = require('./shared');
-        const object = incentiveConcepts[roundType];
+        const object = incentiveConcepts[roundType]
         
-        let query = db.collection('participants')
-                        .where('827220437', operator, siteCode)
-                        .where('821247024', '==', 197316935)
-                        .where(`${object}.222373868`, "==", 353358909)
-                        .where(`${object}.648936790`, '==', 104430631)
-                        .where(`${object}.648228701`, '==', 104430631)
-                        .orderBy('Connect_ID', 'asc');
-                                
-        if (cursor) {
-            const collection = 'participants';
-            const doc = await getCursorDocument(collection, cursor);
+        const snapshot = await db.collection('participants')
+                                .where('827220437', operator, siteCode)
+                                .where('821247024', '==', 197316935)
+                                .where(`${object}.222373868`, "==", 353358909)
+                                .where(`${object}.648936790`, '==', 104430631)
+                                .where(`${object}.648228701`, '==', 104430631)
+                                .orderBy('Connect_ID', 'asc')
+                                .offset(offset)
+                                .limit(limit)
+                                .get();
+        printDocsCount(snapshot, `retrieveParticipantsEligibleForIncentives; offset: ${offset}`);
 
-            if (doc instanceof Error) {
-                return new Error(`Document with ID ${cursor} not found`);
-            }
-
-            query = query.startAfter(doc);
-        }
-        
-        query = query.limit(limit);
-
-        const snapshot = await query.get();
-        const results = {};
-
-        printDocsCount(snapshot, `retrieveParticipantsEligibleForIncentives`);
-
-        results.docs = snapshot.docs.map(document => {
+        return snapshot.docs.map(document => {
             let data = document.data();
             return {firstName: data['399159511'], email: data['869588347'], token: data['token'], site: data['827220437']}
         });
-
-        if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
-            results.cursor = snapshot.docs[snapshot.docs.length - 1].id;
-        }
-
-        return results;
     } catch (error) {
         console.error(error);
         return new Error(error)
