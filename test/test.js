@@ -1160,7 +1160,7 @@ describe('biospecimen', async () => {
         ];
     });
 
-    describe('getHomeMWReplacementKitData', () => {
+    describe('getHomeMWKitData', () => {
         describe('First replacement kit', () => {
             it('Should set a first replacement kit', () => {
                 const statuses = [
@@ -1186,7 +1186,7 @@ describe('biospecimen', async () => {
                             }
                         }
                     });
-                    const updates = shared.getHomeMWReplacementKitData(data);
+                    const updates = shared.getHomeMWKitData(data);
                     const clonedUpdates = Object.assign({}, updates);
                     delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.dateKitRequested}`];
                     assert.closeTo
@@ -1195,16 +1195,48 @@ describe('biospecimen', async () => {
                         60000, 
                         'Date kit requested is within a minute of test completion'
                     );
-                    // console.log('updates', updates);
                     assert.deepEqual(clonedUpdates, {
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitType}`]: 976461859,
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitStatus}`]: 728267588
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized
                       },
                        `Kit status ${status} eligible for replacement kit`);
                 });
             });
-            it('Should prevent participant with a pending home MW kit from obtaining a replacement', () => {
+            it('Should request an initial kit for a participant with no collection details', () => {
                 const data = {
+                    [fieldToConceptIdMapping.firstName]: 'First',
+                    [fieldToConceptIdMapping.lastName]: 'Last',
+                    [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                    [fieldToConceptIdMapping.city]: 'City',
+                    [fieldToConceptIdMapping.state]: 'PA',
+                    [fieldToConceptIdMapping.zip]: '19104',
+                    'Connect_ID': 123456789
+                };
+    
+                const updates = shared.getHomeMWKitData(data);
+                const clonedUpdates = Object.assign({}, updates);
+                delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.dateKitRequested}`];
+                assert.closeTo
+                    (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                    +new Date(), 
+                    60000, 
+                    'Date kit requested is within a minute of test completion'
+                );
+    
+                assert.deepEqual(clonedUpdates, {
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollectedTimestamp}`]: null
+                    },
+                    `Kit status pending eligible for initial kit`);
+            });
+            it('Should request an initial kit for a participant with a pending or nonexistent home MW kit', () => {
+                const statuses = [
+                    fieldToConceptIdMapping.pending,
+                    undefined,
+                    null
+                ];
+                const baseObj = {
                     [fieldToConceptIdMapping.firstName]: 'First',
                     [fieldToConceptIdMapping.lastName]: 'Last',
                     [fieldToConceptIdMapping.address1]: '123 Fake Street',
@@ -1220,10 +1252,37 @@ describe('biospecimen', async () => {
                         }
                     }
                 };
+
+                statuses.forEach(status => {
+                    const data = Object.assign({}, baseObj, {
+                        [fieldToConceptIdMapping.collectionDetails]: {
+                            [fieldToConceptIdMapping.baseline]: {
+                                [fieldToConceptIdMapping.bioKitMouthwash]: {
+                                    [fieldToConceptIdMapping.kitStatus]: status
+                                }
+                            }
+                        }
+                    });
+
+                const updates = shared.getHomeMWKitData(data);
+                const clonedUpdates = Object.assign({}, updates);
+                delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.dateKitRequested}`];
+                assert.closeTo
+                    (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                    +new Date(), 
+                    60000, 
+                    'Date kit requested is within a minute of test completion'
+                );
     
-                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant is not yet eligible for a home mouthwash kit/gi);
+                assert.deepEqual(clonedUpdates, {
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollectedTimestamp}`]: null
+                    },
+                    `Kit status ${status} eligible for initial kit`);
+                });
             });
-            it('Should prevent a participant whose initial home MW kit has not been sent from obtaining a replacement', () => {
+            it('Should request a participant whose initial home MW kit has not been sent from obtaining a replacement', () => {
                 const statuses = [
                     fieldToConceptIdMapping.initialized,
                     fieldToConceptIdMapping.addressPrinted,
@@ -1249,7 +1308,7 @@ describe('biospecimen', async () => {
                         }
                     });
         
-                    expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant\'s initial home mouthwash kit has not been sent/);
+                    expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/This participant\'s initial home mouthwash kit has not been sent/);
                 });
                 
             });
@@ -1270,7 +1329,7 @@ describe('biospecimen', async () => {
                         }
                     }
                 };
-                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
+                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
             });
             it('Should throw error on unrecognized kitStatus for initial home MW kit', () => {
                 const data = {
@@ -1290,7 +1349,7 @@ describe('biospecimen', async () => {
                     }
                 };
     
-                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
+                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
             });
         });
 
@@ -1322,7 +1381,7 @@ describe('biospecimen', async () => {
                             }
                         }
                     });
-                    const updates = shared.getHomeMWReplacementKitData(data);
+                    const updates = shared.getHomeMWKitData(data);
                     const clonedUpdates = Object.assign({}, updates);
                     delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.dateKitRequested}`];
                     assert.closeTo
@@ -1332,10 +1391,9 @@ describe('biospecimen', async () => {
                         'Date kit requested is within a minute of test completion'
                     );
         
-                    // console.log('updates', updates);
                     assert.deepEqual(clonedUpdates, {
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitType}`]: 976461859,
-                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitStatus}`]: 728267588
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                        [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized
                       },
                        `Kit status ${status} eligible for replacement kit`);
                 });
@@ -1361,7 +1419,7 @@ describe('biospecimen', async () => {
                     }
                 };
     
-                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant is not eligible for a second replacement home mouthwash kit/gi);
+                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/This participant is not eligible for a second replacement home mouthwash kit/gi);
             });
             it('Should prevent a participant whose first replacement home MW kit has not been sent from obtaining a second replacement', () => {
                 const statuses = [
@@ -1392,7 +1450,7 @@ describe('biospecimen', async () => {
                         }
                     });
         
-                    expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/This participant\'s first replacement home mouthwash kit has not been sent/);
+                    expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/This participant\'s first replacement home mouthwash kit has not been sent/);
                 });
     
             });
@@ -1416,7 +1474,7 @@ describe('biospecimen', async () => {
                         }
                     }
                 };
-                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
+                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
             });
             it('Should throw error on unrecognized kitStatus for first replacement home MW kit', () => {
                 const data = {
@@ -1439,7 +1497,7 @@ describe('biospecimen', async () => {
                     }
                 };
     
-                expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
+                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
             });
 
         });
@@ -1466,7 +1524,7 @@ describe('biospecimen', async () => {
                 }
             };
 
-            expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant has exceeded supported number of replacement kits./);
+            expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Participant has exceeded supported number of replacement kits./);
         });
         it('Should prevent a participant with an invalid address from obtaining a replacement kit', () => {
             const data = {
@@ -1485,7 +1543,7 @@ describe('biospecimen', async () => {
                     }
                 }
             };
-            expect(shared.getHomeMWReplacementKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
+            expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
 
         });
         

@@ -1,4 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
+const { uploadPathologyReports, getUploadedPathologyReportNames } = require('./fileUploads');
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -50,6 +51,29 @@ const dashboard = async (req, res) => {
         const { retrievePhysicalActivityReport } = require('./reports');
         let uid = req.query.uid;
         return await retrievePhysicalActivityReport(req, res, uid);
+
+    } else if (api === 'retrieveDHQHEIReport') {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+
+        const { studyID, respondentUsername } = req.body;
+
+        if (!studyID || !respondentUsername) {
+            return res.status(400).json(getResponseJSON('Missing required body parameters: studyID and/or respondentUsername.', 400));
+        }
+
+        try {
+            const { retrieveDHQHEIReport } = require('./dhq');
+            const reportData = await retrieveDHQHEIReport(studyID, respondentUsername);
+
+            return res.status(200).json({ data: reportData.data, code: 200 });
+
+        } catch (error) {
+            console.error('Error retrieving DHQ HEI report:', error);
+            return res.status(500).json(getResponseJSON('An error occurred while retrieving the DHQ-HEI report. Please try again later.', 500));
+        }
+
     } else if (api === 'getFilteredParticipants') {
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
@@ -188,7 +212,10 @@ const dashboard = async (req, res) => {
             }
             return res.status(500).json(getResponseJSON(err.message, 500));
         }
-    } else if (api === 'requestHomeMWReplacementKit') {
+    } else if (api === 'requestHomeMWReplacementKit' || api === 'requestHomeKit') {
+        // Keeping the requestHomeMWReplacementKit endpoint for outdated UIs
+        // but updating to use the newer more general purpose logic
+        // and newly named endpoint
         let body = req.body;
 
         if (req.method !== 'POST') {
@@ -199,14 +226,27 @@ const dashboard = async (req, res) => {
         if(!connectId) {
             return res.status(405).json(getResponseJSON('Missing connect ID!', 405));
         }
+
         try {
-            const {requestHomeMWReplacementKit} = require('./firestore');
-            await requestHomeMWReplacementKit(connectId);
+            const {requestHomeKit} = require('./firestore');
+            await requestHomeKit(connectId);
             return res.status(200).json(getResponseJSON('Success!', 200));
         } catch(err) {
             console.error('Error', err);
             return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
         }
+
+    } else if (api === "uploadPathologyReports") {
+        try {
+            return await uploadPathologyReports(req, res);
+        } catch (error) {
+            return res.status(500).json(getResponseJSON('Error uploading pathology reports. ' + error.message, 500));
+        }
+    } else if (api === "getUploadedPathologyReportNames") {
+        try {
+            return await getUploadedPathologyReportNames(req, res);
+        } catch (error) {
+            return res.status(500).json(getResponseJSON('Error retrieving uploaded pathology report names. ' + error.message, 500));}
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
