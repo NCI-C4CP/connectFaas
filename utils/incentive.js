@@ -143,7 +143,7 @@ const eligibleForIncentive = async (req, res) => {
     if(round !== 'baseline' && round !== 'followup1' && round !== 'followup2' && round !== 'followup3') return res.status(400).json(getResponseJSON('Invalid round!', 400));
     if(limit && parseInt(limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
 
-    limit = limit ? parseInt(limit) : 500;
+    limit = limit ? parseInt(limit) : 100;
     page = page ? parseInt(page) : 1;
 
     const {isParent, siteCodes} = await isParentEntity(authorized);
