@@ -1420,9 +1420,6 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
     const { buildStreckPlaceholderData, updateBaselineData } = require('./shared');
 
     // Get the existing participant data (necessary for data reconciliation purposes)
-    const participantUid = participantData.state.uid;
-    if (!participantUid) throw new Error('Missing participant UID!');
-
     const siteCode = participantData[fieldMapping.healthCareProvider];
     const participantToken = participantData['token'];
 
@@ -1433,7 +1430,7 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
     try {
         // Get the Doc Refs for the participant and specimen updates
         const [participantSnapshot, specimenCollectionSnapshot] = await Promise.all([
-            db.collection('participants').where('state.uid', '==', participantUid).get(),
+            db.collection('participants').where('token', '==', participantToken).get(),
             db.collection('biospecimen').where('token', '==', participantToken)
                 .where(fieldMapping.healthCareProvider.toString(), '==', siteCode)
                 .where(fieldMapping.collectionId.toString(), '==', biospecimenData[fieldMapping.collectionId])
@@ -1446,6 +1443,7 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
         }
 
         const participantDocRef = participantSnapshot.docs[0].ref;
+        const participantSnapshotData = participantSnapshot.docs[0].data();
         const specimenDocRef = specimenCollectionSnapshot.docs[0].ref;
 
         // If necessary, update the biospecimenData to have the correct Streck placeholder data
@@ -1457,8 +1455,8 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
         // Run the transaction
         await db.runTransaction(async transaction => {
             // Update the participant and biospecimen data
-            let participantUpdates = updateBaselineData(biospecimenData, participantData, siteTubesList);
-            participantUpdates = { ...participantData, ...participantUpdates};
+            let participantUpdates = updateBaselineData(biospecimenData, participantSnapshotData, siteTubesList);
+            participantUpdates = { ...participantSnapshotData, ...participantUpdates};
             
             transaction.update(participantDocRef, participantUpdates);
             transaction.update(specimenDocRef, biospecimenData);
@@ -1467,7 +1465,7 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
         // This must run sequentially. checkDerivedVariables is a legacy function, and it must run after the participant update.
         // Then, need to re-pull the updated participant afterwards.
         await checkDerivedVariables(participantToken, siteCode);
-        const participantSnapshotAfterDerivation = await db.collection('participants').where('state.uid', '==', participantUid).get();
+        const participantSnapshotAfterDerivation = await db.collection('participants').where('token', '==', participantToken).get();
         
         // Process mouthwash eligibility. This needs the above to run and so is outside of the transaction
         const eligibilityUpdates = processMouthwashEligibility(participantSnapshotAfterDerivation.docs[0].data());
@@ -1765,7 +1763,17 @@ const getSpecimenAndParticipant = async (collectionId, siteCode, isBPTL) => {
         const specimenData = snapshot.docs[0].data();
 
         // Use the Connect_ID in the specimen doc to fetch the participant
-        const participantSnapshot = await db.collection('participants').where('Connect_ID', '==', specimenData['Connect_ID']).get();
+        const participantSnapshot = await db.collection('participants')
+            .where('Connect_ID', '==', specimenData['Connect_ID'])
+            .select(
+                `${fieldMapping.firstName}`, 
+                `${fieldMapping.lastName}`, 
+                `${fieldMapping.healthCareProvider}`, 
+                `${fieldMapping.biospecimenVisit}`, 
+                'Connect_ID', 
+                'token'
+            )
+            .get();
         printDocsCount(participantSnapshot, "getSpecimenAndParticipant; collection: participants");
 
         if (participantSnapshot.size !== 1) {
