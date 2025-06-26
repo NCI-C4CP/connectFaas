@@ -61,7 +61,7 @@ async function getParticipantsForNotificationsBQ({
 
   if (timeField) {
     const bqTimeField = convertToBigqueryKey(timeField);
-    if (startTimeStr) bqConditionArray.push(`${bqTimeField} <= "${startTimeStr}"`);
+    if (startTimeStr) bqConditionArray.push(`${bqTimeField} < "${startTimeStr}"`);
     if (stopTimeStr) bqConditionArray.push(`${bqTimeField} >= "${stopTimeStr}"`);
   }
 

@@ -311,7 +311,6 @@ module.exports = {
     dhq3Username: 148184166,
     dhq3UUID: 808755658,
     dhq3StudyID: 196723965,
-    dhq3HEIReportViewed: 892697201,
 
     // cancer occurrences
     haveYouEverBeenDiagnosedWithCancer: 452166062,
@@ -390,7 +389,11 @@ module.exports = {
 
     dhq3SurveyStartTime: 109610692,
     dhq3SurveyCompletionTime: 610227793,
+
+    // Pathology Reports
+    pathologyReportFilename: 488064292,
     
+    // Variables retained when the Data Destruction process runs
     dataDestruction: {
         consentFirstName: 471168198,
         consentMiddleName: 436680969,
@@ -518,6 +521,9 @@ module.exports = {
         dhq3SurveyCompletionTime: 610227793,
         dhq3StudyID: 196723965,
         dhq3Username: 148184166,
+        dhq3HEIReportStatusInternal: 542983589,
+        dhq3HEIReportStatusExternal: 892697201,
+        dhq3HEIReportFirstViewedISOTime: 600958089,
         numberOfAvailableReports: 794047378,
         physicalActivity: 686238347,
         flagForReportUnreadViewedDeclined: 446235715,
@@ -535,7 +541,16 @@ module.exports = {
     // Return of Information
     physicalActivity: 686238347,
     physicalActivityStatus: 446235715,
+
+    // Internal status codes for PA and DHQ3 reports
     reportStatus: {
         unread: 702641611,
-    }
+        viewed: 469323437,
+        declined: 746038746,
+    },
+
+    dhq3HEIReportStatusInternal: 542983589, // [unread, viewed, declined]
+    dhq3HEIReportStatusExternal: 892697201, // [unread, viewed]
+    dhq3HEIReportFirstViewedISOTime: 600958089,
+    dhq3HEIReportFirstDeclinedISOTime: 404613256,
 };

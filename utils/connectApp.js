@@ -193,6 +193,43 @@ const connectApp = async (req, res) => {
       return res.status(200).json({ data: respondentInfo, code: 200 });
     }
 
+    else if (api === 'retrieveDHQHEIReport') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const dhqData = req.body;
+
+      if (!dhqData || !dhqData.studyID || !dhqData.respondentUsername) {
+        return res.status(400).json(getResponseJSON('Bad request: missing required body parameters studyID and/or respondentUsername', 400));
+      }
+
+      const { retrieveDHQHEIReport } = require('./dhq');
+      const studyID = dhqData.studyID;
+      const respondentUsername = dhqData.respondentUsername;
+
+      const reportData = await retrieveDHQHEIReport(studyID, respondentUsername);
+
+      return res.status(200).json({ data: reportData.data, code: 200 });
+    }
+
+    else if (api === 'updateDHQReportViewedStatus') {
+      if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+      }
+
+      const { studyID, respondentUsername, isDeclined } = req.body;
+
+      if (!studyID || !respondentUsername) {
+        return res.status(400).json(getResponseJSON('Missing required body parameters: studyID, and/or respondentUsername.', 400));
+      }
+
+      const { updateDHQReportViewedStatus } = require('./dhq');
+      await updateDHQReportViewedStatus(uid, studyID, respondentUsername, isDeclined);
+
+      return res.status(200).json(getResponseJSON('DHQ report viewed status updated successfully.', 200));
+    }
+
     else if (api === 'allocateDHQ3Credential') {
       if (req.method !== 'POST') {
         return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
