@@ -687,6 +687,7 @@ const getCursorDocument = async (collection, cursor) => {
                          .where(`${object}.222373868`, "==", 353358909)
                          .where(`${object}.648936790`, '==', 104430631)
                          .where(`${object}.648228701`, '==', 104430631)
+                         .select('399159511', '869588347', 'token', '827220437')
                          .orderBy('Connect_ID', 'asc');
 
          if (cursor) {
