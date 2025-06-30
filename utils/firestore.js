@@ -3086,10 +3086,15 @@ const assignKitToParticipant = async (data) => {
         data[uniqueKitID] = kitDoc.data()[uniqueKitID];
 
         // See if this kit has already been assigned to any other participants
+        // Checks for initial and replacement kits
         const otherParticipantsWithThisKit = await transaction.get(
             db.collection('participants')
-                .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', data[uniqueKitID])
-                .select('Connect_ID')
+                .where(Filter.or(
+                        Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', data[uniqueKitID]),
+                        Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${uniqueKitID}`, '==', data[uniqueKitID]),
+                        Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${uniqueKitID}`, '==', data[uniqueKitID])
+                    ))
+                .select('Connect_ID', `${collectionDetails}`)
         );
         // If multiple participants with this kit are found, the kit has definitely already been assigned
         if(otherParticipantsWithThisKit.size > 1) {
@@ -3099,11 +3104,23 @@ const assignKitToParticipant = async (data) => {
             };
             return;
         } else if (otherParticipantsWithThisKit.size === 1) {
+            const participantData = otherParticipantsWithThisKit.docs[0].data();
             // If only one participant is found, check if it's a different participant
-            if(otherParticipantsWithThisKit.docs[0].data()['Connect_ID'] !== parseInt(data['Connect_ID'])) {
+            if(participantData['Connect_ID'] !== parseInt(data['Connect_ID'])) {
                 kitAssignmentResult = {
                     success: false,
                     message: 'This kit has been assigned to another participant.'
+                };
+                return;
+            } else if (
+                participantData[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[uniqueKitID] === data[uniqueKitID] ||
+                participantData[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[uniqueKitID] === data[uniqueKitID] ||
+                participantData[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[uniqueKitID] === data[uniqueKitID]
+            ) {
+                // Is this being assigned as a replacement kit after already being assigned to the participant?
+                kitAssignmentResult = {
+                    success: false,
+                    message: 'This kit has already been assigned to this participant.'
                 };
                 return;
             }
