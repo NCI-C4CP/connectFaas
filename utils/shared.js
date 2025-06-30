@@ -1083,7 +1083,11 @@ const getHomeMWKitData = (data) => {
             }
             case addressUndeliverable:
             {
-                throw new Error('Participant address information is invalid.');
+                // addressUndeliverable being passed in here means that
+                // the address has been corrected and the status should be updated
+                // to initialized
+                fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwashBL1}`;
+                break;
             }
             case shipped:
             case received:
@@ -1110,6 +1114,7 @@ const getHomeMWKitData = (data) => {
                 fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwash}`;
                 break;
             }
+            
             case initialized:
             case addressPrinted:
             case assigned: 
@@ -1118,7 +1123,10 @@ const getHomeMWKitData = (data) => {
             }
             case addressUndeliverable:
             {
-                throw new Error('Participant address information is invalid.');
+                // addressUndeliverable being passed in here means that
+                // the address has been corrected and the status should be updated
+                // to initialized
+                break;
             }
             case shipped:
             case received:
