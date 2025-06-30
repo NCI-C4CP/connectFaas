@@ -1817,6 +1817,7 @@ const finalizeCancerOccurrenceData = (occurrenceData, participantToken, particip
         ...occurrenceData,
         [fieldMapping.occurrenceNumber]: mostRecentOccurrenceNum + 1,
         [fieldMapping.isCancerDiagnosis]: fieldMapping.yes,
+        [fieldMapping.cancerDataReceivedTimestamp]: new Date().toISOString(),
         'token': participantToken,
         'Connect_ID': participantConnectId,
     };
