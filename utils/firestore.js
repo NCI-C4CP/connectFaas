@@ -610,7 +610,17 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
 
         printDocsCount(snapshot, `retrieveParticipants`);
 
-        results.docs = snapshot.docs.map(doc => doc.data());
+        results.docs = snapshot.docs.map(doc => {
+            let data = doc.data();
+            
+            if (data[fieldMapping.participantMap.consentFormSubmitted] === fieldMapping.no) {
+                delete data[fieldMapping.authenticationEmail];
+                delete data[fieldMapping.authenticationPhone];
+                delete data[fieldMapping.signInMechanism];
+            }
+            
+            return data;
+        });
 
         if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
             results.cursor = snapshot.docs[snapshot.docs.length - 1].id;
