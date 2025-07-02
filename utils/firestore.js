@@ -2396,6 +2396,82 @@ const getSiteDetailsWithSignInProvider = async (acronym) => {
     return snapshot.docs[0].data();
 }
 
+const retrieveRequestAKitConditions = async () => {
+    const snapshot = await db.collection("requestAKitConditions").get();
+    if(!snapshot.size) {
+        return;
+    }
+    if(snapshot.size === 1) {
+        return snapshot.docs[0].data();
+    }
+    throw new Error('Multiple requestAKitConditions records found; only one should exist per environment.');
+}
+
+const updateRequestAKitConditions = async(data) => {
+    const snapshot = await db.collection("requestAKitConditions").get();
+    if(!snapshot.size) {
+        await db.collection('requestAKitConditions').add(data); // @TODO: Fixed ID?
+        return true;
+    }
+    if(snapshot.size > 1) {
+        throw new Error('Multiple requestAKitConditions records found; only one should exist per environment.');
+    }
+    await db.collection("requestAKitConditions").doc(snapshot.docs[0].id).update(data);
+    return true;
+}
+
+const processRequestAKitConditions = async () => {
+    const requestAKitConditions = await retrieveRequestAKitConditions();
+    if(requestAKitConditions) {
+        let conditionsArr = [];
+        const {conditions, limit, enabled} = requestAKitConditions;
+        if(!enabled) {
+            return true;
+        }
+        if(conditions) {
+            conditionsArr = JSON.parse(conditions);
+        }
+        const {getParticipantsForRequestAKitBQ} = require('./bigquery');
+        const participantsToUpdate = await getParticipantsForRequestAKitBQ(conditionsArr, limit);
+        // Update the corresponding participants via batches in Firestore to have the appropriate
+        // status and date
+        let snapshot;
+        let batch;
+        let start = 0;
+        const maxSize = 30;
+        const runTimestamp = new Date().toISOString();
+
+        do {
+            batch = db.batch();
+            let query = db.collection('participants')
+                .where('token', 'in', participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length)));
+
+            
+            snapshot = await query.get();
+            if (snapshot.empty) {
+                console.log('No participants found.');
+                break;
+            }
+            
+            for (const doc of snapshot.docs) {
+                const updatedData = {
+                    [`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitRequestEligible}`]: yes,
+                    [`${collectionDetails}.${baseline}.${bioKitMouthwash}.${dtEligibleToKitRequest}`]: runTimestamp,
+                };
+
+                batch.update(doc.ref, updatedData);
+            }
+
+            await batch.commit();
+            start += maxSize;
+            
+        } while (snapshot.size === maxSize);
+
+        return true;
+    }
+
+}
+
 const retrieveNotificationSchemaByID = async (id) => {
   const snapshot = await db.collection("notificationSpecifications").where("id", "==", id).get();
   printDocsCount(snapshot, "retrieveNotificationSchemaByID");
@@ -5025,6 +5101,9 @@ module.exports = {
     storeSSN,
     getTokenForParticipant,
     getSiteDetailsWithSignInProvider,
+    retrieveRequestAKitConditions,
+    updateRequestAKitConditions,
+    processRequestAKitConditions,
     retrieveNotificationSchemaByID,
     retrieveNotificationSchemaByCategory,
     storeNewNotificationSchema,

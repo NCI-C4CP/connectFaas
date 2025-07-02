@@ -134,6 +134,36 @@ const dashboard = async (req, res) => {
     } else if (api === 'getSiteNotification' && isHelpDesk === false) { // Everyone except HelpDesk
         const { getSiteNotification } = require('./notifications');
         return await getSiteNotification(req, res, authObj);
+    } else if (api === 'retrieveRequestAKitConditions') {
+        if (req.method === "OPTIONS") return res.status(200).json({ code: 200 });
+
+        if (req.method !== "GET") return res.status(405).json(getResponseJSON("Only GET requests are accepted!", 405));
+
+        if (!authObj) return res.status(401).json(getResponseJSON("Authorization failed!", 401));
+
+        const { retrieveRequestAKitConditions } = require('./firestore');
+        try {
+            const data = await retrieveRequestAKitConditions();
+            return res.status(200).json({ data, code: 200 });
+        } catch(error) {
+            return res.status(500).json({ data: {}, message: error.message, code: 500 });
+        }
+    } else if (api === 'updateRequestAKitConditions') {
+        if (req.method === "OPTIONS") return res.status(200).json({ code: 200 });
+
+        if (req.method !== "POST") return res.status(405).json(getResponseJSON("Only POST requests are accepted!", 405));
+
+        if (!authObj) return res.status(401).json(getResponseJSON("Authorization failed!", 401));
+
+        if (req.body.data === undefined || Object.keys(req.body.data).length < 1)
+                return res.status(400).json(getResponseJSON("Bad request.", 400));
+        const { updateRequestAKitConditions } = require('./firestore');
+        try {
+            await updateRequestAKitConditions(req.body.data);
+            return res.status(200).json({ data, code: 200 });
+        } catch(error) {
+            return res.status(500).json({ data: {}, message: error.message, code: 500 });
+        }
     } else if (api === 'participantDataCorrection') {
         const { participantDataCorrection } = require('./sites');
         return await participantDataCorrection(req, res);

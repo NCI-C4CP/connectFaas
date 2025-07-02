@@ -82,6 +82,33 @@ async function getParticipantsForNotificationsBQ({
   return rows.map(convertToFirestoreData);
 }
 
+async function getParticipantsForRequestAKitBQ(conditions = [], limit = 100) {
+  let bqConditionArray = [];
+
+  for (const condition of conditions) {
+    if (typeof condition === "string") {
+      bqConditionArray.push(`(${condition})`);
+    } else if (Array.isArray(condition) && condition.length === 3) {
+      const [key, operatorStr, value] = condition;
+      const operator = stringToOperatorConvt[operatorStr];
+      if (!operator) continue;
+
+      const bqKey = convertToBigqueryKey(key);
+      bqConditionArray.push(`${bqKey} ${operator} ${typeof value === "number" ? value : `"${value}"`}`);
+    }
+  }
+
+  const queryStr = `SELECT token FROM \`Connect.participants\` 
+  ${bqConditionArray.length ? `WHERE ${bqConditionArray.join(" AND ")}` : ''} 
+  ORDER BY token LIMIT ${limit}
+  `;
+  
+  const [rows] = await bigquery.query(queryStr);
+  if (rows.length === 0) return [];
+
+  return rows.map(convertToFirestoreData);
+}
+
 /**
  * Unflatten and convert to firestore data format
  * @param {object} bqData data from BQ
@@ -497,6 +524,7 @@ const getPhysicalActivityData = async (expression) => {
 module.exports = {
     getTable,
     getParticipantsForNotificationsBQ,
+    getParticipantsForRequestAKitBQ,
     getStatsFromBQ,
     getCollectionStats,
     getParticipantTokensByPhoneNumber,
