@@ -1054,20 +1054,20 @@ const getHomeMWKitData = (data) => {
     } = fieldMapping;
     let fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwash}`;
     let updatedParticipantObject = {};
-    
-    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
-        // If two replacements, they are out of replacement kits; error out.
-        throw new Error('Participant has exceeded supported number of replacement kits.');
+
+    const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
+
+    if(!participantIsEligible) {
+        throw new Error('Participant address information is invalid.');
     }
-
-   const participantIsEligible = !!processParticipantHomeMouthwashKitData(data, true);
-
-   if(!participantIsEligible) {
-    throw new Error('Participant address information is invalid.');
-   }
-
-   
-    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
+    
+    if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[kitStatus] === addressUndeliverable) {
+        // If their R2 address is marked as undeliverable, change it to initialized.
+        fieldPath = `${collectionDetails}.${baseline}.${bioKitMouthwashBL2}`;
+    } else if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]) {
+        // If two replacements otherwise, they are out of replacement kits; error out.
+        throw new Error('Participant has exceeded supported number of replacement kits.');
+    } else if(data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
         // If one replacement, mark as eligible for second replacement
         switch(data[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1][kitStatus]) {
             case undefined:
