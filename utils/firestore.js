@@ -2399,7 +2399,7 @@ const getSiteDetailsWithSignInProvider = async (acronym) => {
 const retrieveRequestAKitConditions = async () => {
     const snapshot = await db.collection("requestAKitConditions").get();
     if(!snapshot.size) {
-        return;
+        return {};
     }
     if(snapshot.size === 1) {
         return snapshot.docs[0].data();
