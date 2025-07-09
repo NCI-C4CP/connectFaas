@@ -797,17 +797,28 @@ const deletePathologyReports = async (connectId) => {
 
     await Promise.all(fileDeletePromises);
 
+    let batch = db.batch();
     let counter = 0;
-    const batch = db.batch();
+    const batchLimit = 500;
+    const batchPromises = [];
     for (const doc of snapshot.docs) {
       const { [fileNameCidStr]: fileName, bucketName } = doc.data();
       if (failedDeletionSet.has(`${bucketName}/${connectId}/${fileName}`)) continue;
       batch.delete(doc.ref);
       counter++;
+      if (counter >= batchLimit) {
+        batchPromises.push(batch.commit());
+        batch = db.batch();
+        counter = 0;
+      }
     }
 
     if (counter > 0) {
-      await batch.commit();
+      batchPromises.push(batch.commit());
+    }
+
+    if (batchPromises.length > 0) {
+      await Promise.all(batchPromises);
     }
   } catch (error) {
     console.error(`Error occurred when removing pathology reports for participant ${connectId}: ${error}`);
