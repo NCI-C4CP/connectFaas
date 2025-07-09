@@ -756,6 +756,86 @@ const removeDocumentFromCollection = async (connectID, token) => {
 };
 
 /**
+ * Deletes pathology report files from Storage Bucket and file records from "pathologyReports" collection in Firestore
+ * @param {number} connectId
+ * @returns Promise<void>
+ */
+const deletePathologyReports = async (connectId) => {
+  const tierStr = process.env.GCLOUD_PROJECT?.split("-").slice(3, 5).join("-").toLowerCase() || "";
+  if (!tierStr) return;
+
+  const fileNameCidStr = fieldMapping.pathologyReportFilename.toString();
+  try {
+    const snapshot = await db
+      .collection("pathologyReports")
+      .where("Connect_ID", "==", connectId)
+      .select("bucketName", fileNameCidStr)
+      .get();
+    if (snapshot.empty) return;
+
+    /**
+     * Over a period of 10–20 years, a participant might appear in more than one bucket (e.g., due to changing healthcare providers).
+     * Use Set to collect all bucket names.
+     */
+    const bucketNameSet = new Set();
+    for (const doc of snapshot.docs) {
+      const { bucketName } = doc.data();
+      if (bucketName?.startsWith("pathology-reports") && bucketName?.endsWith(tierStr)) {
+        bucketNameSet.add(bucketName);
+      }
+    }
+
+    const storage = admin.storage();
+    const fileDeletePromises = [];
+    const failedDeletionSet = new Set();
+    for (const bucketName of bucketNameSet) {
+      const bucket = storage.bucket(bucketName);
+      const [exists] = await bucket.exists();
+      if (!exists) continue;
+
+      const [files] = await bucket.getFiles({ prefix: `${connectId}/` });
+      for (const file of files) {
+        const fullFilePath = `${bucketName}/${file.name}`;
+        fileDeletePromises.push(
+          file.delete().catch((err) => {
+            failedDeletionSet.add(fullFilePath);
+            console.error(`Failed to delete file ${fullFilePath}:`, err);
+          })
+        );
+      }
+    }
+
+    await Promise.all(fileDeletePromises);
+
+    let batch = db.batch();
+    let counter = 0;
+    const batchLimit = 500;
+    const batchPromises = [];
+    for (const doc of snapshot.docs) {
+      const { [fileNameCidStr]: fileName, bucketName } = doc.data();
+      if (failedDeletionSet.has(`${bucketName}/${connectId}/${fileName}`)) continue;
+      batch.delete(doc.ref);
+      counter++;
+      if (counter >= batchLimit) {
+        batchPromises.push(batch.commit());
+        batch = db.batch();
+        counter = 0;
+      }
+    }
+
+    if (counter > 0) {
+      batchPromises.push(batch.commit());
+    }
+
+    if (batchPromises.length > 0) {
+      await Promise.all(batchPromises);
+    }
+  } catch (error) {
+    console.error(`Error occurred when removing pathology reports for participant ${connectId}: ${error}`);
+  }
+};
+
+/**
  * This function is run every day at 01:00.
  * This function is used to delete the data of the participant who requested and signed the data destruction form or requested data destruction within 60 days
  */
@@ -845,6 +925,7 @@ const removeParticipantsDataDestruction = async () => {
                     participant["Connect_ID"],
                     participant["token"]
                 );
+                await deletePathologyReports(participant["Connect_ID"]);
             }
         }
 
@@ -5096,4 +5177,5 @@ module.exports = {
     processPhysicalActivity,
     savePathologyReportNamesToFirestore,
     getUploadedPathologyReportNamesFromFirestore,
+    deletePathologyReports,
 };
