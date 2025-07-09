@@ -751,7 +751,7 @@ const removeDocumentFromCollection = async (connectID, token) => {
  * @returns Promise<void>
  */
 const deletePathologyReports = async (connectId) => {
-  const tierStr = process.env?.GCLOUD_PROJECT.split("-").slice(3, 5).join("-").toLowerCase() || "";
+  const tierStr = process.env.GCLOUD_PROJECT?.split("-").slice(3, 5).join("-").toLowerCase() || "";
   if (!tierStr) return;
 
   const fileNameCidStr = fieldMapping.pathologyReportFilename.toString();
