@@ -78,16 +78,6 @@ const submit = async (res, data, uid) => {
                     }
                 }
             }
-
-            // const { processMouthwashEligibility } = require('./validation');
-
-            // If the participant address changed, it may have changed their home mouthwash kit eligibility
-            // so re-check and update if necessary
-            // const updatedParticipant = await retrieveUserProfile(uid);
-            // const participantUpdates = processMouthwashEligibility(updatedParticipant);
-            // if(participantUpdates && Object.keys(participantUpdates).length) {
-            //     await updateResponse(participantUpdates, uid);
-            // }
         }
 
         if (response instanceof Error) {
