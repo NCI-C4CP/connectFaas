@@ -3378,14 +3378,14 @@ const confirmShipmentKit = async (shipmentData) => {
             // Block this if participant has withdrawn from the study, is set to destroy data
             // or is deceased
             if (
-                participantDocData?.[fieldMapping.participantDeceased] == fieldMapping.yes
+                participantDocData?.[fieldMapping.participantDeceased] === fieldMapping.yes
             ) {
                 toReturn = {status: 'This participant is deceased; do not ship this kit. Contact the Biospecimen Team.'};
                 return;
             }
             if (
-                participantDocData?.[fieldMapping.withdrawConsent] == fieldMapping.yes ||
-                participantDocData?.[fieldMapping.destroyData] == fieldMapping.yes
+                participantDocData?.[fieldMapping.withdrawConsent] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.destroyData] === fieldMapping.yes
             ) {
                 toReturn = {status: 'This participant has withdrawn from the study; do not ship this kit. Contact the Biospecimen Team.'};
                 return;
