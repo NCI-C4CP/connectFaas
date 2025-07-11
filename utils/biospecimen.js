@@ -742,7 +742,7 @@ const biospecimenAPIs = async (req, res) => {
         }
         catch (error) {
             console.error(error);
-            return res.status(500).json(getResponseJSON(error.message, 500));
+            return res.status(500).json({response: error.message, code: 500});
         }
     }
 

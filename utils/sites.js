@@ -3,6 +3,7 @@ const submitRules = require("../submitParticipantData.json");
 const { getResponseJSON, setHeaders, logIPAddress, validPhoneFormat, validEmailFormat, refusalWithdrawalConcepts } = require('./shared');
 const { validateIso8601Timestamp } = require('./validation');
 const fieldMapping = require('./fieldToConceptIdMapping');
+const { FieldValue } = require('firebase-admin/firestore');
 
 const submitParticipantsData = async (req, res, site) => {
     logIPAddress(req);
@@ -348,6 +349,29 @@ const updateParticipantData = async (req, res, authObj) => {
         // Handle destroyed data. If destroyData = yes then participation status = destroyData
         if (flatUpdateObj[fieldMapping.participantMap.destroyData] === fieldMapping.yes) {
             flatUpdateObj[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestructionRequested;
+        }
+
+        // If participant consent is being withdrawn, data destroyed or participant deceased, remove their home MW kit stuff
+        // This is specifically only if the kit status is initialized or address undeliverable
+        // it will otherwise be handled elsewhere
+        if (
+            flatDocData[fieldMapping.withdrawConsent] === fieldMapping.yes || 
+            flatDocData[fieldMapping.participantMap.destroyData] === fieldMapping.yes ||
+            flatDocData[fieldMapping.participantDeceased] === fieldMapping.yes ||
+            // Check both the existing and incoming data for this
+            flatUpdateObj[fieldMapping.withdrawConsent] === fieldMapping.yes || 
+            flatUpdateObj[fieldMapping.participantMap.destroyData] === fieldMapping.yes ||
+            flatUpdateObj[fieldMapping.participantDeceased] === fieldMapping.yes
+        ) {
+            if([fieldMapping.initialized, fieldMapping.addressUndeliverable].indexOf(flatDocData[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwash}.${fieldMapping.kitStatus}`]) > -1) {
+                flatUpdateObj[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwash}.${fieldMapping.kitStatus}`] = FieldValue.delete();
+            }
+            if([fieldMapping.initialized, fieldMapping.addressUndeliverable].indexOf(flatDocData[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL1}.${fieldMapping.kitStatus}`]) > -1) {
+                flatUpdateObj[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL1}.${fieldMapping.kitStatus}`] = FieldValue.delete();
+            }
+            if([fieldMapping.initialized, fieldMapping.addressUndeliverable].indexOf(flatDocData[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL2}.${fieldMapping.kitStatus}`]) > -1) {
+                flatUpdateObj[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwashBL2}.${fieldMapping.kitStatus}`] = FieldValue.delete();
+            }
         }
 
         // Handle cancer occurrence data. This gets validated and directed to the Firestore cancerOccurrence collection. One occurrence per doc.
