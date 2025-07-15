@@ -3114,7 +3114,7 @@ const assignKitToParticipant = async (data) => {
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2, 
-        withdrawConsent, destroyData, participantDeceased, yes } = fieldMapping;
+        withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC, yes } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
@@ -3305,9 +3305,10 @@ const assignKitToParticipant = async (data) => {
         // is deceased or is set to destroy data
         // Also clear the participant's relevant kit status at this time
         if (
-            participantData?.[withdrawConsent] == yes ||
-            participantData?.[destroyData] == yes ||
-            participantData?.[participantDeceased] == yes
+            participantData?.[withdrawConsent] === yes ||
+            participantData?.[destroyData] === yes ||
+            participantData?.[participantDeceased] === yes ||
+            participantData?.[participantDeceasedNORC] === yes
         ) {
             kitAssignmentResult = {
                 success: false,
@@ -3367,9 +3368,10 @@ const markParticipantAddressUndeliverable = async (participantCID) => {
         // clear the kit status instead of setting it to undeliverable
         // and inform the end user
         if (
-            data?.[fieldMapping.withdrawConsent] == fieldMapping.yes ||
-            data?.[fieldMapping.destroyData] == fieldMapping.yes ||
-            data?.[fieldMapping.participantDeceased] == fieldMapping.yes
+            data?.[fieldMapping.withdrawConsent] === fieldMapping.yes ||
+            data?.[fieldMapping.destroyData] === fieldMapping.yes ||
+            data?.[fieldMapping.participantDeceased] === fieldMapping.yes ||
+            data?.[fieldMapping.participantDeceasedNORC] === fieldMapping.yes
         ) {
             await db.collection("participants").doc(docId).update({
                 [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: FieldValue.delete()
@@ -3467,7 +3469,9 @@ const confirmShipmentKit = async (shipmentData) => {
             // Block this if participant has withdrawn from the study, is set to destroy data
             // or is deceased
             if (
-                participantDocData?.[fieldMapping.participantDeceased] === fieldMapping.yes
+                participantDocData?.[fieldMapping.participantDeceased] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.participantDeceasedNORC] === fieldMapping.yes
+
             ) {
                 toReturn = {status: 'This participant is deceased; do not ship this kit. Contact the Biospecimen Team.'};
                 return;
@@ -3552,7 +3556,10 @@ const storeKitReceipt = async (pkg) => {
 
             // If participant has withdrawn from the study, is set to destroy data
             // or is deceased, block their kit from being received.
-            if (participantDocData[fieldMapping.participantDeceased] == fieldMapping.yes) {
+            if (
+                participantDocData[fieldMapping.participantDeceased] == fieldMapping.yes ||
+                participantDocData[fieldMapping.participantDeceasedNORC] == fieldMapping.yes
+            ) {
                 toReturn = {status: 'This participant is deceased; do not receipt this kit. Contact the Biospecimen Team.'};
                 return;
             }
