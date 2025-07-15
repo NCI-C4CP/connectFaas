@@ -358,10 +358,14 @@ const updateParticipantData = async (req, res, authObj) => {
             flatDocData[fieldMapping.withdrawConsent] === fieldMapping.yes || 
             flatDocData[fieldMapping.participantMap.destroyData] === fieldMapping.yes ||
             flatDocData[fieldMapping.participantDeceased] === fieldMapping.yes ||
+            flatDocData[fieldMapping.participantDeceasedNORC] === fieldMapping.yes ||
+
             // Check both the existing and incoming data for this
             flatUpdateObj[fieldMapping.withdrawConsent] === fieldMapping.yes || 
             flatUpdateObj[fieldMapping.participantMap.destroyData] === fieldMapping.yes ||
-            flatUpdateObj[fieldMapping.participantDeceased] === fieldMapping.yes
+            flatUpdateObj[fieldMapping.participantDeceased] === fieldMapping.yes ||
+            flatUpdateObj[fieldMapping.participantDeceasedNORC] === fieldMapping.yes
+
         ) {
             if([fieldMapping.initialized, fieldMapping.addressUndeliverable].indexOf(flatDocData[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwash}.${fieldMapping.kitStatus}`]) > -1) {
                 flatUpdateObj[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwash}.${fieldMapping.kitStatus}`] = FieldValue.delete();
