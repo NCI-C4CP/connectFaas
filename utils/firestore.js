@@ -611,15 +611,7 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
         printDocsCount(snapshot, `retrieveParticipants`);
 
         results.docs = snapshot.docs.map(doc => {
-            let data = doc.data();
-            
-            if (data[fieldMapping.participantMap.consentFormSubmitted] === fieldMapping.no) {
-                delete data[fieldMapping.authenticationEmail];
-                delete data[fieldMapping.authenticationPhone];
-                delete data[fieldMapping.signInMechanism];
-            }
-            
-            return data;
+            return removeFirebaseData(doc.data());
         });
 
         if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
@@ -632,6 +624,23 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
         console.error(error);
         return new Error(error);
     }
+}
+
+/**
+ * Removes sensitive data from a participant document based on consent form submission status.
+ * 
+ * @function removeFirebaseData
+ * @param {Object} document - The participant document to process.
+ * @returns {Object} The processed document with sensitive data removed if consent form is not submitted.
+ */
+const removeFirebaseData = (document) => {
+    if (document[fieldMapping.participantMap.consentFormSubmitted] === fieldMapping.no) {
+        delete document[fieldMapping.authenticationEmail];
+        delete document[fieldMapping.authenticationPhone];
+        delete document[fieldMapping.signInMechanism];
+    }
+
+    return document;
 }
 
 /**
@@ -1200,8 +1209,7 @@ const individualParticipant = async (key, value, siteCode, isParent) => {
         printDocsCount(snapshot, "individualParticipant");
         if(snapshot.size > 0) {
             return snapshot.docs.map(document => {
-                let data = document.data();
-                return data;
+                return removeFirebaseData(document.data());
             });
         }
         else return false;
