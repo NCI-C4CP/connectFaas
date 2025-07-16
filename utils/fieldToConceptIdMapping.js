@@ -323,6 +323,7 @@ module.exports = {
     occurrenceNumber: 793981056,
     cancerOccurrence: 637153953,
     cancerOccurrenceTimestamp: 345545422,
+    cancerDataReceivedTimestamp: 212274403,
     isCancerDiagnosis: 525972260,
     primaryCancerSiteObject: 740819233,
     primaryCancerSiteCategorical: 149205077,

@@ -1312,7 +1312,7 @@ describe('biospecimen', async () => {
                 });
                 
             });
-            it('Should prevent a participant whose initial kitStatus is address undeliverable from obtaining a replacement', () => {
+            it('Should update a participant whose initial kitStatus is address undeliverable to initialized', () => {
                 const data = {
                     [fieldToConceptIdMapping.firstName]: 'First',
                     [fieldToConceptIdMapping.lastName]: 'Last',
@@ -1329,7 +1329,21 @@ describe('biospecimen', async () => {
                         }
                     }
                 };
-                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
+                const updates = shared.getHomeMWKitData(data);
+                const clonedUpdates = Object.assign({}, updates);
+                delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.dateKitRequested}`];
+                assert.closeTo
+                    (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                    +new Date(), 
+                    60000, 
+                    'Date kit requested is within a minute of test completion'
+                );
+    
+                assert.deepEqual(clonedUpdates, {
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwash}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized,
+                    },
+                    `Kit status address undeliverable eligible for initial kit`);
             });
             it('Should throw error on unrecognized kitStatus for initial home MW kit', () => {
                 const data = {
@@ -1454,7 +1468,7 @@ describe('biospecimen', async () => {
                 });
     
             });
-            it('Should prevent a participant whose replacement kitStatus is address undeliverable from obtaining a replacement', () => {
+            it('Should update a participant whose R1 kitStatus is address undeliverable to initialized', () => {
                 const data = {
                     [fieldToConceptIdMapping.firstName]: 'First',
                     [fieldToConceptIdMapping.lastName]: 'Last',
@@ -1474,7 +1488,21 @@ describe('biospecimen', async () => {
                         }
                     }
                 };
-                expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Participant address information is invalid./);
+                const updates = shared.getHomeMWKitData(data);
+                const clonedUpdates = Object.assign({}, updates);
+                delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.dateKitRequested}`];
+                assert.closeTo
+                    (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                    +new Date(), 
+                    60000, 
+                    'Date kit requested is within a minute of test completion'
+                );
+    
+                assert.deepEqual(clonedUpdates, {
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                    [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL1}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized
+                    },
+                    `Kit status address undeliverable eligible for replacement kit`);
             });
             it('Should throw error on unrecognized kitStatus for first replacement home MW kit', () => {
                 const data = {
@@ -1500,6 +1528,45 @@ describe('biospecimen', async () => {
                 expect(shared.getHomeMWKitData.bind(null, data)).to.throw(/Unrecognized kit status fake/);
             });
 
+        });
+        it('Should update a participant whose R2 kitStatus is address undeliverable to initialized', () => {
+            const data = {
+                [fieldToConceptIdMapping.firstName]: 'First',
+                [fieldToConceptIdMapping.lastName]: 'Last',
+                [fieldToConceptIdMapping.address1]: '123 Fake Street',
+                [fieldToConceptIdMapping.city]: 'City',
+                [fieldToConceptIdMapping.state]: 'PA',
+                [fieldToConceptIdMapping.zip]: '19104',
+                'Connect_ID': 123456789,
+                [fieldToConceptIdMapping.collectionDetails]: {
+                    [fieldToConceptIdMapping.baseline]: {
+                        [fieldToConceptIdMapping.bioKitMouthwash]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressPrinted
+                        },
+                        [fieldToConceptIdMapping.bioKitMouthwashBL1]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.received
+                        },
+                        [fieldToConceptIdMapping.bioKitMouthwashBL2]: {
+                            [fieldToConceptIdMapping.kitStatus]: fieldToConceptIdMapping.addressUndeliverable
+                        }
+                    }
+                }
+            };
+            const updates = shared.getHomeMWKitData(data);
+            const clonedUpdates = Object.assign({}, updates);
+            delete clonedUpdates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.dateKitRequested}`];
+            assert.closeTo
+                (+new Date(updates[`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.dateKitRequested}`]),
+                +new Date(), 
+                60000, 
+                'Date kit requested is within a minute of test completion'
+            );
+
+            assert.deepEqual(clonedUpdates, {
+                [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitType}`]: fieldToConceptIdMapping.mouthwashKit,
+                [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bioKitMouthwashBL2}.${fieldToConceptIdMapping.kitStatus}`]: fieldToConceptIdMapping.initialized
+                },
+                `Kit status address undeliverable eligible for second replacement kit`);
         });
         it('Should prevent a participant who already has a second replacement kit from obtaining another', () => {
             const data = {
