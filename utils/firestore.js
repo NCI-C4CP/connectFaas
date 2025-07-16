@@ -686,14 +686,27 @@ const retrieveParticipantsEligibleForIncentives = async (siteCode, roundType, is
     }
 }
 
-const removeDocumentFromCollection = async (connectID, token) => {
+const removeDocumentFromCollection = async (connectID, token, dhq3Username = null) => {
     try {
+
+        // Collection query mappings. All remaining collections default to Connect_ID.
+        const tokenCollections = new Set(['notifications', 'ssn']);
+        const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
+        
         for (const collection of listOfCollectionsRelatedToDataDestruction) {
-            const query = db.collection(collection)
-            const snapshot =
-                collection === "notifications" || collection === "ssn"
-                    ? await query.where("token", "==", token).get()
-                    : await query.where("Connect_ID", "==", connectID).get();
+            const query = db.collection(collection);
+            let snapshot;
+            
+            // Build query based on collection type
+            if (tokenCollections.has(collection)) {
+                snapshot = await query.where("token", "==", token).get();
+            } else if (dhqCollections.has(collection)) {
+                if (!dhq3Username) continue; // If dhq3Username is null, there's no DHQ data to destroy.
+                snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
+            } else {
+                snapshot = await query.where("Connect_ID", "==", connectID).get();
+            }
+            
             printDocsCount(snapshot, "removeDocumentFromCollection");
 
             if (snapshot.size !== 0) {
@@ -795,7 +808,8 @@ const removeParticipantsDataDestruction = async () => {
                 await db.collection('participants').doc(participantId).update(updatedData);
                 await removeDocumentFromCollection(
                     participant["Connect_ID"],
-                    participant["token"]
+                    participant["token"],
+                    participant?.[fieldMapping.dhq3Username] // field can be null
                 );
             }
         }

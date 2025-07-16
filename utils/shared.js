@@ -291,7 +291,9 @@ const listOfCollectionsRelatedToDataDestruction = [
     "ssn",
     "experience2024",
     "cancerScreeningHistorySurvey",
-    // TODO: DHQ Phase 2 - add "dhq3Survey" here once data is in Firestore. Return data only. Not credential pool data.
+    "dhqAnalysisResults",
+    "dhqDetailedAnalysis",
+    "dhqRawAnswers",
 ];
 
 const incentiveConcepts = {
