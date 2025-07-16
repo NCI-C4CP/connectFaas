@@ -465,17 +465,20 @@ const resetParticipantHelper = async (uid, saveToDb) => {
 
         if (saveToDb) {
             const participantDoc = db.collection('participants').doc(userId);
-            // These aren't going to ever have enough records to require delete batching
             const deletionDocsArray = [];
             await Promise.all(Object.keys(toDelete).map(async (docType) => {
                 let ids = toDelete[docType] || [];
                 if (!ids.length) {
                     return;
                 }
-                const docQuery = db.collection(docType)
-                    .where(FieldPath.documentId(), 'in', ids);
-                const query = await transaction.get(docQuery);
-                query.docs.forEach(doc => deletionDocsArray.push(doc));
+                // Break this down into chunks of thirty where necessary
+                const maxSize = 30;
+                for(let start = 0; start < ids.length; start += maxSize) {
+                    const docQuery = db.collection(docType)
+                        .where(FieldPath.documentId(), 'in', ids.slice(start, Math.min(start + maxSize, ids.length)));
+                    const query = await transaction.get(docQuery);
+                    query.docs.forEach(doc => deletionDocsArray.push(doc));
+                }
                 return;
             }));
             // Transactions require all reads happen before writes for some reason, hence this structure
@@ -3114,7 +3117,8 @@ const assignKitToParticipant = async (data) => {
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2, 
-        withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC, yes } = fieldMapping;
+        withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC,
+        activityParticipantRefusal, allFutureSamples, baselineMouthwashSample, refusedAllFutureActivities, yes } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
@@ -3308,7 +3312,10 @@ const assignKitToParticipant = async (data) => {
             participantData?.[withdrawConsent] === yes ||
             participantData?.[destroyData] === yes ||
             participantData?.[participantDeceased] === yes ||
-            participantData?.[participantDeceasedNORC] === yes
+            participantData?.[participantDeceasedNORC] === yes ||
+            participantData?.[activityParticipantRefusal]?.[baselineMouthwashSample] === yes ||
+            participantData?.[activityParticipantRefusal]?.[allFutureSamples] === yes ||
+            participantData?.[refusedAllFutureActivities] === yes
         ) {
             kitAssignmentResult = {
                 success: false,
@@ -3346,9 +3353,21 @@ const assignKitToParticipant = async (data) => {
 
 const markParticipantAddressUndeliverable = async (participantCID) => {
     try {
-        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressUndeliverable } = fieldMapping;
+        const { 
+            collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, 
+            kitStatus, addressUndeliverable,
+            withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC, 
+            activityParticipantRefusal, baselineMouthwashSample, refusedAllFutureActivities, allFutureSamples, yes
+        } = fieldMapping;
 
-        const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID', `${collectionDetails}`).get();
+        const snapshot = await db.collection("participants")
+            .where('Connect_ID', '==', parseInt(participantCID))
+            .select(
+                'Connect_ID', `${collectionDetails}`, `${withdrawConsent}`, 
+                `${destroyData}`, `${participantDeceased}`, `${participantDeceasedNORC}`,
+                `${activityParticipantRefusal}`, `${refusedAllFutureActivities}`
+            )
+            .get();
         printDocsCount(snapshot, "markParticipantAddressUndeliverable");
         if (snapshot.size === 0) {
             // No matching document found, stop the update
@@ -3368,10 +3387,13 @@ const markParticipantAddressUndeliverable = async (participantCID) => {
         // clear the kit status instead of setting it to undeliverable
         // and inform the end user
         if (
-            data?.[fieldMapping.withdrawConsent] === fieldMapping.yes ||
-            data?.[fieldMapping.destroyData] === fieldMapping.yes ||
-            data?.[fieldMapping.participantDeceased] === fieldMapping.yes ||
-            data?.[fieldMapping.participantDeceasedNORC] === fieldMapping.yes
+            data?.[withdrawConsent] === yes ||
+            data?.[destroyData] === yes ||
+            data?.[participantDeceased] === yes ||
+            data?.[participantDeceasedNORC] === yes ||
+            data?.[activityParticipantRefusal]?.[baselineMouthwashSample] === yes ||
+            data?.[activityParticipantRefusal]?.[allFutureSamples] === yes ||
+            data?.[refusedAllFutureActivities] === yes
         ) {
             await db.collection("participants").doc(docId).update({
                 [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: FieldValue.delete()
@@ -3478,9 +3500,12 @@ const confirmShipmentKit = async (shipmentData) => {
             }
             if (
                 participantDocData?.[fieldMapping.withdrawConsent] === fieldMapping.yes ||
-                participantDocData?.[fieldMapping.destroyData] === fieldMapping.yes
+                participantDocData?.[fieldMapping.destroyData] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.baselineMouthwashSample] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.allFutureSamples] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes
             ) {
-                toReturn = {status: 'This participant has withdrawn from the study; do not ship this kit. Contact the Biospecimen Team.'};
+                toReturn = {status: 'This participant has withdrawn from the study or refused relevant activities; do not ship this kit. Contact the Biospecimen Team.'};
                 return;
             }
 
@@ -3565,9 +3590,12 @@ const storeKitReceipt = async (pkg) => {
             }
             if (
                 participantDocData[fieldMapping.withdrawConsent] == fieldMapping.yes ||
-                participantDocData[fieldMapping.destroyData] == fieldMapping.yes
+                participantDocData[fieldMapping.destroyData] == fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.baselineMouthwashSample] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.allFutureSamples] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes
             ) {
-                toReturn = {status: 'This participant has withdrawn; do not receipt this kit. Contact the Biospecimen Team.'};
+                toReturn = {status: 'This participant has withdrawn or refused relevant activities; do not receipt this kit. Contact the Biospecimen Team.'};
                 return;
             }
 

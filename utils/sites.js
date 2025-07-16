@@ -352,6 +352,7 @@ const updateParticipantData = async (req, res, authObj) => {
         }
 
         // If participant consent is being withdrawn, data destroyed or participant deceased, remove their home MW kit stuff
+        // This includes participants who have refused mouthwash samples, all future samples, or all future activities
         // This is specifically only if the kit status is initialized or address undeliverable
         // it will otherwise be handled elsewhere
         if (
@@ -359,12 +360,19 @@ const updateParticipantData = async (req, res, authObj) => {
             flatDocData[fieldMapping.participantMap.destroyData] === fieldMapping.yes ||
             flatDocData[fieldMapping.participantDeceased] === fieldMapping.yes ||
             flatDocData[fieldMapping.participantDeceasedNORC] === fieldMapping.yes ||
+            flatDocData[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes ||
+            flatDocData[`${fieldMapping.activityParticipantRefusal}.${fieldMapping.baselineMouthwashSample}`] === fieldMapping.yes ||
+            flatDocData[`${fieldMapping.activityParticipantRefusal}.${fieldMapping.allFutureSamples}`] === fieldMapping.yes ||
+
 
             // Check both the existing and incoming data for this
             flatUpdateObj[fieldMapping.withdrawConsent] === fieldMapping.yes || 
             flatUpdateObj[fieldMapping.participantMap.destroyData] === fieldMapping.yes ||
             flatUpdateObj[fieldMapping.participantDeceased] === fieldMapping.yes ||
-            flatUpdateObj[fieldMapping.participantDeceasedNORC] === fieldMapping.yes
+            flatUpdateObj[fieldMapping.participantDeceasedNORC] === fieldMapping.yes ||
+            flatUpdateObj[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes ||
+            flatUpdateObj[`${fieldMapping.activityParticipantRefusal}.${fieldMapping.baselineMouthwashSample}`] === fieldMapping.yes ||
+            flatUpdateObj[`${fieldMapping.activityParticipantRefusal}.${fieldMapping.allFutureSamples}`] === fieldMapping.yes
 
         ) {
             if([fieldMapping.initialized, fieldMapping.addressUndeliverable].indexOf(flatDocData[`${fieldMapping.collectionDetails}.${fieldMapping.baseline}.${fieldMapping.bioKitMouthwash}.${fieldMapping.kitStatus}`]) > -1) {

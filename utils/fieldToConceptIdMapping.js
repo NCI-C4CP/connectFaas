@@ -251,7 +251,9 @@ module.exports = {
      replacementKit2: 772116457,
      withdrawConsent: 747006172,
      activityParticipantRefusal: 685002411,
+     allFutureSamples: 352996056, // Nested under activityParticipantRefusal
      baselineMouthwashSample: 277479354,
+     refusedAllFutureActivities: 906417725, // This is top-level and not nested like activityParticipantRefusal.allFutureSamples is
      bloodOrUrineCollected: 156605577,
      bloodOrUrineCollectedTimestamp: 740582332,
      baselineBloodOrUrineOrderPlaced: 880794013,
