@@ -131,6 +131,119 @@ describe('Firebase Mock System Tests', () => {
                 const result = await countSnapshot;
                 expect(result.data().count).to.equal(1500);
             });
+
+            it('should demonstrate document retrieval (.collection().doc().get()) mocking', async () => {
+                // Test existing document scenario
+                const mockData = { 
+                    studyId: 'study_123',
+                    processedIds: ['participant1', 'participant2', 'participant3'],
+                    lastProcessed: '2023-01-01T00:00:00Z'
+                };
+                
+                // Mock the specific path with document data
+                const collectionPath = 'dhq3SurveyCredentials/study_123/responseTracking';
+                const docId = 'analysisResults';
+                
+                mocks.firestore.collection.withArgs(collectionPath).returns({
+                    doc: sinon.stub().withArgs(docId).returns({
+                        get: sinon.stub().resolves({ 
+                            exists: true,
+                            data: () => mockData,
+                            id: docId
+                        })
+                    })
+                });
+
+                // Test document retrieval
+                const docRef = mocks.firestore.collection(collectionPath).doc(docId);
+                const docSnapshot = await docRef.get();
+                
+                expect(docSnapshot.exists).to.be.true;
+                expect(docSnapshot.data()).to.deep.equal(mockData);
+                expect(docSnapshot.id).to.equal(docId);
+
+                // Test non-existent document scenario
+                const collectionPath2 = 'dhq3SurveyCredentials/study_456/responseTracking';
+                const docId2 = 'nonExistentDoc';
+                
+                mocks.firestore.collection.withArgs(collectionPath2).returns({
+                    doc: sinon.stub().withArgs(docId2).returns({
+                        get: sinon.stub().resolves({ 
+                            exists: false,
+                            data: () => null
+                        })
+                    })
+                });
+
+                const docRef2 = mocks.firestore.collection(collectionPath2).doc(docId2);
+                const docSnapshot2 = await docRef2.get();
+                
+                expect(docSnapshot2.exists).to.be.false;
+            });
+
+            it('should demonstrate document write operations (.set(), .update(), .delete()) mocking', async () => {
+                const collectionPath = 'participants';
+                const docId = 'participant123';
+                
+                // Mock document reference with write operations
+                const mockDocRef = {
+                    set: sinon.stub().resolves(),
+                    update: sinon.stub().resolves(), 
+                    delete: sinon.stub().resolves()
+                };
+                
+                mocks.firestore.collection.withArgs(collectionPath).returns({
+                    doc: sinon.stub().withArgs(docId).returns(mockDocRef)
+                });
+
+                const docRef = mocks.firestore.collection(collectionPath).doc(docId);
+                
+                // Test document .set() operation
+                const setData = { name: 'John Doe', status: 'active' };
+                await docRef.set(setData);
+                expect(mockDocRef.set.calledWith(setData)).to.be.true;
+                
+                // Test document .update() operation
+                const updateData = { status: 'inactive' };
+                await docRef.update(updateData);
+                expect(mockDocRef.update.calledWith(updateData)).to.be.true;
+                
+                // Test document delete operation
+                await docRef.delete();
+                expect(mockDocRef.delete.called).to.be.true;
+            });
+
+            it('should demonstrate error handling in Firebase operations', async () => {
+                const collectionPath = 'errorCollection';
+                const docId = 'errorDoc';
+                
+                // Mock a document that throws an error on get
+                const mockError = new Error('Firestore permission denied');
+                mocks.firestore.collection.withArgs(collectionPath).returns({
+                    doc: sinon.stub().withArgs(docId).returns({
+                        get: sinon.stub().rejects(mockError),
+                        set: sinon.stub().rejects(mockError)
+                    })
+                });
+
+                const docRef = mocks.firestore.collection(collectionPath).doc(docId);
+                
+                // Test error handling for get operation
+                try {
+                    await docRef.get();
+                    expect.fail('Should have thrown an error');
+                } catch (error) {
+                    expect(error.message).to.equal('Firestore permission denied');
+                }
+                
+                // Test error handling for set operation
+                try {
+                    await docRef.set({ test: 'data' });
+                    expect.fail('Should have thrown an error');
+                } catch (error) {
+                    expect(error.message).to.equal('Firestore permission denied');
+                }
+            });
         });
 
         describe('Test Utilities Examples', () => {

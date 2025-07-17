@@ -156,9 +156,18 @@ class FirebaseMockFactory {
             }),
             doc: (docId) => {
                 const doc = mockDocs.find(d => d.id === docId);
+                const mockDoc = doc ? {
+                    exists: true,
+                    data: () => doc.data(),
+                    id: doc.id
+                } : {
+                    exists: false,
+                    data: () => null
+                };
+                
                 return {
                     ...this.mockFirestoreDoc,
-                    get: sinon.stub().resolves(doc || { exists: false, data: () => null }),
+                    get: sinon.stub().resolves(mockDoc),
                     set: sinon.stub().resolves(),
                     update: sinon.stub().resolves(),
                     delete: sinon.stub().resolves()
@@ -183,6 +192,38 @@ class FirebaseMockFactory {
             id: docId
         });
         return docRef;
+    }
+
+    /**
+     * Mock document retrieval for collection().doc().get() pattern
+     * @param {string} collectionPath - The collection path
+     * @param {string} docId - The document ID
+     * @param {Object|null} data - The document data (null for non-existent document)
+     * @returns {Function} cleanup function to restore mocks
+     */
+    setupDocumentRetrieval(collectionPath, docId, data = null) {
+        const mockDoc = data ? {
+            exists: true,
+            data: () => data,
+            id: docId
+        } : {
+            exists: false
+        };
+        
+        // Set up the mock using the working pattern
+        this.mockFirestore.collection.withArgs(collectionPath).returns({
+            doc: sinon.stub().withArgs(docId).returns({
+                get: sinon.stub().resolves(mockDoc)
+            })
+        });
+        
+        // Return a cleanup function that resets the mock
+        return () => {
+            // Reset the specific stub
+            this.mockFirestore.collection.withArgs(collectionPath).reset();
+            // Also restore the original behavior for other calls
+            this.mockFirestore.collection.resetBehavior();
+        };
     }
 
     /**

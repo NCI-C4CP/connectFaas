@@ -10,10 +10,12 @@ const { factory, mocks } = setupTestSuite({
 });
 
 const fieldMapping = require('../../utils/fieldToConceptIdMapping');
+
 const { 
     createResponseDocID, 
     getDynamicChunkSize, 
-    prepareDocumentsForFirestore
+    prepareDocumentsForFirestore,
+    getProcessedRespondentIds
 } = require('../../utils/dhq');
 
 describe('DHQ Integration Tests', () => {
@@ -21,6 +23,7 @@ describe('DHQ Integration Tests', () => {
     // INTEGRATION TESTING
     describe('DHQ Integration Testing', () => {
         it('should demonstrate end-to-end CSV processing', async () => {
+            
             // Set up mock data for processing and collection data for tracking.
             factory.setupCollectionData('dhq3SurveyCredentials/study_123/responseTracking', [
                 {
@@ -124,6 +127,68 @@ describe('DHQ Integration Tests', () => {
             });
 
             expect(result).to.deep.equal({ success: true });
+        });
+    });
+
+    describe('getProcessedRespondentIds', () => {
+        it('should be a function that returns a Set', () => {
+            expect(getProcessedRespondentIds).to.be.a('function');
+            expect(getProcessedRespondentIds.length).to.equal(2);
+        });
+
+        it('should handle database errors', async () => {
+            // Mock the collection to throw an error
+            const originalCollection = mocks.firestore.collection;
+            mocks.firestore.collection = sinon.stub().throws(new Error('Database error'));
+
+            const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
+            expect(result).to.be.instanceof(Set);
+            expect(result.size).to.equal(0);
+
+            // Restore original mock
+            mocks.firestore.collection = originalCollection;
+        });
+
+        it('should return an empty Set if the tracking doc does not exist', async () => {
+            // Mock the specific path with no document
+            const collectionPath = 'dhq3SurveyCredentials/study_test/responseTracking';
+            const docId = 'dhqAnalysisResults';
+            
+            // Set up the mock to return a non-existent document
+            mocks.firestore.collection.withArgs(collectionPath).returns({
+                doc: sinon.stub().withArgs(docId).returns({
+                    get: sinon.stub().resolves({ exists: false })
+                })
+            });
+
+            const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
+            expect(result).to.be.instanceof(Set);
+            expect(result.size).to.equal(0);
+        });
+
+        it('should return a Set of processed respondent IDs if present', async () => {
+            // Mock the specific path with document data
+            const collectionPath = 'dhq3SurveyCredentials/study_test/responseTracking';
+            const docId = 'dhqAnalysisResults';
+            const mockData = { 
+                [fieldMapping.dhq3ProcessedRespondentArray.toString()]: ['participant1', 'participant2'] 
+            };
+            
+            // Set up the mock to return document with data
+            mocks.firestore.collection.withArgs(collectionPath).returns({
+                doc: sinon.stub().withArgs(docId).returns({
+                    get: sinon.stub().resolves({ 
+                        exists: true,
+                        data: () => mockData
+                    })
+                })
+            });
+
+            const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
+            expect(result).to.be.instanceof(Set);
+            expect(result.size).to.equal(2);
+            expect(result.has('participant1')).to.be.true;
+            expect(result.has('participant2')).to.be.true;
         });
     });
 
