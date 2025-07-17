@@ -3320,7 +3320,7 @@ const assignKitToParticipant = async (data) => {
             kitAssignmentResult = {
                 success: false,
                 removeFromQueue: true,
-                message: 'This participant has withdrawn or is deceased. Do not assign a kit to them. Discard address label.'
+                message: 'This participant has withdrawn or is deceased. Do not assign a kit to them. Discard address label. This kit may be used for a different participant.'
             };
             const updatedParticipantObject = {
                 [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: FieldValue.delete()
