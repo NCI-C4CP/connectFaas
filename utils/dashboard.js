@@ -161,8 +161,8 @@ const dashboard = async (req, res) => {
             return res.status(200).json({data: {data, deleted}, code: 200});
           }
           catch(err) {
-            console.error('error', err);
-            return res.status(500).json({data: 'Error: ' + (err && err.toString ? err.toString() : err), code: 500});
+            console.error('Error in resetParticipantHelper', err);
+            return res.status(500).json({data: err && err.toString ? err.toString() : (err?.message || err), code: 500});
           }
           
         }
