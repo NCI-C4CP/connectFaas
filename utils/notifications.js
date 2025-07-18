@@ -717,7 +717,6 @@ const getSiteNotification = async (req, res, authObj) => {
 }
 
 const sendEmailLink = async (req, res) => {
-  console.log(`sendEmailLink() called with body: ${JSON.stringify(req.body)}`);
     if (req.method !== "POST") {
         return res
             .status(405)

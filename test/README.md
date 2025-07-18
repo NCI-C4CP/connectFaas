@@ -1,6 +1,6 @@
 # Connect FAAS Testing Framework
 
-This directory contains the ConnectFaas testing framework. The framework is designed to be modular and scalable for future testing needs.
+Comprehensive testing framework for the ConnectFaas project, designed to be modular, scalable, and maintainable.
 
 ## Directory Structure
 
@@ -8,25 +8,33 @@ This directory contains the ConnectFaas testing framework. The framework is desi
 test/
 ├── unit/                         # Unit tests
 │   ├── dhq.test.js               # DHQ unit tests
-│   └── ...                       # Future
+│   └── fileProcessing.test.js    # File processing tests
 ├── integration/                  # Integration tests
-│   ├── dhq.integration.test.js   # DHQ workflow tests
-│   └── ...                       # Future
-├── mocks/                        # Mock system
-│   ├── firebaseMocks.js          # Firebase Admin SDK mock factory
-│   └── firebaseMocks.test.js     # Mock system tests
-├── testUtils/                    # Modular test utils
-│   ├── csvUtils.js               # CSV data generation utils
-│   ├── participantUtils.js       # Participant data generation utils
-│   ├── dhqApiUtils.js            # DHQ API response generation utils
-│   ├── errorUtils.js             # Error scenario generation utils
-│   ├── performanceUtils.js       # Performance data generation utils
-│   ├── appSettingsUtils.js       # App settings generation utils
-│   └── index.js                  # Central export file
-├── shared/                       # Shared test helpers
-│   └── testHelpers.js            # Common test setup functions
-├── test.js                       # Tests not yet migrated to this format
-└── README.md                     # This
+│   └── dhq.integration.test.js   # DHQ workflow tests
+├── mocks/                        # Modular mock system
+│   ├── firebaseMocks.test.js     # Mock system tests
+│   ├── mockFactory.js            # Mock orchestration
+│   ├── core/                     # Core mock implementations
+│   │   ├── firestoreMocks.js     # Firestore mocking
+│   │   ├── firebaseAuthMocks.js  # Auth mocking
+│   │   └── storageMocks.js       # Storage mocking
+│   └── helpers/                  # Mock utilities
+│       └── mockHelpers.js        # Helper functions
+├── testUtils/                    # Test data generation
+│   ├── csvUtils.js               # CSV data generation
+│   ├── participantUtils.js       # Participant data generation
+│   ├── dhqApiUtils.js            # DHQ API responses
+│   ├── errorUtils.js             # Error scenarios
+│   ├── performanceUtils.js       # Performance data
+│   ├── appSettingsUtils.js       # App settings
+│   └── index.js                  # Central export
+├── shared/                       # Shared utilities
+│   ├── testHelpers.js            # Test setup functions
+│   └── errorScenarios.js         # Error testing utilities
+├── scripts/                      # Test automation
+│   └── testMetrics.js            # Metrics and monitoring
+├── constants.js                  # Test constants
+└── README.md                     # This file
 ```
 
 ## Quick Start
@@ -37,15 +45,37 @@ test/
 # Run all tests
 npm run test:all
 
-# Run specific test categories
-npm run test:unit         # Unit tests only
-npm run test:integration  # Integration tests only
-npm run test:mocks        # Mock system tests only
+# Run by category
+npm run test:unit               # Unit tests only
+npm run test:integration        # Integration tests only
+npm run test:mocks              # Mock system tests only
+
+# Run specific modules
+npm run test:dhq                # DHQ-related tests
+npm run test:fileProcessing     # File processing tests
+
+# Test utilities
+npm run test:watch              # Watch mode
+npm run test:metrics            # Generate metrics report
+npm run test:report             # View test report
 ```
 
 ## Framework Components
 
-### 1. Unit Tests (`unit/`)
+### 1. Constants (`constants.js`)
+
+**Purpose**: Centralized test constants to reduce hardcoded values and improve maintainability.
+
+**Usage**:
+```javascript
+const TEST_CONSTANTS = require('../constants');
+
+// Use centralized values instead of hardcoded strings
+const participantId = TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT; // 'participant1'
+const studyId = TEST_CONSTANTS.STUDY_IDS.DEFAULT; // 'study_123'
+```
+
+### 2. Unit Tests (`unit/`)
 
 **Purpose**: Test individual functions and modules in isolation.
 
@@ -53,18 +83,30 @@ npm run test:mocks        # Mock system tests only
 ```javascript
 // test/unit/newModule.test.js
 const { expect } = require('chai');
-const { createCompleteTestSetup } = require('../shared/testHelpers');
+const { setupTestSuite } = require('../shared/testHelpers');
+
+let factory, mocks, newModule;
+
+before(() => {
+    const mockSystem = setupTestSuite({
+        setupConsole: false,
+        setupModuleMocks: true
+    });
+    factory = mockSystem.factory;
+    mocks = mockSystem.mocks;
+    
+    // Load modules after mocking is set up
+    newModule = require('../../utils/newModule');
+});
 
 describe('New Module Unit Tests', () => {
-    const { factory, mocks, restore } = createCompleteTestSetup();
-    
     it('should test specific functionality', () => {
         // Test implementation
     });
 });
 ```
 
-### 2. Integration Tests (`integration/`)
+### 3. Integration Tests (`integration/`)
 
 **Purpose**: Test end-to-end workflows and component interactions.
 
@@ -79,12 +121,16 @@ describe('New Module Unit Tests', () => {
 ```javascript
 // test/integration/newWorkflow.integration.test.js
 const { expect } = require('chai');
-const { createCompleteTestSetup } = require('../shared/testHelpers');
+const { setupTestSuite } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
 
+// Set up test environment, mocks, and cleanup
+const { factory, mocks } = setupTestSuite({
+    setupConsole: false,
+    setupModuleMocks: true
+});
+
 describe('New Workflow Integration Tests', () => {
-    const { factory, mocks, restore } = createCompleteTestSetup();
-    
     it('should test end-to-end workflow', async () => {
         // Setup test data
         const testData = TestUtils.createMockCSVData().createAnalysisResultsCSV(5);
@@ -94,17 +140,18 @@ describe('New Workflow Integration Tests', () => {
 });
 ```
 
-### 3. Mock System (`mocks/`)
+### 4. Mock System (`mocks/`)
 
-**Purpose**: Firebase Admin SDK mocking.
+**Purpose**: Firebase SDK mocks.
 
 **Components**:
-- `firebaseMocks.js`: Firebase mock factory
-- `firebaseMocks.test.js`: Demo tests
+- `mockFactory.js`: Mock orchestration
+- `core/`: Firestore, Auth, Storage mocks
+- `helpers/`: Mock utilities
 
 **Using Firebase Mocks**:
 ```javascript
-const { createFirebaseMocks } = require('../mocks/firebaseMocks');
+const { createFirebaseMocks } = require('../mocks/mockFactory.js');
 
 // Basic setup
 const { factory, mocks, restore } = createFirebaseMocks({
@@ -126,9 +173,12 @@ const batch = factory.setupBatch({ success: true });
 
 // Setup count operations
 factory.setupCount('collection/path', 1500);
+
+// Setup document retrieval
+factory.setupDocumentRetrieval('collection/path', 'docId', mockData);
 ```
 
-### 4. Test Utilities (`testUtils/`)
+### 5. Test Utilities (`testUtils/`)
 
 **Purpose**: Provide modular, reusable test data generation utilities.
 
@@ -149,7 +199,7 @@ const TestUtils = require('../testUtils');
 const csvData = TestUtils.createMockCSVData().createAnalysisResultsCSV(10);
 
 // Generate participant data
-const participant = TestUtils.createMockParticipantData().createBasicParticipant('participant123');
+const participant = TestUtils.createMockParticipantData().createNotStartedDHQParticipant('participant123');
 
 // Generate DHQ API responses
 const response = TestUtils.createMockDHQResponses().createCompletedRespondentInfo();
@@ -161,27 +211,54 @@ const error = TestUtils.createMockErrorScenarios().createNetworkError('Connectio
 const metrics = TestUtils.createMockPerformanceData().createProcessingMetrics(1000, 950, 50, 2000);
 ```
 
-### 5. Shared Helpers (`shared/`)
+### 6. Shared Helpers (`shared/`)
 
-**Purpose**: Test setup functions.
+**Purpose**: Test setup functions and utilities.
 
 **Components**:
-- `testHelpers.js`: Test setup functions, assertions, benchmarking
+- `testHelpers.js`: Test setup, assertions, benchmarking, console stubbing
+- `errorScenarios.js`: Comprehensive error testing utilities
 
 **Using Shared Helpers**:
 ```javascript
-const { createCompleteTestSetup, assertProcessingResult } = require('../shared/testHelpers');
+const { setupTestSuite, assertResult, createConsoleSafeStub } = require('../shared/testHelpers');
+const ErrorScenarios = require('../shared/errorScenarios');
 
 // Complete test setup
-const { factory, mocks, restore } = createCompleteTestSetup();
+const { factory, mocks } = setupTestSuite({
+    setupConsole: false,
+    setupModuleMocks: true
+});
 
 // Assert processing results
-assertProcessingResult(result, {
+assertResult(result, {
     documentCount: 10,
     respondentCount: 10,
     skippedCount: 0
 });
 
+// Safe console stubbing
+const consoleStub = createConsoleSafeStub('warn');
+
+// Error scenario testing
+const errorScenarios = new ErrorScenarios();
+const networkError = errorScenarios.createNetworkError('Connection failed');
+```
+
+### 7. Test Metrics (`scripts/`)
+
+**Purpose**: Automated test metrics and monitoring.
+
+**Components**:
+- `testMetrics.js`: Test metrics collection and reporting
+
+**Using Test Metrics**:
+```bash
+# Generate comprehensive metrics report
+npm run test:metrics
+
+# View formatted report
+npm run test:report
 ```
 
 ## Testing
@@ -198,12 +275,17 @@ assertProcessingResult(result, {
 ```javascript
 // Standard test setup pattern
 const { expect } = require('chai');
-const { createCompleteTestSetup } = require('../shared/testHelpers');
+const { setupTestSuite } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
+const TEST_CONSTANTS = require('../constants');
+
+// Set up test environment, mocks, and cleanup
+const { factory, mocks } = setupTestSuite({
+    setupConsole: false,
+    setupModuleMocks: true
+});
 
 describe('Test Suite', () => {
-    const { factory, mocks, restore } = createCompleteTestSetup();
-    
     // Tests here
 });
 ```
@@ -212,7 +294,7 @@ describe('Test Suite', () => {
 
 ```javascript
 // Use TestUtils for consistent test data
-const mockData = TestUtils.createMockParticipantData().createBasicParticipant('user123');
+const mockData = TestUtils.createMockParticipantData().createNotStartedDHQParticipant(TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT);
 const csvData = TestUtils.createMockCSVData().createAnalysisResultsCSV(5);
 ```
 
@@ -220,8 +302,8 @@ const csvData = TestUtils.createMockCSVData().createAnalysisResultsCSV(5);
 
 ```javascript
 // Setup mocks before tests
-factory.setupCollectionData('participants', mockParticipants);
-factory.setupQueryResults('participants', queryResults);
+factory.setupCollectionData(TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS, mockParticipants);
+factory.setupQueryResults(TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS, queryResults);
 factory.setupTransaction(transactionHandler);
 ```
 
@@ -229,7 +311,7 @@ factory.setupTransaction(transactionHandler);
 
 ```javascript
 // Use shared assertion helpers
-assertProcessingResult(result, {
+assertResult(result, {
     documentCount: 10,
     respondentCount: 10,
     skippedCount: 0
@@ -242,7 +324,7 @@ assertProcessingResult(result, {
 // Performance benchmarking
 const { benchmarkFunction } = require('../shared/testHelpers');
 const { result, processingTime } = benchmarkFunction(() => {
-    return prepareDocumentsForFirestore(largeDataset, 'study_123', 'analysisResults');
+    return prepareDocumentsForFirestore(largeDataset, TEST_CONSTANTS.STUDY_IDS.DEFAULT, TEST_CONSTANTS.DOCS.ANALYSIS_RESULTS);
 }, 'Document Processing');
 
 expect(processingTime).to.be.lessThan(5000);
@@ -265,12 +347,17 @@ expect(chunkSize).to.equal(250); // Reduced chunk size for high memory
 
 ```javascript
 // Error scenario generation
-const errorUtils = TestUtils.createMockErrorScenarios();
-const networkError = errorUtils.createNetworkError('Connection timeout');
-const apiError = errorUtils.createDHQAPIError(401, 'Invalid token');
+const ErrorScenarios = require('../shared/errorScenarios');
+const errorScenarios = new ErrorScenarios();
+
+const networkError = errorScenarios.createNetworkError('Connection timeout');
+const apiError = errorScenarios.createDHQAPIError(401, 'Invalid token');
 
 // Test error handling
 expect(() => someFunction()).to.throw(networkError.message);
+
+// Async error testing
+await errorScenarios.testAsyncError(asyncFunction, expectedError, ...args);
 ```
 
 ## Configuration
@@ -283,13 +370,6 @@ Tests automatically set up the following environment:
 - Global fetch stub
 - Firebase mocks (when enabled)
 
-### Memory Management
-
-The framework includes memory-aware testing:
-- Dynamic chunk sizing based on memory usage
-- Memory pressure simulation
-- Performance thresholds and monitoring
-
 ### Console Output
 
 Console mocking is disabled by default in most tests to prevent conflicts when running multiple test files together. Enable only when needed for specific tests.
@@ -299,20 +379,29 @@ Console mocking is disabled by default in most tests to prevent conflicts when r
 ### Common Issues
 
 1. **Module mocking conflicts**: Disable `setupModuleMocks: false` for tests that don't need Firebase
-2. **Console mocking conflicts**: Use `setupConsole: false` (default) unless specifically needed
-3. **Test isolation**: Each test file runs independently with proper cleanup
+2. **Console mocking conflicts**: Use `createConsoleSafeStub()` helper to prevent conflicts
+3. **Test isolation**: Each test file runs independently with automatic cleanup
+4. **"Already wrapped" errors**: Framework prevents these by checking `isSinonProxy` before wrapping
+5. **Firebase module loading**: Load Firebase modules after mock setup in `before()` hooks
+6. **Hardcoded values**: Use `TEST_CONSTANTS` instead of hardcoded strings for maintainability
 
 ### Debugging
 
 ```javascript
 // Enable console logging for debugging
-const { factory } = createFirebaseMocks({ setupConsole: true });
+const { factory, mocks } = setupTestSuite({ setupConsole: true });
 const consoleMocks = factory.setupConsoleMocks();
 consoleMocks.log.calledWith('Debug message');
 
 // Check mock state
 console.log(factory.mockDocs);
 console.log(factory.mockCollections);
+console.log(factory.testDocumentRegistry);
+
+// Validate test state
+const { validateTestState } = require('../shared/testHelpers');
+const state = validateTestState();
+if (!state.clean) console.log('Test isolation issues:', state.issues);
 ```
 
 ## Future Expansion

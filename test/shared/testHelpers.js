@@ -3,7 +3,8 @@
  */
 
 const sinon = require('sinon');
-const { createFirebaseMocks } = require('../mocks/firebaseMocks');
+const { createFirebaseMocks } = require('../mocks/mockFactory.js');
+const TEST_CONSTANTS = require('../constants');
 
 /**
  * Sets up the entire test suite: environment, mocks, and cleanup.
@@ -12,14 +13,15 @@ const { createFirebaseMocks } = require('../mocks/firebaseMocks');
  */
 function setupTestSuite(options = {}) {
     // Set up test environment variables
-    process.env.NODE_ENV = 'test';
-    process.env.DHQ_TOKEN = 'test-token';
+    process.env.NODE_ENV = TEST_CONSTANTS.ENV.NODE_ENV;
+    process.env.DHQ_TOKEN = TEST_CONSTANTS.ENV.TEST_TOKEN;
     global.fetch = sinon.stub();
 
-    // Set up Firebase mocks
+    // Set up Firebase mocks with per-test-file isolation
     const mockSystem = createFirebaseMocks({
         setupConsole: true,
         setupModuleMocks: true,
+        isolatePerTestFile: true,
         ...options
     });
 
@@ -27,6 +29,19 @@ function setupTestSuite(options = {}) {
     afterEach(() => {
         sinon.restore();
         mockSystem.factory.reset();
+        // Clear document registry for fresh state
+        if (mockSystem.factory.clearDocumentRegistry) {
+            mockSystem.factory.clearDocumentRegistry();
+        }
+        // Clear any global fetch stub
+        if (global.fetch && global.fetch.restore) {
+            global.fetch.restore();
+        }
+        // Reset process.env if needed
+        if (process.env.NODE_ENV === TEST_CONSTANTS.ENV.NODE_ENV) {
+            // Keep test environment but clear any test-specific vars
+            delete process.env.TEST_SPECIFIC_VAR;
+        }
     });
 
     // Clean up after all tests
@@ -88,9 +103,51 @@ function benchmarkFunction(testFunction, testName = 'Test') {
     };
 }
 
+/**
+ * Creates a safe console stub that won't conflict with existing stubs
+ * @param {string} method - Console method name ('log', 'warn', 'error')
+ * @returns {Object} Stub or existing proxy
+ */
+function createConsoleSafeStub(method) {
+    if (!console[method].isSinonProxy) {
+        return sinon.stub(console, method);
+    }
+    return console[method];
+}
+
+/**
+ * Validates test environment state for isolation
+ * @returns {Object} State validation results
+ */
+function validateTestState() {
+    const issues = [];
+    
+    // Check for lingering stubs
+    if (console.log.isSinonProxy) issues.push('console.log still stubbed');
+    if (console.warn.isSinonProxy) issues.push('console.warn still stubbed');
+    if (console.error.isSinonProxy) issues.push('console.error still stubbed');
+    
+    // Check for global pollution
+    if (global.fetch && typeof global.fetch.restore === 'function') {
+        issues.push('global.fetch not properly restored');
+    }
+    
+    // Check environment variables
+    if (process.env.NODE_ENV !== TEST_CONSTANTS.ENV.NODE_ENV) {
+        issues.push(`NODE_ENV is ${process.env.NODE_ENV}, expected ${TEST_CONSTANTS.ENV.NODE_ENV}`);
+    }
+    
+    return {
+        clean: issues.length === 0,
+        issues
+    };
+}
+
 module.exports = {
     setupTestSuite,
     createTestData,
     assertResult,
-    benchmarkFunction
+    benchmarkFunction,
+    createConsoleSafeStub,
+    validateTestState
 };

@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const sinon = require('sinon');
 const { setupTestSuite, assertResult } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
+const TEST_CONSTANTS = require('../constants');
 
 // Set up test environment, mocks, and cleanup
 const { factory, mocks } = setupTestSuite({
@@ -25,37 +26,37 @@ describe('DHQ Integration Tests', () => {
         it('should demonstrate end-to-end CSV processing', async () => {
             
             // Set up mock data for processing and collection data for tracking.
-            factory.setupCollectionData('dhq3SurveyCredentials/study_123/responseTracking', [
+            factory.setupCollectionData(`dhq3SurveyCredentials/${TEST_CONSTANTS.STUDY_IDS.DEFAULT}/responseTracking`, [
                 {
-                    id: 'dhqAnalysisResults',
-                    [fieldMapping.dhq3StudyID]: 'study_123',
-                    [fieldMapping.dhq3ProcessedRespondentArray]: ['participant1', 'participant2']
+                    id: TEST_CONSTANTS.DOCS.DHQ_ANALYSIS_RESULTS,
+                    [fieldMapping.dhq3StudyID]: TEST_CONSTANTS.STUDY_IDS.DEFAULT,
+                    [fieldMapping.dhq3ProcessedRespondentArray]: [TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, TEST_CONSTANTS.PARTICIPANT_IDS.SECOND]
                 }
             ]);
 
             // Set up count for available credentials.
-            factory.setupCount('dhq3SurveyCredentials/study_123/availableCredentials', 500);
+            factory.setupCount(`dhq3SurveyCredentials/${TEST_CONSTANTS.STUDY_IDS.DEFAULT}/availableCredentials`, 500);
 
             // Test the processing function.
             const testData = [
-                { 'Respondent ID': 'participant1', 'Energy': '2000', 'Protein': '50' },
-                { 'Respondent ID': 'participant2', 'Energy': '1800', 'Protein': '45' },
-                { 'Respondent ID': 'participant3', 'Energy': '2200', 'Protein': '60' }
+                { 'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, 'Energy': '2000', 'Protein': '50' },
+                { 'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.SECOND, 'Energy': '1800', 'Protein': '45' },
+                { 'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.THIRD, 'Energy': '2200', 'Protein': '60' }
             ];
             
-            const result = prepareDocumentsForFirestore(testData, 'study_123', 'analysisResults');
+            const result = prepareDocumentsForFirestore(testData, TEST_CONSTANTS.STUDY_IDS.DEFAULT, TEST_CONSTANTS.DOCS.ANALYSIS_RESULTS);
             assertResult(result, {
                 documentCount: 3,
-                expectedIds: ['participant1', 'participant2', 'participant3']
+                expectedIds: [TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, TEST_CONSTANTS.PARTICIPANT_IDS.SECOND, TEST_CONSTANTS.PARTICIPANT_IDS.THIRD]
             });
         });
 
         it('should query for participants', async () => {
             // Set up participants with different statuses
             const participants = [
-                TestUtils.createMockParticipantData().createNotStartedDHQParticipant('participant1'),
-                TestUtils.createMockParticipantData().createStartedDHQParticipant('participant2'),
-                TestUtils.createMockParticipantData().createCompletedDHQParticipant('participant3')
+                TestUtils.createMockParticipantData().createNotStartedDHQParticipant(TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT),
+                TestUtils.createMockParticipantData().createStartedDHQParticipant(TEST_CONSTANTS.PARTICIPANT_IDS.SECOND),
+                TestUtils.createMockParticipantData().createCompletedDHQParticipant(TEST_CONSTANTS.PARTICIPANT_IDS.THIRD)
             ];
 
             // Filter to only started participants
@@ -93,12 +94,12 @@ describe('DHQ Integration Tests', () => {
 
         it('should execute a transaction', async () => {
             // Set up initial participant data
-            const participantData = TestUtils.createMockParticipantData().createNotStartedDHQParticipant('participant1');
-            factory.setupDocumentData('participants', 'participant1', participantData);
+            const participantData = TestUtils.createMockParticipantData().createNotStartedDHQParticipant(TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT);
+            factory.setupDocumentRetrieval(TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS, TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, participantData);
 
             // Set up transaction behavior
             factory.setupTransaction(async (transaction) => {
-                const docRef = transaction.get('participants/participant1');
+                const docRef = transaction.get(`${TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS}/${TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT}`);
                 const doc = await docRef;
                 
                 if (doc && doc.exists) {
@@ -113,7 +114,7 @@ describe('DHQ Integration Tests', () => {
 
             // Test transaction
             const result = await mocks.firestore.runTransaction(async (transaction) => {
-                const docRef = transaction.get('participants/participant1');
+                const docRef = transaction.get(`${TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS}/${TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT}`);
                 const doc = await docRef;
                 
                 if (doc && doc.exists) {
@@ -150,16 +151,11 @@ describe('DHQ Integration Tests', () => {
         });
 
         it('should return an empty Set if the tracking doc does not exist', async () => {
-            // Mock the specific path with no document
+            // Use setupDocumentRetrieval for non-existent document
             const collectionPath = 'dhq3SurveyCredentials/study_test/responseTracking';
             const docId = 'dhqAnalysisResults';
             
-            // Set up the mock to return a non-existent document
-            mocks.firestore.collection.withArgs(collectionPath).returns({
-                doc: sinon.stub().withArgs(docId).returns({
-                    get: sinon.stub().resolves({ exists: false })
-                })
-            });
+            factory.setupDocumentRetrieval(collectionPath, docId, null);
 
             const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
             expect(result).to.be.instanceof(Set);
@@ -167,22 +163,14 @@ describe('DHQ Integration Tests', () => {
         });
 
         it('should return a Set of processed respondent IDs if present', async () => {
-            // Mock the specific path with document data
+            // Use setupDocumentRetrieval for document with data
             const collectionPath = 'dhq3SurveyCredentials/study_test/responseTracking';
             const docId = 'dhqAnalysisResults';
             const mockData = { 
                 [fieldMapping.dhq3ProcessedRespondentArray.toString()]: ['participant1', 'participant2'] 
             };
             
-            // Set up the mock to return document with data
-            mocks.firestore.collection.withArgs(collectionPath).returns({
-                doc: sinon.stub().withArgs(docId).returns({
-                    get: sinon.stub().resolves({ 
-                        exists: true,
-                        data: () => mockData
-                    })
-                })
-            });
+            factory.setupDocumentRetrieval(collectionPath, docId, mockData);
 
             const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
             expect(result).to.be.instanceof(Set);

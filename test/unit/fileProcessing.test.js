@@ -1,14 +1,22 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
-const { setupTestSuite } = require('../shared/testHelpers');
+const { setupTestSuite, createConsoleSafeStub } = require('../shared/testHelpers');
 const zlib = require('zlib');
 
 const fileProcessing = require('../../utils/fileProcessing.js');
 
 describe('File Processing (Unzipping, CSV Parsing, Validation) Test Suite', () => {
     
-    // Set up test environment, mocks, and cleanup
-    setupTestSuite({ setupConsole: false, setupModuleMocks: false });
+    let factory, mocks;
+
+    before(() => {
+        const mockSystem = setupTestSuite({
+            setupConsole: false,
+            setupModuleMocks: false
+        });
+        factory = mockSystem.factory;
+        mocks = mockSystem.mocks;
+    });
 
     describe('cleanCSVContent', () => {
         it('should remove comment lines starting with default character (*)', () => {
@@ -47,6 +55,18 @@ value4,value5,value6`);
     });
 
     describe('parseCSV', () => {
+        let consoleWarnStub;
+
+        beforeEach(() => {
+            consoleWarnStub = createConsoleSafeStub('warn');
+        });
+
+        afterEach(() => {
+            if (consoleWarnStub && consoleWarnStub.restore) {
+                consoleWarnStub.restore();
+                consoleWarnStub = null;
+            }
+        });
         it('should parse basic CSV with headers to an array of objects', () => {
             const csvContent = `header1,header2,header3
 value1,value2,value3
@@ -151,7 +171,8 @@ value3,value4`;
         });
 
         it('should skip rows with mismatched column counts', () => {
-            const consoleWarnStub = sinon.stub(console, 'warn');
+            // Create a local stub for this test
+            let localConsoleWarnStub = createConsoleSafeStub('warn');
             
             const csvContent = `header1,header2,header3
 value1,value2,value3
@@ -171,8 +192,15 @@ value6,value7,value8`;
                 header2: 'value7',
                 header3: 'value8'
             });
-            expect(consoleWarnStub.calledOnce).to.be.true;
-            expect(consoleWarnStub.firstCall.args[0]).to.include('Row 3 has 2 columns');
+            
+            // Check console.warn was called
+            expect(localConsoleWarnStub.calledOnce).to.be.true;
+            expect(localConsoleWarnStub.firstCall.args[0]).to.include('Row 3 has 2 columns');
+            
+            // Restore the local stub
+            if (localConsoleWarnStub.restore) {
+                localConsoleWarnStub.restore();
+            }
         });
 
         it('should handle trailing newlines and empty rows', () => {
@@ -292,13 +320,27 @@ Bob,"",`;
 
     describe('extractZipFiles', () => {
         let mockZlib;
+        let zlibStub;
 
         beforeEach(() => {
             mockZlib = {
                 inflateRawSync: sinon.stub()
             };
-            sinon.stub(require('zlib'), 'inflateRawSync').callsFake(mockZlib.inflateRawSync);
+            // Only stub zlib.inflateRawSync if not already stubbed
+            const zlib = require('zlib');
+            if (!zlib.inflateRawSync.isSinonProxy) {
+                zlibStub = sinon.stub(zlib, 'inflateRawSync').callsFake(mockZlib.inflateRawSync);
+            }
         });
+
+        afterEach(() => {
+            if (zlibStub && zlibStub.restore) {
+                zlibStub.restore();
+                zlibStub = null;
+            }
+        });
+
+        
 
         it('should extract files from a valid ZIP buffer', async () => {
             const filename = 'test.txt';
@@ -412,6 +454,164 @@ Bob,"",`;
         });
     });
 
+    describe('Error Scenarios', () => {
+        const ErrorScenarios = require('../shared/errorScenarios');
+        const errorScenarios = new ErrorScenarios();
+
+        it('should handle network-related file download errors', async () => {
+            const networkError = errorScenarios.createNetworkError('File download failed');
+            
+            // Mock a scenario where file extraction fails due to network issues
+            const corruptedZip = Buffer.from('corrupted-network-response');
+            const base64Data = corruptedZip.toString('base64');
+
+            try {
+                await fileProcessing.extractZipFiles(base64Data);
+                expect.fail('Should have thrown an error');
+            } catch (error) {
+                expect(error.message).to.include('Failed to extract ZIP file');
+            }
+        });
+
+        it('should handle various ZIP corruption scenarios', async () => {
+            const corruptionScenarios = [
+                { name: 'truncated header', data: Buffer.from('PK\x03\x04') },
+                { name: 'missing signature', data: Buffer.from('INVALID_ZIP_DATA') },
+                { name: 'empty buffer', data: Buffer.alloc(0) },
+                { name: 'partial central directory', data: Buffer.from('PK\x01\x02incomplete') }
+            ];
+
+            for (const scenario of corruptionScenarios) {
+                const base64Data = scenario.data.toString('base64');
+                
+                try {
+                    await fileProcessing.extractZipFiles(base64Data);
+                    expect.fail(`Should have thrown an error for ${scenario.name}`);
+                } catch (error) {
+                    expect(error.message).to.include('Failed to extract ZIP file');
+                }
+            }
+        });
+
+        it('should handle malformed CSV data gracefully', () => {
+            const malformedCSVs = [
+                { name: 'unbalanced quotes', content: 'id,name\n1,"unclosed quote\n2,valid' },
+                { name: 'mixed line endings', content: 'id,name\r\n1,test\n2,test2\r3,test3' },
+                { name: 'extra commas', content: 'id,name,\n1,test,\n2,test2,extra,' },
+                { name: 'unicode characters', content: 'id,name\n1,café\n2,naïve\n3,résumé' },
+                { name: 'very long lines', content: `id,description\n1,"${'x'.repeat(10000)}"` }
+            ];
+
+            malformedCSVs.forEach(scenario => {
+                const result = fileProcessing.parseCSV(scenario.content);
+                expect(result).to.be.an('array');
+                // Should not throw, but might return empty or partial results
+            });
+        });
+
+        it('should handle extreme memory conditions', async () => {
+            const originalMemoryUsage = process.memoryUsage;
+            
+            // Mock extremely high memory usage
+            process.memoryUsage = () => ({
+                heapUsed: 1800 * 1024 * 1024, // 1.8GB
+                heapTotal: 2048 * 1024 * 1024,
+                external: 100 * 1024 * 1024,
+                arrayBuffers: 50 * 1024 * 1024
+            });
+
+            // Create a large CSV content
+            const largeCSVContent = 'id,data\n' + 
+                Array.from({length: 1000}, (_, i) => `${i},"${'x'.repeat(1000)}"`).join('\n');
+
+            const result = fileProcessing.parseCSV(largeCSVContent);
+            expect(result).to.be.an('array');
+            expect(result.length).to.equal(1000);
+
+            // Restore original function
+            process.memoryUsage = originalMemoryUsage;
+        });
+
+        it('should handle concurrent file processing', async () => {
+            const csvContent = 'id,name\n1,test\n2,test2';
+            const zipBuffer = createMockZipBuffer('test.csv', Buffer.from(csvContent));
+            const base64Data = zipBuffer.toString('base64');
+
+            // Process multiple files concurrently
+            const promises = Array.from({length: 10}, () => 
+                fileProcessing.extractZipFiles(base64Data)
+            );
+
+            const results = await Promise.all(promises);
+            
+            results.forEach(result => {
+                expect(result).to.have.lengthOf(1);
+                expect(result[0].filename).to.equal('test.csv');
+            });
+        });
+
+        it('should handle various character encodings', () => {
+            const encodingTests = [
+                { name: 'UTF-8 BOM', content: '\ufeffid,name\n1,test' },
+                { name: 'special characters', content: 'id,name\n1,café\n2,naïve\n3,résumé' },
+                { name: 'emojis', content: 'id,name\n1,😀\n2,🚀\n3,💾' },
+                { name: 'mixed languages', content: 'id,name\n1,English\n2,日本語\n3,العربية' }
+            ];
+
+            encodingTests.forEach(test => {
+                const result = fileProcessing.parseCSV(test.content);
+                expect(result).to.be.an('array');
+                expect(result.length).to.be.greaterThan(0);
+            });
+        });
+
+        it('should handle validation edge cases', () => {
+            const edgeCases = [
+                { row: {}, fields: ['id'], expected: false },
+                { row: { id: null }, fields: ['id'], expected: false },
+                { row: { id: undefined }, fields: ['id'], expected: false },
+                { row: { id: '' }, fields: ['id'], expected: false },
+                { row: { id: 0 }, fields: ['id'], expected: true },
+                { row: { id: false }, fields: ['id'], expected: true },
+                { row: { id: 'valid' }, fields: ['id'], expected: true }
+            ];
+
+            edgeCases.forEach(testCase => {
+                const result = fileProcessing.validateCSVRow(testCase.row, testCase.fields);
+                expect(result.isValid).to.equal(testCase.expected);
+            });
+        });
+
+        it('should handle CSV parsing limitations gracefully', () => {
+            // Test that the parser handles semicolon data as single field (expected behavior)
+            const csvContent = 'id;name;email\n1;John;john@example.com\n2;Jane;jane@example.com';
+            const result = fileProcessing.parseCSV(csvContent);
+            
+            expect(result).to.have.lengthOf(2);
+            expect(result[0]).to.have.property('id;name;email');
+            expect(result[0]['id;name;email']).to.equal('1;John;john@example.com');
+        });
+
+        it('should handle resource cleanup after errors', async () => {
+            const invalidZip = Buffer.from('definitely-not-a-zip');
+            const base64Data = invalidZip.toString('base64');
+
+            // Multiple failed attempts should not leak resources
+            for (let i = 0; i < 5; i++) {
+                try {
+                    await fileProcessing.extractZipFiles(base64Data);
+                    expect.fail('Should have thrown an error');
+                } catch (error) {
+                    expect(error.message).to.include('Failed to extract ZIP file');
+                }
+            }
+            
+            // Memory usage should remain stable
+            const memoryAfter = process.memoryUsage();
+            expect(memoryAfter.heapUsed).to.be.lessThan(100 * 1024 * 1024); // Less than 100MB
+        });
+    });
+
     describe('Integration Tests', () => {
         it('should handle CSV with comments and mixed data types', () => {
             const csvContent = `* This CSV contains survey data
@@ -515,7 +715,7 @@ participant_id,name,email,age,survey_score
 1,Engineering,50000
 2,Marketing,30000`;
 
-            const zipBuffer = createMockZipBufferMultiple([
+            const zipBuffer = createMockZipBuffer([
                 { filename: 'participants.csv', content: Buffer.from(csvContent1) },
                 { filename: 'departments.csv', content: Buffer.from(csvContent2) }
             ]);
@@ -549,79 +749,49 @@ participant_id,name,email,age,survey_score
         });
     });
 
-    // Create a mock ZIP buffer
-    function createMockZipBuffer(filename, content, compressionMethod = 0) {
-        const EOCD_SIGNATURE = 0x06054b50;
-        const CD_SIGNATURE = 0x02014b50;
-        const LFH_SIGNATURE = 0x04034b50;
-        
-        const filenameBuffer = Buffer.from(filename, 'utf8');
-        const fileData = compressionMethod === 0 ? content : Buffer.from('compressed-data');
-        
-        // Local File Header
-        const lfh = Buffer.alloc(30 + filenameBuffer.length);
-        lfh.writeUInt32LE(LFH_SIGNATURE, 0);
-        lfh.writeUInt16LE(20, 4);
-        lfh.writeUInt16LE(0, 6);
-        lfh.writeUInt16LE(compressionMethod, 8);
-        lfh.writeUInt32LE(fileData.length, 18);
-        lfh.writeUInt32LE(content.length, 22);
-        lfh.writeUInt16LE(filenameBuffer.length, 26);
-        lfh.writeUInt16LE(0, 28);
-        filenameBuffer.copy(lfh, 30);
-        
-        // Central Directory Header
-        const cdh = Buffer.alloc(46 + filenameBuffer.length);
-        cdh.writeUInt32LE(CD_SIGNATURE, 0);
-        cdh.writeUInt16LE(compressionMethod, 10);
-        cdh.writeUInt32LE(fileData.length, 20);
-        cdh.writeUInt32LE(content.length, 24);
-        cdh.writeUInt16LE(filenameBuffer.length, 28);
-        cdh.writeUInt16LE(0, 30);
-        cdh.writeUInt16LE(0, 32);
-        cdh.writeUInt32LE(0, 42);
-        filenameBuffer.copy(cdh, 46);
-        
-        // End of Central Directory
-        const eocd = Buffer.alloc(22);
-        eocd.writeUInt32LE(EOCD_SIGNATURE, 0);
-        eocd.writeUInt16LE(1, 10);
-        eocd.writeUInt32LE(cdh.length, 12);
-        eocd.writeUInt32LE(lfh.length + fileData.length, 16);
-        
-        return Buffer.concat([lfh, fileData, cdh, eocd]);
-    }
-
-    // Create a mock ZIP buffer for multiple files
-    function createMockZipBufferMultiple(files) {
+    // Create a mock ZIP buffer (supports single file or multiple files)
+    function createMockZipBuffer(input, content = null, compressionMethod = 0) {
         const EOCD_SIGNATURE = 0x06054b50;
         const CD_SIGNATURE = 0x02014b50;
         const LFH_SIGNATURE = 0x04034b50;
 
+        // Handle both single file and multiple files
+        const files = Array.isArray(input) ? input : [{ filename: input, content, compressionMethod }];
+        
+        // Ensure each file has a compressionMethod property
+        files.forEach(file => {
+            if (!file.hasOwnProperty('compressionMethod')) {
+                file.compressionMethod = 0;
+            }
+        });
+        
         let localHeaderOffset = 0;
         const fileEntries = [];
         const centralDirEntries = [];
 
         for (const file of files) {
             const filenameBuffer = Buffer.from(file.filename, 'utf8');
-            const fileData = file.content;
+            const actualCompressionMethod = file.compressionMethod || 0;
+            const fileData = (actualCompressionMethod === 0) ? file.content : Buffer.from('compressed-data');
 
+            // Local File Header
             const lfh = Buffer.alloc(30 + filenameBuffer.length);
             lfh.writeUInt32LE(LFH_SIGNATURE, 0);
             lfh.writeUInt16LE(20, 4);
             lfh.writeUInt16LE(0, 6);
-            lfh.writeUInt16LE(0, 8);
+            lfh.writeUInt16LE(actualCompressionMethod, 8);
             lfh.writeUInt32LE(fileData.length, 18);
-            lfh.writeUInt32LE(fileData.length, 22);
+            lfh.writeUInt32LE(file.content.length, 22);
             lfh.writeUInt16LE(filenameBuffer.length, 26);
             lfh.writeUInt16LE(0, 28);
             filenameBuffer.copy(lfh, 30);
 
+            // Central Directory Header
             const cdh = Buffer.alloc(46 + filenameBuffer.length);
             cdh.writeUInt32LE(CD_SIGNATURE, 0);
-            cdh.writeUInt16LE(0, 10);
+            cdh.writeUInt16LE(actualCompressionMethod, 10);
             cdh.writeUInt32LE(fileData.length, 20);
-            cdh.writeUInt32LE(fileData.length, 24);
+            cdh.writeUInt32LE(file.content.length, 24);
             cdh.writeUInt16LE(filenameBuffer.length, 28);
             cdh.writeUInt16LE(0, 30);
             cdh.writeUInt16LE(0, 32);
@@ -635,6 +805,7 @@ participant_id,name,email,age,survey_score
 
         const centralDirSize = centralDirEntries.reduce((sum, entry) => sum + entry.length, 0);
 
+        // End of Central Directory
         const eocd = Buffer.alloc(22);
         eocd.writeUInt32LE(EOCD_SIGNATURE, 0);
         eocd.writeUInt16LE(files.length, 10);

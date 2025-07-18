@@ -702,8 +702,6 @@ const getDHQConfig = async () => {
     const lookbackDays = appSettingsData.dhq.lookbackDays || 90; // Default to 90 days
     const useDateFiltering = appSettingsData.dhq.useDateFiltering || false;
     const useLanguageFlag = appSettingsData.dhq.useLanguageFlag || false;
-    console.log(`useDateFiltering: ${useDateFiltering}`);
-    console.log(`useLanguageFlag: ${useLanguageFlag}`);
     
     if (dhqStudyIDs.length === 0) {
         throw new Error('No DHQ study IDs found in app settings.');
@@ -1074,15 +1072,15 @@ const getDynamicChunkSize = () => {
  * @param {Array<Object>} documents - Array of documents to write, each with { id, data }
  * @returns {Promise<Object>} - Result object with success/failure counts
  */
-const batchWriteToFirestore = async (collectionName, documents) => {
-    const batchSize = 500;
+const batchWriteToFirestore = async (collectionName, documents, dynamicBatchSize = 500) => {
+    const batchSize = Math.min(dynamicBatchSize, 500);
     const merge = true;
     const totalDocuments = documents.length;
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
 
-    console.log(`Starting batch write to collection '${collectionName}' with ${totalDocuments} documents`);
+    console.log(`Starting batch write to collection '${collectionName}' with ${totalDocuments} documents (batch size: ${batchSize})`);
 
     try {
         for (let i = 0; i < totalDocuments; i += batchSize) {
@@ -1228,7 +1226,7 @@ const processChunkedData = async (studyID, collectionName, dataToProcess, docume
         totalSkippedCount += skippedCount;
         
         if (documents.length > 0) {
-            const writeResult = await batchWriteToFirestore(collectionName, documents);
+            const writeResult = await batchWriteToFirestore(collectionName, documents, dynamicChunkSize);
             totalWriteResult.successCount += writeResult.successCount;
             totalWriteResult.errorCount += writeResult.errorCount;
             if (writeResult.errors) totalWriteResult.errors.push(...writeResult.errors);
