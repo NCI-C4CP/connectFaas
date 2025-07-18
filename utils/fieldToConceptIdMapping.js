@@ -15,7 +15,10 @@ module.exports = {
 
     yes: 353358909,
     no: 104430631,
-    
+
+    // Track the Firestore document update time
+    docLastUpdatedTimestamp: 866146525,
+
     healthCareProvider: 827220437,
     loginSite: 789843387,
     reportMissingTube: 258745303,
@@ -97,7 +100,6 @@ module.exports = {
     participantRefusal: 681745422,
     norcPaymentEligibility: 222373868,
     timestampPaymentEligibilityForRound: 787567527,
-
 
     // Specimen baselines
     baselineUrineCollected: 167958071,
@@ -313,6 +315,7 @@ module.exports = {
     dhq3Username: 148184166,
     dhq3UUID: 808755658,
     dhq3StudyID: 196723965,
+    dhq3Language: 748726394,
 
     // cancer occurrences
     haveYouEverBeenDiagnosedWithCancer: 452166062,
@@ -392,10 +395,12 @@ module.exports = {
 
     dhq3SurveyStartTime: 109610692,
     dhq3SurveyCompletionTime: 610227793,
+    dhq3ResponseProcessedTime: 262294850,
+    dhq3ProcessedRespondentArray: 116442364,
 
     // Pathology Reports
     pathologyReportFilename: 488064292,
-    
+
     // Variables retained when the Data Destruction process runs
     dataDestruction: {
         consentFirstName: 471168198,
