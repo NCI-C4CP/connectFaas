@@ -17,7 +17,7 @@ module.exports = {
     no: 104430631,
 
     // Track the Firestore document update time
-    lastDocUpdatedTimestamp: 'lastDocUpdatedTimestamp', // TODO: update this
+    docLastUpdatedTimestamp: 866146525,
 
     healthCareProvider: 827220437,
     loginSite: 789843387,
@@ -393,8 +393,8 @@ module.exports = {
 
     dhq3SurveyStartTime: 109610692,
     dhq3SurveyCompletionTime: 610227793,
-    dhq3ResponseProcessedTime: 'dhq3ResponseProcessedTime', // TODO: update this
-    dhq3ProcessedRespondentArray: 'dhq3ProcessedRespondentArray', // TODO: update this
+    dhq3ResponseProcessedTime: 262294850,
+    dhq3ProcessedRespondentArray: 116442364,
 
     // Pathology Reports
     pathologyReportFilename: 488064292,

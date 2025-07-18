@@ -1189,7 +1189,7 @@ const updateProcessingTracking = async (studyID, collectionName, newRespondentId
             // Use transaction to ensure atomic read-modify-write operation
             transaction.set(docRef, {
                 [fieldMapping.dhq3StudyID]: studyID,
-                [fieldMapping.lastDocUpdatedTimestamp]: new Date().toISOString(),
+                [fieldMapping.docLastUpdatedTimestamp]: new Date().toISOString(),
                 [fieldMapping.dhq3ProcessedRespondentArray]: FieldValue.arrayUnion(...newRespondentIds),
             }, { merge: true });
         });
