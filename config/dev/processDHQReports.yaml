@@ -1,0 +1,38 @@
+steps:
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'functions', 
+    'deploy', 
+    '${_FUNCTION}',
+    '--gen2', 
+    '--trigger-http', 
+    '--runtime=${_RUNTIME}', 
+    '--memory=${_MEMORY}',
+    '--timeout=${_TIMEOUT}', 
+    '--source=${_SOURCE}',
+    '--entry-point=${_FUNCTION}',
+    '--region=${_REGION}',
+    '--ingress-settings=internal-only',
+    '--env-vars-file=${_VARIABLES}'
+  ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'functions', 
+    'add-iam-policy-binding', 
+    '${_FUNCTION}', 
+    '--member=${_MEMBER}', 
+    '--role=${_ROLE}'
+  ]
+
+substitutions:
+  _FUNCTION: processDHQReports
+  _MEMBER: allUsers
+  _MEMORY: 2048MB
+  _REGION: us-central1
+  _ROLE: roles/cloudfunctions.invoker
+  _RUNTIME: nodejs20
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
+  _TIMEOUT: 1800s
+  _VARIABLES: config/dev/.env.yaml 
