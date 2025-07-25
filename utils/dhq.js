@@ -1324,6 +1324,8 @@ const prepareDocumentsForFirestore = (chunk, studyID, dataType) => {
  * Ensures valid column naming and prevents collisions
  */
 const sanitizeFieldName = (fieldName) => {
+    const originalFieldName = fieldName;
+    
     if (!fieldName || typeof fieldName !== 'string') {
         throw new Error(`Invalid field name: ${fieldName} (must be a non-empty string)`);
     }
@@ -1340,7 +1342,7 @@ const sanitizeFieldName = (fieldName) => {
     
     // Sanity check for empty string
     if (!fieldName) {
-        throw new Error(`Field name "${fieldName}" became empty after sanitization`);
+        throw new Error(`Field name "${originalFieldName}" became empty after sanitization`);
     }
     
     // Ensure field name starts with letter or underscore (BQ requirement)
