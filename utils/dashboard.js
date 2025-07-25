@@ -159,10 +159,10 @@ const dashboard = async (req, res) => {
                 return res.status(400).json(getResponseJSON("Bad request.", 400));
         const { updateRequestAKitConditions } = require('./firestore');
         try {
-            await updateRequestAKitConditions(req.body.data);
-            return res.status(200).json({ data, code: 200 });
+            const success = await updateRequestAKitConditions(req.body.data);
+            return res.status(200).json({ success, code: 200 });
         } catch(error) {
-            return res.status(500).json({ data: {}, message: error.message, code: 500 });
+            return res.status(500).json({ success: false, message: error.message, code: 500 });
         }
     } else if (api === 'participantDataCorrection') {
         const { participantDataCorrection } = require('./sites');

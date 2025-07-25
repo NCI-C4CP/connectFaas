@@ -2528,19 +2528,43 @@ const updateRequestAKitConditions = async(data) => {
     return true;
 }
 
+const dryRunRequestAKitConditions = async () => {
+    const requestAKitConditions = await retrieveRequestAKitConditions();
+    if(requestAKitConditions) {
+        let conditionsArr = [];
+        let sortsArr = [];
+        const {conditions, sorts} = requestAKitConditions;
+        if(conditions) {
+            conditionsArr = JSON.parse(conditions);
+        }
+        if(sorts) {
+            sortsArr = JSON.parse(sorts);
+        }
+        const {getParticipantsForRequestAKitBQ} = require('./bigquery');
+        const participantsToUpdate = await getParticipantsForRequestAKitBQ(conditionsArr, sortsArr, 0);
+
+        // @TODO: Format as CSV and return
+        console.log('participantsToUpdate', JSON.stringify(participantsToUpdate, null, '\t'));
+    }
+}
+
 const processRequestAKitConditions = async () => {
     const requestAKitConditions = await retrieveRequestAKitConditions();
     if(requestAKitConditions) {
         let conditionsArr = [];
-        const {conditions, limit, enabled} = requestAKitConditions;
+        let sortsArr = [];
+        const {conditions, sorts, limit, enabled} = requestAKitConditions;
         if(!enabled) {
             return true;
         }
         if(conditions) {
             conditionsArr = JSON.parse(conditions);
         }
+        if(sorts) {
+            sortsArr = JSON.parse(sorts);
+        }
         const {getParticipantsForRequestAKitBQ} = require('./bigquery');
-        const participantsToUpdate = await getParticipantsForRequestAKitBQ(conditionsArr, limit);
+        const participantsToUpdate = await getParticipantsForRequestAKitBQ(conditionsArr, sortsArr, limit);
         // Update the corresponding participants via batches in Firestore to have the appropriate
         // status and date
         let snapshot;

@@ -82,8 +82,9 @@ async function getParticipantsForNotificationsBQ({
   return rows.map(convertToFirestoreData);
 }
 
-async function getParticipantsForRequestAKitBQ(conditions = [], limit = 100) {
+async function getParticipantsForRequestAKitBQ(conditions = [], sorts = [], limit) {
   let bqConditionArray = [];
+  let bqSortArray = [];
 
   for (const condition of conditions) {
     if (typeof condition === "string") {
@@ -98,9 +99,15 @@ async function getParticipantsForRequestAKitBQ(conditions = [], limit = 100) {
     }
   }
 
+  for (const sort of sorts) {
+    const [key, sortOrder] = sort;
+    const bqKey = convertToBigqueryKey(key);
+    bqSortArray.push(`${bqKey}${sortOrder ? ` ${sortOrder}` : ''}`)
+  }
+
   const queryStr = `SELECT token FROM \`Connect.participants\` 
   ${bqConditionArray.length ? `WHERE ${bqConditionArray.join(" AND ")}` : ''} 
-  ORDER BY token LIMIT ${limit}
+  ORDER BY ${bqSortArray.length ? bqSortArray.join(', ') : `token`} ${limit ? `LIMIT ${limit}` : ''}
   `;
   
   const [rows] = await bigquery.query(queryStr);
