@@ -1270,7 +1270,22 @@ const prepareDocumentsForFirestore = (chunk, studyID, dataType) => {
     for (const item of chunk) {
         let respondentId, documentData;
         
-        if (dataType === 'analysisResults') {
+        if (dataType === 'detailedAnalysis') {
+            // For detailed analysis, the chunk contains pre-prepared documents
+            const { id, data } = item;
+            respondentId = data[fieldMapping.dhq3Username];
+            
+            if (!respondentId) {
+                console.warn(`Could not find respondent ID in document:`, id);
+                skippedCount++;
+                continue;
+            }
+            
+            documents.push({ id, data });
+            respondentIds.push(respondentId);
+            continue; // Skip the standard document processing below
+
+        } else if (dataType === 'analysisResults') {
             respondentId = item['Respondent ID'];
             documentData = { 
                 ...item,
@@ -1280,7 +1295,7 @@ const prepareDocumentsForFirestore = (chunk, studyID, dataType) => {
             };
             delete documentData['Respondent ID'];
 
-        } else if (dataType === 'detailedAnalysis' || dataType === 'rawAnswers') {
+        } else if (dataType === 'rawAnswers') {
             respondentId = item[0];
             documentData = item[1];
             
@@ -1301,6 +1316,40 @@ const prepareDocumentsForFirestore = (chunk, studyID, dataType) => {
     
     return { documents, respondentIds, skippedCount };
 };
+
+/**
+ * Sanitize keys names for BigQuery compatibility
+ * Handles special characters in DHQ keys, such as "()-* ".
+ * BigQuery allows: letters, numbers, and underscores
+ * Ensures valid column naming and prevents collisions
+ */
+const sanitizeFieldName = (fieldName) => {
+    if (!fieldName || typeof fieldName !== 'string') {
+        throw new Error(`Invalid field name: ${fieldName} (must be a non-empty string)`);
+    }
+    
+    // Handle leading asterisk
+    if (fieldName.startsWith('*')) {
+        fieldName = 'star_' + fieldName.substring(1);
+    }
+    
+    fieldName = fieldName
+        .replace(/[^a-zA-Z0-9_]/g, '_') // Replace all invalid characters with underscores
+        .replace(/_+/g, '_')            // Collapse multiple consecutive underscores into single underscore
+        .replace(/^_+|_+$/g, '');       // Remove leading and trailing underscores
+    
+    // Sanity check for empty string
+    if (!fieldName) {
+        throw new Error(`Field name "${fieldName}" became empty after sanitization`);
+    }
+    
+    // Ensure field name starts with letter or underscore (BQ requirement)
+    if (!/^[a-zA-Z_]/.test(fieldName)) {
+        fieldName = 'field_' + fieldName;
+    }
+    
+    return fieldName;
+}
 
 /**
  * Process Analysis Results CSV and write to dhqAnalysisResults collection.
@@ -1337,7 +1386,18 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
             continue;
         }
         
-        allRows.push(row);
+        // Sanitize all field names in the row for BigQuery compatibility
+        const sanitizedRow = {};
+        for (const [key, value] of Object.entries(row)) {
+            if (key === 'Respondent ID') {
+                sanitizedRow[key] = value; // Respondent ID is handled separately
+            } else {
+                const sanitizedKey = sanitizeFieldName(key);
+                sanitizedRow[sanitizedKey] = value;
+            }
+        }
+        
+        allRows.push(sanitizedRow);
     }
 
     const chunkResult = await processChunkedData(
@@ -1378,7 +1438,7 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
     const processedIds = await getProcessedRespondentIds(studyID, collectionName);
     console.log('Processing Detailed Analysis CSV for study', studyID, 'Rows:', parsedData.length, 'Found:', processedIds.size, 'already processed IDs.');
     
-    const participantData = {};
+    const allDocuments = [];
     let skippedRowCount = 0;
     const skippedParticipants = new Set();
     
@@ -1392,37 +1452,43 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
             }
             continue;
         }
-        
-        if (!participantData[respondentId]) {
-            participantData[respondentId] = {
-                [fieldMapping.dhq3Username]: respondentId,
-                [fieldMapping.dhq3StudyID]: studyID,
-                [fieldMapping.dhq3ResponseProcessedTime]: new Date().toISOString(),
-            };
-        }
 
-        // Multiple rows can have the same question ID.
-        // Firestore field names cannot contain '.'
         // Format question ID to three digits (Q001, Q002, etc.)
         // Detailed Analysis receives just the number (1, 2, 3). Add "Q" prefix.
         const questionId = row['Question ID'];
         const formattedQuestionId = `Q${questionId.padStart(3, '0')}`;
         const foodId = row['Food ID']?.replace(/[. ]/g, '_');
-        const objKey = `${formattedQuestionId}_${foodId}`;
+        
+        // Create document ID: {Username}_{QuestionID}_{FoodID}
+        const documentId = `${respondentId}_${formattedQuestionId}_${foodId}`;
 
         const rowData = { ...row };
         delete rowData['Respondent ID'];
         
-        participantData[respondentId][objKey] = rowData;
+        // Sanitize all field names within the rowData object
+        const sanitizedRowData = {};
+        for (const [key, value] of Object.entries(rowData)) {
+            const sanitizedKey = sanitizeFieldName(key);
+            sanitizedRowData[sanitizedKey] = value;
+        }
+        
+        // Create individual document for this question-food combination
+        const documentData = {
+            [fieldMapping.dhq3Username]: respondentId,
+            [fieldMapping.dhq3StudyID]: studyID,
+            [fieldMapping.dhq3ResponseProcessedTime]: new Date().toISOString(),
+            ...sanitizedRowData
+        };
+        
+        allDocuments.push({ id: documentId, data: documentData });
     }
     
-    console.log(`Grouped data for ${Object.keys(participantData).length} new participants. Skipped rows: ${skippedRowCount}`);
+    console.log(`Created ${allDocuments.length} individual documents. Skipped rows: ${skippedRowCount}`);
     
-    const participantEntries = Object.entries(participantData);
     const chunkResult = await processChunkedData(
         studyID,
         collectionName, 
-        participantEntries, 
+        allDocuments, 
         (chunk, studyID) => prepareDocumentsForFirestore(chunk, studyID, 'detailedAnalysis'),
         { skippedCount: 0 }
     );
@@ -1491,7 +1557,7 @@ const processRawAnswersCSV = async (csvContent, studyID) => {
             const formattedQuestionId = questionId.replace(/^Q(\d+)$/, (match, num) => {
                 return `Q${num.padStart(3, '0')}`;
             });
-            const sanitizedQuestionId = `${formattedQuestionId}`.replace(/[. ]/g, '_');
+            const sanitizedQuestionId = sanitizeFieldName(formattedQuestionId);
             participantData[respondentId][sanitizedQuestionId] = answer;
         }
     }
@@ -1538,5 +1604,6 @@ module.exports = {
     createResponseDocID,
     getDynamicChunkSize,
     processChunkedData,
-    prepareDocumentsForFirestore
+    prepareDocumentsForFirestore,
+    sanitizeFieldName
 }

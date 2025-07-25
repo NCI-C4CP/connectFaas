@@ -129,6 +129,33 @@ describe('DHQ Integration Tests', () => {
 
             expect(result).to.deep.equal({ success: true });
         });
+
+        it('should handle field name sanitization in end-to-end processing', () => {
+            // Test data with already sanitized field names (as would come from processAnalysisResultsCSV)
+            const testData = [
+                { 
+                    'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, 
+                    'Energy_kcal': '2000',
+                    'Protein_total_g': '75.4',
+                    'star_Vitamin_A': '800',
+                    'field_123_field': '15.2',
+                    'calcium_mg': '1200'
+                }
+            ];
+            
+            const result = prepareDocumentsForFirestore(testData, TEST_CONSTANTS.STUDY_IDS.DEFAULT, 'analysisResults');
+            
+            // Verify document structure preserves sanitized field names
+            expect(result.documents).to.have.length(1);
+            expect(result.documents[0].id).to.equal(TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT);
+            
+            const data = result.documents[0].data;
+            expect(data).to.have.property('Energy_kcal', '2000');
+            expect(data).to.have.property('Protein_total_g', '75.4');
+            expect(data).to.have.property('star_Vitamin_A', '800');
+            expect(data).to.have.property('field_123_field', '15.2');
+            expect(data).to.have.property('calcium_mg', '1200');
+        });
     });
 
     describe('getProcessedRespondentIds', () => {
