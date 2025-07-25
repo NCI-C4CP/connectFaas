@@ -158,8 +158,8 @@ describe('DHQ Unit Tests', () => {
                     ['participant1', {
                         'Q001': 'Yes',
                         'Q002': '2 cups',
-                        'dhq3StudyID': 'study_123',
-                    }],
+                        'dhq3StudyID': 'study_123'
+                    }]
                 ];
 
                 const result = dhqModule.prepareDocumentsForFirestore(testData, 'study_123', 'rawAnswers');
@@ -174,7 +174,7 @@ describe('DHQ Unit Tests', () => {
                 const testData = [{ 'Respondent ID': 'participant1' }];
 
                 expect(() => {
-                dhqModule.prepareDocumentsForFirestore(testData, 'study_123', 'invalidType');
+                    dhqModule.prepareDocumentsForFirestore(testData, 'study_123', 'invalidType');
                 }).to.throw('Invalid data type in prepareDocumentsForFirestore(): invalidType');
             });
         });
@@ -190,7 +190,7 @@ describe('DHQ Unit Tests', () => {
                 { input: false, expected: null },
                 { input: {}, expected: '_object Object_' },
                 { input: [], expected: '' },
-                { input: 'normal', expected: 'normal' },
+                { input: 'normal', expected: 'normal' }
             ];
 
             malformedInputs.forEach(testCase => {
@@ -202,9 +202,9 @@ describe('DHQ Unit Tests', () => {
         it('should handle invalid data types in document preparation', () => {
             const invalidData = [
                 { 'Respondent ID': 'participant1' }, // Missing required fields
-                { Energy: '2000' }, // Missing respondent ID
+                { 'Energy': '2000' }, // Missing respondent ID
                 null, // Null entry
-                undefined, // Undefined entry
+                undefined // Undefined entry
             ];
 
             expect(() => {
@@ -236,9 +236,9 @@ describe('DHQ Unit Tests', () => {
             const chunkSize = dhqModule.getDynamicChunkSize(largeArray);
             expect(chunkSize).to.be.a('number');
             expect(chunkSize).to.be.above(0);
-            });
+        });
 
-            it('should handle concurrent chunk size calculations', () => {
+        it('should handle concurrent chunk size calculations', () => {
             const testData = [{ test: 'data' }];
             const results = [];
 
@@ -249,10 +249,18 @@ describe('DHQ Unit Tests', () => {
 
             // All results should be consistent
             expect(results.every(size => size === results[0])).to.be.true;
-            });
+        });
 
-            it('should handle corrupted input data', () => {
-            const corruptedData = [{ 'Respondent ID': null }, { 'Respondent ID': undefined }, { 'Respondent ID': '' }, { 'Respondent ID': 0 }, { 'Respondent ID': false }, { 'Respondent ID': {} }, { 'Respondent ID': [] }];
+        it('should handle corrupted input data', () => {
+            const corruptedData = [
+                { 'Respondent ID': null },
+                { 'Respondent ID': undefined },
+                { 'Respondent ID': '' },
+                { 'Respondent ID': 0 },
+                { 'Respondent ID': false },
+                { 'Respondent ID': {} },
+                { 'Respondent ID': [] }
+            ];
 
             corruptedData.forEach(data => {
                 const result = dhqModule.createResponseDocID(data['Respondent ID']);
@@ -267,7 +275,7 @@ describe('DHQ Unit Tests', () => {
                 { dataSize: 100, minChunks: 1 },
                 { dataSize: 1500, minChunks: 2 },
                 { dataSize: 5000, minChunks: 3 },
-                { dataSize: 10000, minChunks: 5 },
+                { dataSize: 10000, minChunks: 5 }
             ];
 
             testScenarios.forEach(scenario => {
@@ -276,7 +284,7 @@ describe('DHQ Unit Tests', () => {
 
                 const chunks = [];
                 for (let i = 0; i < data.length; i += chunkSize) {
-                chunks.push(data.slice(i, i + chunkSize));
+                    chunks.push(data.slice(i, i + chunkSize));
                 }
 
                 // We get at least the minimum expected chunks
@@ -297,7 +305,7 @@ describe('DHQ Unit Tests', () => {
                 { memory: 800 * 1024 * 1024, expectedChunkSize: 1000 },
                 { memory: 1100 * 1024 * 1024, expectedChunkSize: 500 },
                 { memory: 1400 * 1024 * 1024, expectedChunkSize: 250 },
-                { memory: 1700 * 1024 * 1024, expectedChunkSize: 100 },
+                { memory: 1700 * 1024 * 1024, expectedChunkSize: 100 }
             ];
 
             memoryScenarios.forEach(scenario => {
@@ -322,7 +330,7 @@ describe('DHQ Unit Tests', () => {
         it('should preserve uid when overriding state in createNotStartedDHQParticipant', () => {
             const participantUtils = TestUtils.createMockParticipantData();
             const participant = participantUtils.createNotStartedDHQParticipant('participant123', {
-                state: { query: 'test-query', site: 'test-site' },
+                state: { query: 'test-query', site: 'test-site' }
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
@@ -335,7 +343,7 @@ describe('DHQ Unit Tests', () => {
         it('should preserve uid when overriding state in createStartedDHQParticipant', () => {
             const participantUtils = TestUtils.createMockParticipantData();
             const participant = participantUtils.createStartedDHQParticipant('participant456', {
-                state: { sessionId: 'session-789', device: 'mobile' },
+                state: { sessionId: 'session-789', device: 'mobile' }
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
@@ -348,7 +356,7 @@ describe('DHQ Unit Tests', () => {
         it('should preserve uid when overriding state in createCompletedDHQParticipant', () => {
             const participantUtils = TestUtils.createMockParticipantData();
             const participant = participantUtils.createCompletedDHQParticipant('participant789', {
-                state: { completionReason: 'normal', finalScore: 95 },
+                state: { completionReason: 'normal', finalScore: 95 }
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
@@ -362,7 +370,7 @@ describe('DHQ Unit Tests', () => {
             const participantUtils = TestUtils.createMockParticipantData();
             const participant = participantUtils.createNotStartedDHQParticipant('participant123', {
                 customField: 'custom-value',
-                [fieldMapping.dhq3StudyID]: 'override-study-id',
+                [fieldMapping.dhq3StudyID]: 'override-study-id'
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
