@@ -465,17 +465,20 @@ const resetParticipantHelper = async (uid, saveToDb) => {
 
         if (saveToDb) {
             const participantDoc = db.collection('participants').doc(userId);
-            // These aren't going to ever have enough records to require delete batching
             const deletionDocsArray = [];
             await Promise.all(Object.keys(toDelete).map(async (docType) => {
                 let ids = toDelete[docType] || [];
                 if (!ids.length) {
                     return;
                 }
-                const docQuery = db.collection(docType)
-                    .where(FieldPath.documentId(), 'in', ids);
-                const query = await transaction.get(docQuery);
-                query.docs.forEach(doc => deletionDocsArray.push(doc));
+                // Break this down into chunks of thirty where necessary
+                const maxSize = 30;
+                for(let start = 0; start < ids.length; start += maxSize) {
+                    const docQuery = db.collection(docType)
+                        .where(FieldPath.documentId(), 'in', ids.slice(start, Math.min(start + maxSize, ids.length)));
+                    const query = await transaction.get(docQuery);
+                    query.docs.forEach(doc => deletionDocsArray.push(doc));
+                }
                 return;
             }));
             // Transactions require all reads happen before writes for some reason, hence this structure
@@ -610,7 +613,9 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
 
         printDocsCount(snapshot, `retrieveParticipants`);
 
-        results.docs = snapshot.docs.map(doc => doc.data());
+        results.docs = snapshot.docs.map(doc => {
+            return removeFirebaseData(doc.data());
+        });
 
         if (snapshot.docs.length > 0 && snapshot.docs.length === limit) {
             results.cursor = snapshot.docs[snapshot.docs.length - 1].id;
@@ -622,6 +627,23 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
         console.error(error);
         return new Error(error);
     }
+}
+
+/**
+ * Removes sensitive data from a participant document based on consent form submission status.
+ * 
+ * @function removeFirebaseData
+ * @param {Object} document - The participant document to process.
+ * @returns {Object} The processed document with sensitive data removed if consent form is not submitted.
+ */
+const removeFirebaseData = (document) => {
+    if (document[fieldMapping.participantMap.consentFormSubmitted] === fieldMapping.no) {
+        delete document[fieldMapping.authenticationEmail];
+        delete document[fieldMapping.authenticationPhone];
+        delete document[fieldMapping.signInMechanism];
+    }
+
+    return document;
 }
 
 /**
@@ -724,14 +746,32 @@ const getCursorDocument = async (collection, cursor) => {
     }
 }
 
-const removeDocumentFromCollection = async (connectID, token) => {
+const removeDocumentFromCollection = async (connectID, token, dhq3Username = null) => {
     try {
+
+        // Collection query mappings. All remaining collections default to Connect_ID.
+        const tokenCollections = new Set(['notifications', 'ssn']);
+
+        // TODO: DHQ Data Destruction held for Aug 2025 release (final decisions & details TBD)
+        //const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
+        
         for (const collection of listOfCollectionsRelatedToDataDestruction) {
-            const query = db.collection(collection)
-            const snapshot =
-                collection === "notifications" || collection === "ssn"
-                    ? await query.where("token", "==", token).get()
-                    : await query.where("Connect_ID", "==", connectID).get();
+            const query = db.collection(collection);
+            let snapshot;
+            
+            // Build query based on collection type
+            if (tokenCollections.has(collection)) {
+                snapshot = await query.where("token", "==", token).get();
+
+            // TODO: DHQ Data Destruction held for next release (final decisions & details TBD)
+            // } else if (dhqCollections.has(collection)) {
+            //     if (!dhq3Username) continue; // If dhq3Username is null, there's no DHQ data to destroy.
+            //     snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
+            
+            } else {
+                snapshot = await query.where("Connect_ID", "==", connectID).get();
+            }
+            
             printDocsCount(snapshot, "removeDocumentFromCollection");
 
             if (snapshot.size !== 0) {
@@ -743,6 +783,86 @@ const removeDocumentFromCollection = async (connectID, token) => {
     } catch (error) {
         console.error(`Error occurred when remove documents related to participan: ${error}`);
     }
+};
+
+/**
+ * Deletes pathology report files from Storage Bucket and file records from "pathologyReports" collection in Firestore
+ * @param {number} connectId
+ * @returns Promise<void>
+ */
+const deletePathologyReports = async (connectId) => {
+  const tierStr = process.env.GCLOUD_PROJECT?.split("-").slice(3, 5).join("-").toLowerCase() || "";
+  if (!tierStr) return;
+
+  const fileNameCidStr = fieldMapping.pathologyReportFilename.toString();
+  try {
+    const snapshot = await db
+      .collection("pathologyReports")
+      .where("Connect_ID", "==", connectId)
+      .select("bucketName", fileNameCidStr)
+      .get();
+    if (snapshot.empty) return;
+
+    /**
+     * Over a period of 10–20 years, a participant might appear in more than one bucket (e.g., due to changing healthcare providers).
+     * Use Set to collect all bucket names.
+     */
+    const bucketNameSet = new Set();
+    for (const doc of snapshot.docs) {
+      const { bucketName } = doc.data();
+      if (bucketName?.startsWith("pathology-reports") && bucketName?.endsWith(tierStr)) {
+        bucketNameSet.add(bucketName);
+      }
+    }
+
+    const storage = admin.storage();
+    const fileDeletePromises = [];
+    const failedDeletionSet = new Set();
+    for (const bucketName of bucketNameSet) {
+      const bucket = storage.bucket(bucketName);
+      const [exists] = await bucket.exists();
+      if (!exists) continue;
+
+      const [files] = await bucket.getFiles({ prefix: `${connectId}/` });
+      for (const file of files) {
+        const fullFilePath = `${bucketName}/${file.name}`;
+        fileDeletePromises.push(
+          file.delete().catch((err) => {
+            failedDeletionSet.add(fullFilePath);
+            console.error(`Failed to delete file ${fullFilePath}:`, err);
+          })
+        );
+      }
+    }
+
+    await Promise.all(fileDeletePromises);
+
+    let batch = db.batch();
+    let counter = 0;
+    const batchLimit = 500;
+    const batchPromises = [];
+    for (const doc of snapshot.docs) {
+      const { [fileNameCidStr]: fileName, bucketName } = doc.data();
+      if (failedDeletionSet.has(`${bucketName}/${connectId}/${fileName}`)) continue;
+      batch.delete(doc.ref);
+      counter++;
+      if (counter >= batchLimit) {
+        batchPromises.push(batch.commit());
+        batch = db.batch();
+        counter = 0;
+      }
+    }
+
+    if (counter > 0) {
+      batchPromises.push(batch.commit());
+    }
+
+    if (batchPromises.length > 0) {
+      await Promise.all(batchPromises);
+    }
+  } catch (error) {
+    console.error(`Error occurred when removing pathology reports for participant ${connectId}: ${error}`);
+  }
 };
 
 /**
@@ -833,8 +953,10 @@ const removeParticipantsDataDestruction = async () => {
                 await db.collection('participants').doc(participantId).update(updatedData);
                 await removeDocumentFromCollection(
                     participant["Connect_ID"],
-                    participant["token"]
+                    participant["token"],
+                    participant?.[fieldMapping.dhq3Username] // field can be null
                 );
+                await deletePathologyReports(participant["Connect_ID"]);
             }
         }
 
@@ -1109,8 +1231,7 @@ const individualParticipant = async (key, value, siteCode, isParent) => {
         printDocsCount(snapshot, "individualParticipant");
         if(snapshot.size > 0) {
             return snapshot.docs.map(document => {
-                let data = document.data();
-                return data;
+                return removeFirebaseData(document.data());
             });
         }
         else return false;
@@ -3014,7 +3135,9 @@ const assignKitToParticipant = async (data) => {
     let kitAssignmentResult;
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
-        kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2 } = fieldMapping;
+        kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2, 
+        withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC,
+        activityParticipantRefusal, allFutureSamples, baselineMouthwashSample, refusedAllFutureActivities, yes } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
@@ -3086,10 +3209,15 @@ const assignKitToParticipant = async (data) => {
         data[uniqueKitID] = kitDoc.data()[uniqueKitID];
 
         // See if this kit has already been assigned to any other participants
+        // Checks for initial and replacement kits
         const otherParticipantsWithThisKit = await transaction.get(
             db.collection('participants')
-                .where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', data[uniqueKitID])
-                .select('Connect_ID')
+                .where(Filter.or(
+                        Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwash}.${uniqueKitID}`, '==', data[uniqueKitID]),
+                        Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL1}.${uniqueKitID}`, '==', data[uniqueKitID]),
+                        Filter.where(`${collectionDetails}.${baseline}.${bioKitMouthwashBL2}.${uniqueKitID}`, '==', data[uniqueKitID])
+                    ))
+                .select('Connect_ID', `${collectionDetails}`)
         );
         // If multiple participants with this kit are found, the kit has definitely already been assigned
         if(otherParticipantsWithThisKit.size > 1) {
@@ -3099,16 +3227,29 @@ const assignKitToParticipant = async (data) => {
             };
             return;
         } else if (otherParticipantsWithThisKit.size === 1) {
+            const participantData = otherParticipantsWithThisKit.docs[0].data();
             // If only one participant is found, check if it's a different participant
-            if(otherParticipantsWithThisKit.docs[0].data()['Connect_ID'] !== parseInt(data['Connect_ID'])) {
+            if(participantData['Connect_ID'] !== parseInt(data['Connect_ID'])) {
                 kitAssignmentResult = {
                     success: false,
                     message: 'This kit has been assigned to another participant.'
                 };
                 return;
+            } else if (
+                participantData[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[uniqueKitID] === data[uniqueKitID] ||
+                participantData[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]?.[uniqueKitID] === data[uniqueKitID] ||
+                participantData[collectionDetails]?.[baseline]?.[bioKitMouthwashBL2]?.[uniqueKitID] === data[uniqueKitID]
+            ) {
+                // Is this being assigned as a replacement kit after already being assigned to the participant?
+                kitAssignmentResult = {
+                    success: false,
+                    message: 'This kit has already been assigned to this participant.'
+                };
+                return;
             }
         }
 
+        printDocsCount(otherParticipantsWithThisKit, "assignKitToParticipant; collection: possible duplicate kits");
 
         
         const kitData = {
@@ -3126,6 +3267,8 @@ const assignKitToParticipant = async (data) => {
         );
         printDocsCount(participantSnapshot, "assignKitToParticipant; collection: participants");
 
+
+
         // 1109: Check if the participant already has another baseline kit assigned and error if it does.
         // Because kit replacements are only valid when the previous kit has been shipped
         // there should never be another kit which is still in assigned status
@@ -3136,9 +3279,6 @@ const assignKitToParticipant = async (data) => {
             .where(`${collectionRound}`, '==', baseline)
             .select(`${supplyKitId}`);
         const kitAssemblySnapshot = await transaction.get(kitAssemblyQuery);
-
-        printDocsCount(participantSnapshot, "assignKitToParticipant; collection: possible duplicate kits");
-
 
         if(kitAssemblySnapshot.size > 0) {
             // Check to see if there are any baseline kits which are already assigned but with a different kit ID
@@ -3168,10 +3308,12 @@ const assignKitToParticipant = async (data) => {
         }
 
         const participantDoc = participantSnapshot.docs[0];
+        const participantData = participantDoc.data();
+
         // Now check the participant information. Which kit are they on?
         // Do they have any replacements? Handle that appropriately.
 
-        const prevParticipantObject = participantDoc.data()?.[collectionDetails]?.[baseline];
+        const prevParticipantObject = participantData?.[collectionDetails]?.[baseline];
         let path = bioKitMouthwash;
         let kitLevelValue = initialKit;
         if(prevParticipantObject?.[bioKitMouthwashBL2]) {
@@ -3181,7 +3323,31 @@ const assignKitToParticipant = async (data) => {
             path = bioKitMouthwashBL1;
             kitLevelValue = replacementKit1;
         }
-        
+
+        // Block assignment if participant has withdrawn from the study,
+        // is deceased or is set to destroy data
+        // Also clear the participant's relevant kit status at this time
+        if (
+            participantData?.[withdrawConsent] === yes ||
+            participantData?.[destroyData] === yes ||
+            participantData?.[participantDeceased] === yes ||
+            participantData?.[participantDeceasedNORC] === yes ||
+            participantData?.[activityParticipantRefusal]?.[baselineMouthwashSample] === yes ||
+            participantData?.[activityParticipantRefusal]?.[allFutureSamples] === yes ||
+            participantData?.[refusedAllFutureActivities] === yes
+        ) {
+            kitAssignmentResult = {
+                success: false,
+                removeFromQueue: true,
+                message: 'This participant has withdrawn, refused relevant activities or is deceased. Do not assign a kit to them. Discard address label. This kit may be used for a different participant.'
+            };
+            const updatedParticipantObject = {
+                [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: FieldValue.delete()
+            }
+            transaction.update(participantDoc.ref, updatedParticipantObject);
+            return;
+        }
+
         const updatedParticipantObject = {
             [`${collectionDetails}.${baseline}.${path}.${kitType}`]: mouthwashKit,
             [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: assigned,
@@ -3206,9 +3372,21 @@ const assignKitToParticipant = async (data) => {
 
 const markParticipantAddressUndeliverable = async (participantCID) => {
     try {
-        const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, kitStatus, addressUndeliverable } = fieldMapping;
+        const { 
+            collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, 
+            kitStatus, addressUndeliverable,
+            withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC, 
+            activityParticipantRefusal, baselineMouthwashSample, refusedAllFutureActivities, allFutureSamples, yes
+        } = fieldMapping;
 
-        const snapshot = await db.collection("participants").where('Connect_ID', '==', parseInt(participantCID)).select('Connect_ID', `${collectionDetails}`).get();
+        const snapshot = await db.collection("participants")
+            .where('Connect_ID', '==', parseInt(participantCID))
+            .select(
+                'Connect_ID', `${collectionDetails}`, `${withdrawConsent}`, 
+                `${destroyData}`, `${participantDeceased}`, `${participantDeceasedNORC}`,
+                `${activityParticipantRefusal}`, `${refusedAllFutureActivities}`
+            )
+            .get();
         printDocsCount(snapshot, "markParticipantAddressUndeliverable");
         if (snapshot.size === 0) {
             // No matching document found, stop the update
@@ -3222,6 +3400,28 @@ const markParticipantAddressUndeliverable = async (participantCID) => {
             path = bioKitMouthwashBL2;
         } else if (data?.[collectionDetails]?.[baseline]?.[bioKitMouthwashBL1]) {
             path = bioKitMouthwashBL1;
+        }
+
+        // If the participant is deceased, has withdrawn consent or their data is being destroyed
+        // clear the kit status instead of setting it to undeliverable
+        // and inform the end user
+        if (
+            data?.[withdrawConsent] === yes ||
+            data?.[destroyData] === yes ||
+            data?.[participantDeceased] === yes ||
+            data?.[participantDeceasedNORC] === yes ||
+            data?.[activityParticipantRefusal]?.[baselineMouthwashSample] === yes ||
+            data?.[activityParticipantRefusal]?.[allFutureSamples] === yes ||
+            data?.[refusedAllFutureActivities] === yes
+        ) {
+            await db.collection("participants").doc(docId).update({
+                [`${collectionDetails}.${baseline}.${path}.${kitStatus}`]: FieldValue.delete()
+            });
+            return {
+                success: 'false',
+                removeFromQueue: 'true',
+                error: 'This participant has withdrawn, has refused relevant activities or is deceased. Discard address label.'
+            };
         }
 
         await db.collection("participants").doc(docId).update({
@@ -3257,7 +3457,8 @@ const processVerifyScannedCode = async (id) => {
 
 const confirmShipmentKit = async (shipmentData) => {
     try {
-        return await db.runTransaction(async transaction => {
+        let toReturn;
+        await db.runTransaction(async transaction => {
             const { 
                 collectionDetails, baseline, 
                 bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, uniqueKitID,
@@ -3269,7 +3470,8 @@ const confirmShipmentKit = async (shipmentData) => {
             printDocsCount(kitSnapshot, "confirmShipmentKit; collection: kitAssembly");
 
             if (kitSnapshot.size === 0) {
-                return false;
+                toReturn = false;
+                return;
             }
 
             const kitDoc = kitSnapshot.docs[0];
@@ -3296,11 +3498,36 @@ const confirmShipmentKit = async (shipmentData) => {
             printDocsCount(participantSnapshot, "confirmShipmentKit; collection: participants");
 
             if (participantSnapshot.size === 0) {
-                return false;
+                toReturn = false;
+                return;
             }
 
             const participantDoc = participantSnapshot.docs[0];
+
+
             const participantDocData = participantDoc.data();
+
+            // Block this if participant has withdrawn from the study, is set to destroy data
+            // or is deceased
+            if (
+                participantDocData?.[fieldMapping.participantDeceased] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.participantDeceasedNORC] === fieldMapping.yes
+
+            ) {
+                toReturn = {status: 'This participant is deceased; do not ship this kit. Contact the Biospecimen Team.'};
+                return;
+            }
+            if (
+                participantDocData?.[fieldMapping.withdrawConsent] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.destroyData] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.baselineMouthwashSample] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.allFutureSamples] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes
+            ) {
+                toReturn = {status: 'This participant has withdrawn from the study or refused relevant activities; do not ship this kit. Contact the Biospecimen Team.'};
+                return;
+            }
+
             const baselineParticipantObject = participantDocData[collectionDetails][baseline];
             let path = bioKitMouthwash;
             if(baselineParticipantObject[bioKitMouthwashBL2]?.[uniqueKitID] === shipmentData[uniqueKitID]) {
@@ -3323,14 +3550,13 @@ const confirmShipmentKit = async (shipmentData) => {
 
             transaction.update(kitDoc.ref, kitData);
             transaction.update(participantDoc.ref, updatedParticipantObject);
-            return { status: true, Connect_ID, token, uid, prefEmail, ptName, preferredLanguage, path };
+            toReturn = { status: true, Connect_ID, token, uid, prefEmail, ptName, preferredLanguage, path };
         });
-        
+        return toReturn;
+    } catch(err) {
 
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
     }
+    
 };
 
 const storeKitReceipt = async (pkg) => {
@@ -3371,6 +3597,26 @@ const storeKitReceipt = async (pkg) => {
                 ptCandidates[0];
             const participantDoc = participantSnapshot.docs[0];
             const participantDocData = participantSnapshot.docs[0].data();
+
+            // If participant has withdrawn from the study, is set to destroy data
+            // or is deceased, block their kit from being received.
+            if (
+                participantDocData[fieldMapping.participantDeceased] == fieldMapping.yes ||
+                participantDocData[fieldMapping.participantDeceasedNORC] == fieldMapping.yes
+            ) {
+                toReturn = {status: 'This participant is deceased; do not receipt this kit. Contact the Biospecimen Team.'};
+                return;
+            }
+            if (
+                participantDocData[fieldMapping.withdrawConsent] == fieldMapping.yes ||
+                participantDocData[fieldMapping.destroyData] == fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.baselineMouthwashSample] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.allFutureSamples] === fieldMapping.yes ||
+                participantDocData?.[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes
+            ) {
+                toReturn = {status: 'This participant has withdrawn or refused relevant activities; do not receipt this kit. Contact the Biospecimen Team.'};
+                return;
+            }
 
             const token = participantDocData['token'];
             const uid = participantDocData['state']['uid'];
@@ -3476,7 +3722,7 @@ const storeKitReceipt = async (pkg) => {
     } 
     catch (error) {
         console.error(error);
-        return new Error(error);
+        throw new Error(error);
     }
 }
 
@@ -5069,4 +5315,5 @@ module.exports = {
     processPhysicalActivity,
     savePathologyReportNamesToFirestore,
     getUploadedPathologyReportNamesFromFirestore,
+    deletePathologyReports,
 };

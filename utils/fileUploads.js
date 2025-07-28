@@ -3,7 +3,7 @@ const Busboy = require("busboy");
 const { savePathologyReportNamesToFirestore, getUploadedPathologyReportNamesFromFirestore } = require("./firestore");
 
 const storage = new Storage();
-const tierStr = process.env.GCLOUD_PROJECT.split("-").slice(3, 5).join("-").toLowerCase();
+const tierStr = process.env.GCLOUD_PROJECT?.split("-").slice(3, 5).join("-").toLowerCase();
 const pathologyReports = "pathology-reports";
 
 async function awaitNewBucketReady(bucketName, maxRetries = 10, delayMs = 500) {

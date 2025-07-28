@@ -253,6 +253,8 @@ const processMouthwashEligibility = (data) => {
         data[conceptIds.collectionDetails] && data[conceptIds.collectionDetails][conceptIds.baseline] &&
         data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bloodOrUrineCollected] == conceptIds.yes &&
         data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bloodOrUrineCollectedTimestamp] >= '2024-04-01T00:00:00.000Z' &&
+        // If this has already been collected (usually through a prior research collection), do not re-collect it
+        data[conceptIds.baselineMouthwashCollected] !== conceptIds.yes &&
         (
             !data[conceptIds.collectionDetails][conceptIds.baseline][conceptIds.bioKitMouthwash] ||
             !data[conceptIds.collectionDetails][conceptIds.baseline]?.[conceptIds.bioKitMouthwash]?.[conceptIds.kitStatus]

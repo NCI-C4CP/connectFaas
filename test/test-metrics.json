@@ -1,0 +1,56 @@
+{
+  "timestamp": "2025-07-18T17:32:13.032Z",
+  "totalTests": 110,
+  "passing": 110,
+  "failing": 0,
+  "duration": 3629,
+  "categories": {
+    "unit": {
+      "category": "unit",
+      "duration": 1212,
+      "exitCode": 0,
+      "passing": 60,
+      "failing": 0,
+      "total": 60,
+      "slowTests": []
+    },
+    "integration": {
+      "category": "integration",
+      "duration": 837,
+      "exitCode": 0,
+      "passing": 8,
+      "failing": 0,
+      "total": 8,
+      "slowTests": []
+    },
+    "mocks": {
+      "category": "mocks",
+      "duration": 537,
+      "exitCode": 0,
+      "passing": 11,
+      "failing": 0,
+      "total": 11,
+      "slowTests": []
+    },
+    "dhq": {
+      "category": "dhq",
+      "duration": 844,
+      "exitCode": 0,
+      "passing": 31,
+      "failing": 0,
+      "total": 31,
+      "slowTests": []
+    },
+    "processing": {
+      "category": "processing",
+      "duration": 199,
+      "exitCode": 1,
+      "passing": 0,
+      "failing": 0,
+      "total": 0,
+      "slowTests": []
+    }
+  },
+  "coverage": null,
+  "slowTests": []
+}

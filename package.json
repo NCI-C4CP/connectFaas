@@ -4,7 +4,16 @@
   "description": "Connect FAAS API for DCEG's Cohort Study",
   "main": "index.js",
   "scripts": {
-    "test": "mocha --reporter spec --timeout 5000"
+    "test": "mocha --reporter spec --timeout 5000",
+    "test:all": "mocha test/**/*.test.js --reporter spec --timeout 5000",
+    "test:unit": "mocha test/unit/**/*.test.js --reporter spec --timeout 5000",
+    "test:integration": "mocha test/integration/**/*.test.js --reporter spec --timeout 5000",
+    "test:mocks": "mocha test/mocks/**/*.test.js --reporter spec --timeout 5000",
+    "test:dhq": "mocha test/**/*dhq*.test.js --reporter spec --timeout 5000",
+    "test:fileProcessing": "mocha test/unit/fileProcessing.test.js --reporter spec --timeout 5000",
+    "test:watch": "mocha test/**/*.test.js --reporter spec --timeout 5000 --watch",
+    "test:metrics": "node test/scripts/testMetrics.js",
+    "test:report": "npm run test:metrics && cat test/test-report.md"
   },
   "repository": {
     "type": "git",
