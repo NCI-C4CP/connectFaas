@@ -9,6 +9,7 @@ const db = admin.firestore();
 const API_ROOT = 'https://www.dhq3.org/api-home/root/study-list/';
 const PROCESSING_CHUNK_SIZE = 1000;
 const MILLISECONDS_PER_DAY = 86400000;
+const MEMORY_WARNING_THRESHOLD = 1750;
 
 const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
             ? 'PROD'
@@ -946,7 +947,7 @@ const processDHQReports = async (req, res) => {
 
                     console.log('Extracting ZIP file contents...');
                     logMemoryUsage(`Before ZIP extraction - ${fileConfig.name}`);
-                    const extractedFiles = await extractZipFiles(reportData.data);
+                    let extractedFiles = await extractZipFiles(reportData.data);
                     logMemoryUsage(`After ZIP extraction - ${fileConfig.name}`);
                     
                     // Clear the original ZIP data to free memory
@@ -960,13 +961,13 @@ const processDHQReports = async (req, res) => {
                             processingResult = await fileConfig.processor(file.content.toString('utf8'), studyIDToProcess);
                             logMemoryUsage(`After CSV processing - ${fileConfig.name}`, true);
                             
-                            // Clear CSV content to free memory
-                            file.content = null;
+                            // Delete CSV content to free memory
+                            delete file.content;
                         }
                     }
                     
                     // Clear extracted files array
-                    extractedFiles.length = 0;
+                    extractedFiles = null;
 
                     if (processingResult?.success) {
                         console.log(`Successfully processed ${fileConfig.name}: ${processingResult.newDocuments} new documents`);
@@ -1649,7 +1650,7 @@ const logMemoryUsage = (context, forceGC = false) => {
         console.log(`MEMORY: ${context}: Heap Used: ${heapUsedMB}MB, Heap Total: ${heapTotalMB}MB, External: ${externalMB}MB, RSS: ${rssMB}MB`);
     }
 
-    if (heapUsedMB > 1750) {
+    if (heapUsedMB > MEMORY_WARNING_THRESHOLD) {
         console.warn(`MEMORY WARNING: High memory usage detected (${heapUsedMB}MB) during: ${context}`);
     }
     
