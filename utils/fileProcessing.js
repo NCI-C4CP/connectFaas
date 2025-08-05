@@ -1,3 +1,6 @@
+const { Readable } = require('stream');
+const readline = require('readline');
+
 /**
  * Extracts files from a ZIP archive. Returns an array of file objects.
  * @param {string} base64Data - Base64 encoded ZIP file data.
@@ -247,9 +250,78 @@ const validateCSVRow = (row, requiredFields) => {
     };
 };
 
+/**
+ * Async generator: yields parsed CSV rows one at a time for data streaming.
+ * Skips comment lines that start with `commentChar` (default: '*').
+ * @param {string|Buffer} csvContent - The CSV content as a string or buffer.
+ * @param {Object} options - { commentChar: '*', convertNumbers: false }
+ * @yields {Array<string|number>} - Array of cell values for each CSV row.
+ */
+
+async function* streamCSVRows(csvContent, options = {}) {
+    const { commentChar = '*', convertNumbers = false } = options;
+
+    const input = typeof csvContent === 'string' ? csvContent : csvContent.toString('utf8');
+
+    // Create the stream
+    const rl = readline.createInterface({
+        input: Readable.from(input),
+        crlfDelay: Infinity,
+    });
+
+    // Process the stream
+    for await (const rawLine of rl) {
+        const line = rawLine.trimEnd();
+        if (line === '' || line.startsWith(commentChar)) continue;
+
+        const row = [];
+        let currentField = '';
+        let isInQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+
+            if (isInQuotes) {
+                if (char === '"') {
+                    // Escaped quote
+                    if (i + 1 < line.length && line[i + 1] === '"') {
+                        currentField += '"';
+                        i++; // Skip next char
+                    } else {
+                        isInQuotes = false;
+                    }
+                } else {
+                    currentField += char;
+                }
+            } else {
+                if (char === ',') {
+                    row.push(convertNumbers && !isNaN(currentField) && currentField.trim() !== '' && currentField !== '.'
+                        ? Number(currentField)
+                        : currentField
+                    );
+                    currentField = '';
+                } else if (char === '"') {
+                    isInQuotes = true;
+                } else {
+                    currentField += char;
+                }
+            }
+        }
+        // Push the last field
+        row.push(convertNumbers && !isNaN(currentField) && currentField.trim() !== '' && currentField !== '.'
+            ? Number(currentField)
+            : currentField
+        );
+
+        // Yield the row for streaming
+        yield row;
+    }
+}
+
 module.exports = {
     extractZipFiles,
     cleanCSVContent,
     parseCSV,
     validateCSVRow,
+    streamCSVRows,
 };

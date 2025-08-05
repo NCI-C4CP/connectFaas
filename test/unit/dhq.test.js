@@ -27,7 +27,10 @@ describe('DHQ Unit Tests', () => {
         it('should export core utility functions', () => {
             expect(dhqModule.createResponseDocID).to.be.a('function');
             expect(dhqModule.getDynamicChunkSize).to.be.a('function');
-            expect(dhqModule.prepareDocumentsForFirestore).to.be.a('function');
+            expect(dhqModule.sanitizeFieldName).to.be.a('function');
+            expect(dhqModule.processAnalysisResultsCSV).to.be.a('function');
+            expect(dhqModule.processDetailedAnalysisCSV).to.be.a('function');
+            expect(dhqModule.processRawAnswersCSV).to.be.a('function');
         });
     });
 
@@ -93,91 +96,6 @@ describe('DHQ Unit Tests', () => {
             });
         });
 
-        describe('dhqModule.prepareDocumentsForFirestore', () => {
-            it('should prepare detailed analysis documents correctly: one document per question', () => {
-                // Test basic detailed analysis documents with {id, data} structure
-                const basicTestData = [
-                    {
-                        id: 'participant1_Q001_FOOD001',
-                        data: {
-                        [fieldMapping.dhq3Username]: 'participant1',
-                        [fieldMapping.dhq3StudyID]: 'study_123',
-                        Answer: '15',
-                        Energy: '50',
-                        },
-                    },
-                    {
-                        id: 'participant1_Q002_FOOD002',
-                        data: {
-                        [fieldMapping.dhq3Username]: 'participant1',
-                        [fieldMapping.dhq3StudyID]: 'study_123',
-                        Answer: '2',
-                        Energy: '25',
-                        },
-                    },
-                ];
-
-                const basicResult = dhqModule.prepareDocumentsForFirestore(basicTestData, 'study_123', 'detailedAnalysis');
-
-                // Should return the same documents structure
-                expect(basicResult.documents).to.have.length(2);
-                expect(basicResult.documents[0].id).to.equal('participant1_Q001_FOOD001');
-                expect(basicResult.documents[1].id).to.equal('participant1_Q002_FOOD002');
-                expect(basicResult.documents[0].data).to.have.property('Answer', '15');
-                expect(basicResult.documents[0].data).to.have.property('Energy', '50');
-
-                // Test detailed analysis documents with sanitized field names
-                const sanitizedTestData = [
-                    {
-                        id: 'participant1_Q001_FOOD001',
-                        data: {
-                        [fieldMapping.dhq3Username]: 'participant1',
-                        [fieldMapping.dhq3StudyID]: 'study_123',
-                        Energy_kcal: '2000',
-                        Protein_g: '50',
-                        star_Special_Field: '10',
-                        field_123numeric: '25',
-                        },
-                    },
-                ];
-
-                const sanitizedResult = dhqModule.prepareDocumentsForFirestore(sanitizedTestData, 'study_123', 'detailedAnalysis');
-
-                expect(sanitizedResult.documents).to.have.length(1);
-                expect(sanitizedResult.documents[0].id).to.equal('participant1_Q001_FOOD001');
-
-                const data = sanitizedResult.documents[0].data;
-                expect(data).to.have.property('Energy_kcal', '2000');
-                expect(data).to.have.property('Protein_g', '50');
-                expect(data).to.have.property('star_Special_Field', '10');
-                expect(data).to.have.property('field_123numeric', '25');
-            });
-
-            it('should prepare raw answers documents correctly', () => {
-                const testData = [
-                    ['participant1', {
-                        'Q001': 'Yes',
-                        'Q002': '2 cups',
-                        'dhq3StudyID': 'study_123'
-                    }]
-                ];
-
-                const result = dhqModule.prepareDocumentsForFirestore(testData, 'study_123', 'rawAnswers');
-                
-                expect(result.documents).to.have.length(1);
-                expect(result.documents[0].id).to.equal('participant1');
-                expect(result.documents[0].data).to.have.property('Q001', 'Yes');
-                expect(result.documents[0].data).to.have.property('Q002', '2 cups');
-            });
-
-            it('should throw error for invalid data type', () => {
-                const testData = [{ 'Respondent ID': 'participant1' }];
-
-                expect(() => {
-                    dhqModule.prepareDocumentsForFirestore(testData, 'study_123', 'invalidType');
-                }).to.throw('Invalid data type in prepareDocumentsForFirestore(): invalidType');
-            });
-        });
     });
 
     describe('Error Handling and Edge Cases', () => {
@@ -199,18 +117,6 @@ describe('DHQ Unit Tests', () => {
             });
         });
 
-        it('should handle invalid data types in document preparation', () => {
-            const invalidData = [
-                { 'Respondent ID': 'participant1' }, // Missing required fields
-                { 'Energy': '2000' }, // Missing respondent ID
-                null, // Null entry
-                undefined // Undefined entry
-            ];
-
-            expect(() => {
-                dhqModule.prepareDocumentsForFirestore(invalidData, 'study_123', 'invalidType');
-            }).to.throw('Invalid data type');
-            });
 
             it('should handle memory pressure scenarios', () => {
             const originalMemoryUsage = process.memoryUsage;
@@ -395,6 +301,72 @@ describe('DHQ Unit Tests', () => {
             // Verify uid is preserved, overrides are applied, and other fields are still present
             expect(participant.state.uid).to.equal('participant123');
             expect(Object.keys(participant.state)).to.deep.equal(['uid']);
+        });
+    });
+
+    describe('CSV Processing', () => {
+        describe('Error Handling', () => {
+            it('should handle missing required columns gracefully', async () => {
+                const csvContent = `Energy,Protein
+2000,50`;
+
+                try {
+                    const { processAnalysisResultsCSV } = require('../../utils/dhq');
+                    await processAnalysisResultsCSV(csvContent, 'study_test');
+                    expect.fail('Should have thrown an error for missing Respondent ID column');
+                } catch (error) {
+                    expect(error.message).to.include('Respondent ID column not found');
+                }
+            });
+
+            it('should handle missing required columns in detailed analysis', async () => {
+                const csvContent = `Energy,Protein
+2000,50`;
+
+                try {
+                    const { processDetailedAnalysisCSV } = require('../../utils/dhq');
+                    await processDetailedAnalysisCSV(csvContent, 'study_test');
+                    expect.fail('Should have thrown an error for missing required columns');
+                } catch (error) {
+                    expect(error.message).to.include('Required columns missing');
+                }
+            });
+
+            it('should handle missing required columns in raw answers', async () => {
+                const csvContent = `Energy,Protein
+2000,50`;
+
+                try {
+                    const { processRawAnswersCSV } = require('../../utils/dhq');
+                    await processRawAnswersCSV(csvContent, 'study_test');
+                    expect.fail('Should have thrown an error for missing required columns');
+                } catch (error) {
+                    expect(error.message).to.include('Required columns missing');
+                }
+            });
+        });
+
+        describe('Memory Management Integration', () => {
+            it('should adapt chunk sizes based on memory pressure', () => {
+                const originalMemoryUsage = process.memoryUsage;
+                
+                const memoryScenarios = [
+                    { heapUsed: 800 * 1024 * 1024, expectedSize: 1000 },  // Low memory
+                    { heapUsed: 1200 * 1024 * 1024, expectedSize: 500 },  // Medium memory
+                    { heapUsed: 1400 * 1024 * 1024, expectedSize: 250 },  // High memory
+                    { heapUsed: 1600 * 1024 * 1024, expectedSize: 100 }   // Critical memory
+                ];
+
+                try {
+                    memoryScenarios.forEach(scenario => {
+                        process.memoryUsage = () => ({ heapUsed: scenario.heapUsed });
+                        const chunkSize = dhqModule.getDynamicChunkSize();
+                        expect(chunkSize).to.equal(scenario.expectedSize);
+                    });
+                } finally {
+                    process.memoryUsage = originalMemoryUsage;
+                }
+            });
         });
     });
 });
