@@ -1343,6 +1343,7 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
             await batch.commit();
             newDocuments += batchCount;
             successfulRespondentIds.push(...batchRespondentIds);
+            logMemoryUsage(`Batch committed - ${newDocuments} documents processed`);
         } catch (e) {
             console.error('Error committing final Analysis Results batch:', e);
         }
