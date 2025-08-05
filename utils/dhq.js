@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
-const { getResponseJSON, getSecret } = require("./shared");
+const { getResponseJSON, getSecret, developmentTier } = require("./shared");
 const { extractZipFiles, validateCSVRow, streamCSVRows } = require('./fileProcessing');
 const { normalizeIso8601Timestamp } = require('./validation');
 const fieldMapping = require('./fieldToConceptIdMapping');
@@ -10,12 +10,6 @@ const API_ROOT = 'https://www.dhq3.org/api-home/root/study-list/';
 const PROCESSING_CHUNK_SIZE = 1000;
 const MILLISECONDS_PER_DAY = 86400000;
 const MEMORY_WARNING_THRESHOLD = 1750;
-
-const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
-            ? 'PROD'
-            : process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-stg-5519'
-                ? 'STAGE'
-                : 'DEV';
 
 const dhqCompletionStatusMapping = {
     [fieldMapping.notStarted]: fieldMapping.dhq3NotYetBegun,
