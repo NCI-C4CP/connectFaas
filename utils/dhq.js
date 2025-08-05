@@ -10,6 +10,12 @@ const API_ROOT = 'https://www.dhq3.org/api-home/root/study-list/';
 const PROCESSING_CHUNK_SIZE = 1000;
 const MILLISECONDS_PER_DAY = 86400000;
 
+const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
+            ? 'PROD'
+            : process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-stg-5519'
+                ? 'STAGE'
+                : 'DEV';
+
 const dhqCompletionStatusMapping = {
     [fieldMapping.notStarted]: fieldMapping.dhq3NotYetBegun,
     [fieldMapping.started]: fieldMapping.dhq3InProgress,
@@ -887,6 +893,7 @@ const generateDHQReports = async (req, res) => {
 
 const processDHQReports = async (req, res) => {
     console.log('Processing DHQ reports for all studies.');
+    logMemoryUsage('Function start');
     try {
         if (req.method !== 'POST') {
             return res.status(405).json(getResponseJSON("Method not allowed. Use POST.", 405));
@@ -929,7 +936,7 @@ const processDHQReports = async (req, res) => {
             for (const [fileTypeNum, fileConfig] of Object.entries(fileTypeMap)) {
                 try {
                     console.log(`\n--- Processing ${fileConfig.name} (File Type ${fileTypeNum}) for study ${studyIDToProcess} ---`);
-                    const reportData = await downloadDHQReport(studyIDToProcess, parseInt(fileTypeNum), dhqToken);
+                    let reportData = await downloadDHQReport(studyIDToProcess, parseInt(fileTypeNum), dhqToken);
 
                     if (!reportData?.data || !reportData?.contentType?.includes('zip')) {
                         throw new Error('No ZIP data received from DHQ API');
@@ -938,15 +945,28 @@ const processDHQReports = async (req, res) => {
                     let processingResult;
 
                     console.log('Extracting ZIP file contents...');
+                    logMemoryUsage(`Before ZIP extraction - ${fileConfig.name}`);
                     const extractedFiles = await extractZipFiles(reportData.data);
+                    logMemoryUsage(`After ZIP extraction - ${fileConfig.name}`);
+                    
+                    // Clear the original ZIP data to free memory
+                    reportData.data = null;
+                    reportData = null;
                     
                     for (const file of extractedFiles) {
                         if (file.filename.toLowerCase().endsWith('.csv')) {
-                            const csvContent = file.content.toString('utf8');
+
+                            logMemoryUsage(`Before CSV processing - ${fileConfig.name}`);
+                            processingResult = await fileConfig.processor(file.content.toString('utf8'), studyIDToProcess);
+                            logMemoryUsage(`After CSV processing - ${fileConfig.name}`, true);
                             
-                            processingResult = await fileConfig.processor(csvContent, studyIDToProcess);
+                            // Clear CSV content to free memory
+                            file.content = null;
                         }
                     }
+                    
+                    // Clear extracted files array
+                    extractedFiles.length = 0;
 
                     if (processingResult?.success) {
                         console.log(`Successfully processed ${fileConfig.name}: ${processingResult.newDocuments} new documents`);
@@ -1178,7 +1198,6 @@ const getProcessedRespondentIds = async (studyID, collectionName) => {
  */
 const updateProcessingTracking = async (studyID, collectionName, newRespondentIds) => {
     try {
-        console.log('updateProcessingTracking', studyID, collectionName, newRespondentIds);
         if (!newRespondentIds || newRespondentIds.length === 0) {
             return;
         }
@@ -1254,6 +1273,7 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
 
     const processedIds = await getProcessedRespondentIds(studyID, collectionName);
     console.log('Streaming Analysis Results CSV for study', studyID, 'Already processed IDs:', processedIds.size);
+    logMemoryUsage(`Starting ${collectionName} processing`);
 
     const dynamicBatchSize = Math.min(getDynamicChunkSize(), 500);
     let headerRow = null;
@@ -1312,6 +1332,7 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
                 await batch.commit();
                 newDocuments += batchCount;
                 successfulRespondentIds.push(...batchRespondentIds);
+                logMemoryUsage(`Batch committed - ${newDocuments} documents processed`);
             } catch (err) {
                 console.error('Error committing Analysis Results batch:', err);
             }
@@ -1341,6 +1362,8 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
         }
     }
 
+    logMemoryUsage(`Completed ${collectionName} processing`, true);
+
     return {
         success: true,
         collectionName,
@@ -1364,6 +1387,7 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
 
     const processedIds = await getProcessedRespondentIds(studyID, collectionName);
     console.log('Streaming Detailed Analysis CSV for study', studyID, 'Already processed IDs:', processedIds.size);
+    logMemoryUsage(`Starting ${collectionName} processing`);
 
     let headerRow = null;
     let respondentIdIdx = -1;
@@ -1472,6 +1496,8 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
         }
     }
 
+    logMemoryUsage(`Completed ${collectionName} processing`, true);
+
     return {
         success: true,
         collectionName,
@@ -1497,6 +1523,7 @@ const processRawAnswersCSV = async (csvContent, studyID) => {
 
     const processedIds = await getProcessedRespondentIds(studyID, collectionName);
     console.log('Streaming Raw Answers CSV for study', studyID, 'Already processed IDs:', processedIds.size);
+    logMemoryUsage(`Starting ${collectionName} processing`);
 
     let headerRow = null;
     let respondentIdx = -1;
@@ -1589,6 +1616,8 @@ const processRawAnswersCSV = async (csvContent, studyID) => {
         }
     }
 
+    logMemoryUsage(`Completed ${collectionName} processing`, true);
+
     return {
         success: true,
         collectionName,
@@ -1597,6 +1626,34 @@ const processRawAnswersCSV = async (csvContent, studyID) => {
         skippedRows,
         skippedRespondents: skippedRespondents.size,
     };
+};
+
+/**
+ * Log current memory usage with context for monitoring
+ * @param {string} context - Description of current operation
+ * @param {boolean} forceGC - Whether to force garbage collection (if --expose-gc enabled)
+ */
+const logMemoryUsage = (context, forceGC = false) => {
+    if (forceGC && global.gc) {
+        global.gc();
+    }
+    
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const externalMB = Math.round(memUsage.external / 1024 / 1024);
+    const rssMB = Math.round(memUsage.rss / 1024 / 1024);
+
+    // Log memory usage in dev only. Warn in all envs if memory usage is high.
+    if (developmentTier === 'DEV') {
+        console.log(`MEMORY: ${context}: Heap Used: ${heapUsedMB}MB, Heap Total: ${heapTotalMB}MB, External: ${externalMB}MB, RSS: ${rssMB}MB`);
+    }
+
+    if (heapUsedMB > 1750) {
+        console.warn(`MEMORY WARNING: High memory usage detected (${heapUsedMB}MB) during: ${context}`);
+    }
+    
+    return { heapUsedMB, heapTotalMB, externalMB, rssMB };
 };
 
 module.exports = {
@@ -1618,5 +1675,6 @@ module.exports = {
     batchWriteToFirestore,
     createResponseDocID,
     getDynamicChunkSize,
-    sanitizeFieldName
+    sanitizeFieldName,
+    logMemoryUsage
 };

@@ -14,29 +14,29 @@ let twilioClient, messagingServiceSid, twilioNotifyServiceSid;
 let isTwilioSetup = false;
 let isSendingNotifications = false; // A more robust soluttion is needed when using multiple servers 
 
-// getSecret(process.env.GCLOUD_SENDGRID_SECRET).then((apiKey) => {
-//   sgMail.setApiKey(apiKey);
-// });
+getSecret(process.env.GCLOUD_SENDGRID_SECRET).then((apiKey) => {
+  sgMail.setApiKey(apiKey);
+});
 
-// const setupTwilio = async () => {
-//   const secretsToFetch = {
-//     accountSid: process.env.TWILIO_ACCOUNT_SID,
-//     authToken: process.env.TWILIO_AUTH_TOKEN,
-//     messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-//     twilioNotifyServiceSid: process.env.TWILIO_NOTIFY_SERVICE_SID,
-//   };
-//   const client = new SecretManagerServiceClient();
-//   let fetchedSecrets = {};
-//   for (const [key, value] of Object.entries(secretsToFetch)) {
-//     const [version] = await client.accessSecretVersion({ name: value });
-//     fetchedSecrets[key] = version.payload.data.toString();
-//   }
+const setupTwilio = async () => {
+  const secretsToFetch = {
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+    twilioNotifyServiceSid: process.env.TWILIO_NOTIFY_SERVICE_SID,
+  };
+  const client = new SecretManagerServiceClient();
+  let fetchedSecrets = {};
+  for (const [key, value] of Object.entries(secretsToFetch)) {
+    const [version] = await client.accessSecretVersion({ name: value });
+    fetchedSecrets[key] = version.payload.data.toString();
+  }
 
-//   twilioClient = twilio(fetchedSecrets.accountSid, fetchedSecrets.authToken);
-//   messagingServiceSid = fetchedSecrets.messagingServiceSid;
-//   twilioNotifyServiceSid = fetchedSecrets.twilioNotifyServiceSid;
-//   isTwilioSetup = true;
-// };
+  twilioClient = twilio(fetchedSecrets.accountSid, fetchedSecrets.authToken);
+  messagingServiceSid = fetchedSecrets.messagingServiceSid;
+  twilioNotifyServiceSid = fetchedSecrets.twilioNotifyServiceSid;
+  isTwilioSetup = true;
+};
 
 /**
  * Get detailed data of a message from Twilio, and update to Firestore.
