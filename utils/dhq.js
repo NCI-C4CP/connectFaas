@@ -685,7 +685,7 @@ const scheduledCountDHQ3Credentials = async (req, res) => {
 
 /**
  * Get DHQ configuration from app settings and validate DHQ token.
- * @returns {Promise<Object>} - Object containing dhqStudyIDs array, dhqToken string, and lookbackDays number
+ * @returns {Promise<Object>} - Object containing dhqStudyIDs array, dhqToken string, and date filtering settings
  * @throws {Error} - If app settings not found, no study IDs, or DHQ token not found
  */
 const getDHQConfig = async () => {
@@ -700,17 +700,18 @@ const getDHQConfig = async () => {
 
     const appSettingsData = appSettingsQuery.docs[0].data();
     const dhqStudyIDs = appSettingsData.dhq.dhqStudyIDs || [];
-    const lookbackDays = appSettingsData.dhq.lookbackDays || 90; // Default to 90 days
     const useDateFiltering = appSettingsData.dhq.useDateFiltering || false;
     const useLanguageFlag = appSettingsData.dhq.useLanguageFlag || false;
+    const dateFilterStartDaysAgo = appSettingsData.dhq.dateFilterStartDaysAgo || 90; // Default to 90 days ago
+    const dateFilterEndDaysAgo = appSettingsData.dhq.dateFilterEndDaysAgo || 0; // Default to "today"
     
     if (dhqStudyIDs.length === 0) {
         throw new Error('No DHQ study IDs found in app settings.');
     }
 
-    const recentlyCompletedDHQStudyIDs = await getRecentlyCompletedDHQStudies(dhqStudyIDs, lookbackDays);
+    const recentlyCompletedDHQStudyIDs = await getRecentlyCompletedDHQStudies(dhqStudyIDs, dateFilterStartDaysAgo);
     if (recentlyCompletedDHQStudyIDs.length === 0) {
-        console.log(`No DHQ studies have been completed in the last ${lookbackDays} days.`);
+        console.log(`No DHQ studies have been completed in the last ${dateFilterStartDaysAgo} days.`);
     }
 
     const dhqToken = await getSecret(process.env.DHQ_TOKEN);
@@ -718,21 +719,21 @@ const getDHQConfig = async () => {
         throw new Error('DHQ API token not found.');
     }
 
-    return { dhqStudyIDs, dhqToken, lookbackDays, recentlyCompletedDHQStudyIDs, useDateFiltering, useLanguageFlag };
+    return { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering, useLanguageFlag, dateFilterStartDaysAgo, dateFilterEndDaysAgo };
 };
 
 /**
- * Get a list of DHQ studies with survey completions in the last n days (setting @ Firestore -> appSettings -> dhq.lookbackDays).
+ * Get a list of DHQ studies with survey completions in the last n days (setting @ Firestore -> appSettings -> dhq.dateFilterStartDaysAgo).
  * Based on query from the Firestore 'participants' collection. Limit(1) because we only need to know whether a recent completion exists.
  * We'll only process studies with survey completions in the last n days.
  * @param {Array<string>} studyIDs - Array of study IDs from appSettings.dhq.dhqStudyIDs.
- * @param {number} lookbackDays - Number of days to look back for survey completions.
+ * @param {number} dateFilterStartDaysAgo - Number of days to look back for survey completions.
  * @returns {Promise<Array<string>>} - Array of study IDs that have recent completions.
  */
-const getRecentlyCompletedDHQStudies = async (studyIDs, lookbackDays = 90) => {
+const getRecentlyCompletedDHQStudies = async (studyIDs, dateFilterStartDaysAgo = 90) => {
     // Calculate the cutoff date as an ISO string.
-    const cutoffDate = new Date(Date.now() - lookbackDays * MILLISECONDS_PER_DAY).toISOString();
-    console.log(`Looking for DHQ completions since: ${cutoffDate} (${lookbackDays} days ago)`);
+    const cutoffDate = new Date(Date.now() - dateFilterStartDaysAgo * MILLISECONDS_PER_DAY).toISOString();
+    console.log(`Looking for DHQ completions since: ${cutoffDate} (${dateFilterStartDaysAgo} days ago)`);
 
     const studyQueries = studyIDs.map(async studyID => {
         const participantsQuery = await db.collection('participants')
@@ -789,7 +790,7 @@ const generateDHQReports = async (req, res) => {
     }
 
     try {
-        const { dhqStudyIDs, dhqToken, lookbackDays, recentlyCompletedDHQStudyIDs, useDateFiltering } = await getDHQConfig();
+        const { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering, dateFilterStartDaysAgo, dateFilterEndDaysAgo } = await getDHQConfig();
 
         if (recentlyCompletedDHQStudyIDs.length === 0) {
             console.log('No studies have recent DHQ completions. Skipping report generation.');
@@ -819,14 +820,15 @@ const generateDHQReports = async (req, res) => {
 
         // Add date filtering if enabled (Firestore -> appSettings -> dhq.useDateFiltering).
         // reportOptions includes the `start_date` and `end_date` params in mm/dd/yyyy format.
-        // The start_date is (now - lookbackDays). The end_date is now.
+        // The start_date is (now - dateFilterStartDaysAgo). The end_date is (now - dateFilterEndDaysAgo).
+        // The dateFilterStartDaysAgo and dateFilterEndDaysAgo are set in Firestore -> appSettings -> dhq.dateFilterStartDaysAgo and dhq.dateFilterEndDaysAgo.
         if (useDateFiltering) {
-            const startDate = new Date(Date.now() - lookbackDays * MILLISECONDS_PER_DAY).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-            const endDate = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+            const startDate = new Date(Date.now() - dateFilterStartDaysAgo * MILLISECONDS_PER_DAY).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+            const endDate = new Date(Date.now() - dateFilterEndDaysAgo * MILLISECONDS_PER_DAY).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
 
             reportOptions.start_date = startDate;
             reportOptions.end_date = endDate;
-            console.log(`Date filtering enabled. Using start_date: ${startDate}, end_date: ${endDate}.`);
+            console.log(`Date filtering enabled. Using start_date: ${startDate}, end_date: ${endDate} (date filter range: ${dateFilterStartDaysAgo} to ${dateFilterEndDaysAgo} days ago).`);
 
         } else {
             console.log('Date filtering disabled. Processing all available data.');
@@ -894,7 +896,7 @@ const processDHQReports = async (req, res) => {
             return res.status(405).json(getResponseJSON("Method not allowed. Use POST.", 405));
         }
 
-        const { dhqStudyIDs, dhqToken, lookbackDays, recentlyCompletedDHQStudyIDs, useDateFiltering } = await getDHQConfig();
+        const { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering } = await getDHQConfig();
         
         if (recentlyCompletedDHQStudyIDs.length === 0) {
             console.log('No studies have recent DHQ completions. Skipping report processing.');
