@@ -2562,7 +2562,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             [`${activityParticipantRefusal}.${allFutureSamples}`, 'notequals', yes],// Participant has not refused all future samples
             [`${refusedAllFutureActivities}`, 'notequals', yes],// Participant has not refused all future activities
             `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${JSON.stringify(poBoxRegex.toString())}) OR NOT REGEXP_CONTAINS(d_${address1}, ${JSON.stringify(poBoxRegex.toString())})`, // Participant address is not a P.O. Box
-            `d_${isPOBox}.integer != ${yes}`,// PO Box is not checked
+            `d_${isPOBox} != ${yes}`,// PO Box is not checked
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`
         ];
