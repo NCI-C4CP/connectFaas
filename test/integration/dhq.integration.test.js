@@ -15,7 +15,6 @@ const fieldMapping = require('../../utils/fieldToConceptIdMapping');
 const { 
     createResponseDocID, 
     getDynamicChunkSize, 
-    prepareDocumentsForFirestore,
     getProcessedRespondentIds
 } = require('../../utils/dhq');
 
@@ -23,33 +22,6 @@ describe('DHQ Integration Tests', () => {
 
     // INTEGRATION TESTING
     describe('DHQ Integration Testing', () => {
-        it('should demonstrate end-to-end CSV processing', async () => {
-            
-            // Set up mock data for processing and collection data for tracking.
-            factory.setupCollectionData(`dhq3SurveyCredentials/${TEST_CONSTANTS.STUDY_IDS.DEFAULT}/responseTracking`, [
-                {
-                    id: TEST_CONSTANTS.DOCS.DHQ_ANALYSIS_RESULTS,
-                    [fieldMapping.dhq3StudyID]: TEST_CONSTANTS.STUDY_IDS.DEFAULT,
-                    [fieldMapping.dhq3ProcessedRespondentArray]: [TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, TEST_CONSTANTS.PARTICIPANT_IDS.SECOND]
-                }
-            ]);
-
-            // Set up count for available credentials.
-            factory.setupCount(`dhq3SurveyCredentials/${TEST_CONSTANTS.STUDY_IDS.DEFAULT}/availableCredentials`, 500);
-
-            // Test the processing function.
-            const testData = [
-                { 'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, 'Energy': '2000', 'Protein': '50' },
-                { 'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.SECOND, 'Energy': '1800', 'Protein': '45' },
-                { 'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.THIRD, 'Energy': '2200', 'Protein': '60' }
-            ];
-            
-            const result = prepareDocumentsForFirestore(testData, TEST_CONSTANTS.STUDY_IDS.DEFAULT, TEST_CONSTANTS.DOCS.ANALYSIS_RESULTS);
-            assertResult(result, {
-                documentCount: 3,
-                expectedIds: [TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, TEST_CONSTANTS.PARTICIPANT_IDS.SECOND, TEST_CONSTANTS.PARTICIPANT_IDS.THIRD]
-            });
-        });
 
         it('should query for participants', async () => {
             // Set up participants with different statuses
@@ -130,32 +102,6 @@ describe('DHQ Integration Tests', () => {
             expect(result).to.deep.equal({ success: true });
         });
 
-        it('should handle field name sanitization in end-to-end processing', () => {
-            // Test data with already sanitized field names (as would come from processAnalysisResultsCSV)
-            const testData = [
-                { 
-                    'Respondent ID': TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT, 
-                    'Energy_kcal': '2000',
-                    'Protein_total_g': '75.4',
-                    'star_Vitamin_A': '800',
-                    'field_123_field': '15.2',
-                    'calcium_mg': '1200'
-                }
-            ];
-            
-            const result = prepareDocumentsForFirestore(testData, TEST_CONSTANTS.STUDY_IDS.DEFAULT, 'analysisResults');
-            
-            // Verify document structure preserves sanitized field names
-            expect(result.documents).to.have.length(1);
-            expect(result.documents[0].id).to.equal(TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT);
-            
-            const data = result.documents[0].data;
-            expect(data).to.have.property('Energy_kcal', '2000');
-            expect(data).to.have.property('Protein_total_g', '75.4');
-            expect(data).to.have.property('star_Vitamin_A', '800');
-            expect(data).to.have.property('field_123_field', '15.2');
-            expect(data).to.have.property('calcium_mg', '1200');
-        });
     });
 
     describe('getProcessedRespondentIds', () => {
@@ -208,25 +154,59 @@ describe('DHQ Integration Tests', () => {
     });
 
     // PERFORMANCE AND LOAD TESTING
-    describe('Performance and Load Testing', () => {
-        it('should handle large datasets efficiently', () => {
-            const largeDataset = Array.from({ length: 10000 }, (_, i) => ({
-                'Respondent ID': `participant${i}`,
-                'Energy': (2000 + Math.random() * 1000).toFixed(2),
-                'Protein': (50 + Math.random() * 50).toFixed(2)
-            }));
+    describe('Streaming Processing', () => {
+        it('should validate streaming logic', () => {
+            const { streamCSVRows } = require('../../utils/fileProcessing');
+            
+            // Test that streamCSVRows is properly exported and functional
+            expect(streamCSVRows).to.be.a('function');
+            
+            // Test basic streaming functionality
+            const csvContent = `header1,header2
+value1,value2`;
 
-            const startTime = Date.now();
-            const result = prepareDocumentsForFirestore(largeDataset, 'study_large', 'analysisResults');
-            const endTime = Date.now();
-            const processingTime = endTime - startTime;
+            let rowCount = 0;
+            const streamTest = async () => {
+                for await (const row of streamCSVRows(csvContent)) {
+                    rowCount++;
+                    expect(row).to.be.an('array');
+                }
+            };
 
-            assertResult(result, {
-                documentCount: 10000,
-                respondentCount: 10000,
-                skippedCount: 0
+            return streamTest().then(() => {
+                expect(rowCount).to.equal(2); // Header + 1 data row
             });
-            expect(processingTime).to.be.lessThan(5000);
+        });
+
+        it('should validate memory efficiency of streaming approach', () => {
+            const { getDynamicChunkSize } = require('../../utils/dhq');
+            
+            // Test that memory management functions work correctly
+            const originalMemoryUsage = process.memoryUsage;
+            
+            try {
+                // Test various memory scenarios
+                process.memoryUsage = () => ({ heapUsed: 500 * 1024 * 1024 }); // 500MB
+                expect(getDynamicChunkSize()).to.equal(1000);
+                
+                process.memoryUsage = () => ({ heapUsed: 1200 * 1024 * 1024 }); // 1200MB  
+                expect(getDynamicChunkSize()).to.equal(500);
+                
+                process.memoryUsage = () => ({ heapUsed: 1600 * 1024 * 1024 }); // 1600MB
+                expect(getDynamicChunkSize()).to.equal(100);
+            } finally {
+                process.memoryUsage = originalMemoryUsage;
+            }
+        });
+
+        it('should validate field sanitization works correctly', () => {
+            const { sanitizeFieldName } = require('../../utils/dhq');
+            
+            // Test field sanitization without requiring Firestore
+            expect(sanitizeFieldName('Energy (kcal)')).to.equal('Energy_kcal');
+            expect(sanitizeFieldName('*Weight')).to.equal('star_Weight');
+            expect(sanitizeFieldName('Protein-total')).to.equal('Protein_total');
+            expect(sanitizeFieldName('123field')).to.equal('field_123field');
         });
     });
 });

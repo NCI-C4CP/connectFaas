@@ -2306,6 +2306,12 @@ const sanitizeObject = (obj) => {
     }, {});
 };
 
+const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
+            ? 'PROD'
+            : process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-stg-5519'
+                ? 'STAGE'
+                : 'DEV';
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -2384,5 +2390,6 @@ module.exports = {
     handleNorcBirthdayCard,
     safeJSONParse,
     uspsUrl,
-    sanitizeObject
+    sanitizeObject,
+    developmentTier
 };

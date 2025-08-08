@@ -1,7 +1,7 @@
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
-const { getResponseJSON, getSecret } = require("./shared");
-const { extractZipFiles, parseCSV, validateCSVRow } = require('./fileProcessing');
+const { getResponseJSON, getSecret, developmentTier } = require("./shared");
+const { extractZipFiles, validateCSVRow, streamCSVRows } = require('./fileProcessing');
 const { normalizeIso8601Timestamp } = require('./validation');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const db = admin.firestore();
@@ -9,6 +9,7 @@ const db = admin.firestore();
 const API_ROOT = 'https://www.dhq3.org/api-home/root/study-list/';
 const PROCESSING_CHUNK_SIZE = 1000;
 const MILLISECONDS_PER_DAY = 86400000;
+const MEMORY_WARNING_THRESHOLD = 1750;
 
 const dhqCompletionStatusMapping = {
     [fieldMapping.notStarted]: fieldMapping.dhq3NotYetBegun,
@@ -684,7 +685,7 @@ const scheduledCountDHQ3Credentials = async (req, res) => {
 
 /**
  * Get DHQ configuration from app settings and validate DHQ token.
- * @returns {Promise<Object>} - Object containing dhqStudyIDs array, dhqToken string, and lookbackDays number
+ * @returns {Promise<Object>} - Object containing dhqStudyIDs array, dhqToken string, and date filtering settings
  * @throws {Error} - If app settings not found, no study IDs, or DHQ token not found
  */
 const getDHQConfig = async () => {
@@ -699,17 +700,18 @@ const getDHQConfig = async () => {
 
     const appSettingsData = appSettingsQuery.docs[0].data();
     const dhqStudyIDs = appSettingsData.dhq.dhqStudyIDs || [];
-    const lookbackDays = appSettingsData.dhq.lookbackDays || 90; // Default to 90 days
     const useDateFiltering = appSettingsData.dhq.useDateFiltering || false;
     const useLanguageFlag = appSettingsData.dhq.useLanguageFlag || false;
+    const dateFilterStartDaysAgo = appSettingsData.dhq.dateFilterStartDaysAgo || 90; // Default to 90 days ago
+    const dateFilterEndDaysAgo = appSettingsData.dhq.dateFilterEndDaysAgo || 0; // Default to "today"
     
     if (dhqStudyIDs.length === 0) {
         throw new Error('No DHQ study IDs found in app settings.');
     }
 
-    const recentlyCompletedDHQStudyIDs = await getRecentlyCompletedDHQStudies(dhqStudyIDs, lookbackDays);
+    const recentlyCompletedDHQStudyIDs = await getRecentlyCompletedDHQStudies(dhqStudyIDs, dateFilterStartDaysAgo);
     if (recentlyCompletedDHQStudyIDs.length === 0) {
-        console.log(`No DHQ studies have been completed in the last ${lookbackDays} days.`);
+        console.log(`No DHQ studies have been completed in the last ${dateFilterStartDaysAgo} days.`);
     }
 
     const dhqToken = await getSecret(process.env.DHQ_TOKEN);
@@ -717,21 +719,21 @@ const getDHQConfig = async () => {
         throw new Error('DHQ API token not found.');
     }
 
-    return { dhqStudyIDs, dhqToken, lookbackDays, recentlyCompletedDHQStudyIDs, useDateFiltering, useLanguageFlag };
+    return { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering, useLanguageFlag, dateFilterStartDaysAgo, dateFilterEndDaysAgo };
 };
 
 /**
- * Get a list of DHQ studies with survey completions in the last n days (setting @ Firestore -> appSettings -> dhq.lookbackDays).
+ * Get a list of DHQ studies with survey completions in the last n days (setting @ Firestore -> appSettings -> dhq.dateFilterStartDaysAgo).
  * Based on query from the Firestore 'participants' collection. Limit(1) because we only need to know whether a recent completion exists.
  * We'll only process studies with survey completions in the last n days.
  * @param {Array<string>} studyIDs - Array of study IDs from appSettings.dhq.dhqStudyIDs.
- * @param {number} lookbackDays - Number of days to look back for survey completions.
+ * @param {number} dateFilterStartDaysAgo - Number of days to look back for survey completions.
  * @returns {Promise<Array<string>>} - Array of study IDs that have recent completions.
  */
-const getRecentlyCompletedDHQStudies = async (studyIDs, lookbackDays = 90) => {
+const getRecentlyCompletedDHQStudies = async (studyIDs, dateFilterStartDaysAgo = 90) => {
     // Calculate the cutoff date as an ISO string.
-    const cutoffDate = new Date(Date.now() - lookbackDays * MILLISECONDS_PER_DAY).toISOString();
-    console.log(`Looking for DHQ completions since: ${cutoffDate} (${lookbackDays} days ago)`);
+    const cutoffDate = new Date(Date.now() - dateFilterStartDaysAgo * MILLISECONDS_PER_DAY).toISOString();
+    console.log(`Looking for DHQ completions since: ${cutoffDate} (${dateFilterStartDaysAgo} days ago)`);
 
     const studyQueries = studyIDs.map(async studyID => {
         const participantsQuery = await db.collection('participants')
@@ -788,7 +790,7 @@ const generateDHQReports = async (req, res) => {
     }
 
     try {
-        const { dhqStudyIDs, dhqToken, lookbackDays, recentlyCompletedDHQStudyIDs, useDateFiltering } = await getDHQConfig();
+        const { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering, dateFilterStartDaysAgo, dateFilterEndDaysAgo } = await getDHQConfig();
 
         if (recentlyCompletedDHQStudyIDs.length === 0) {
             console.log('No studies have recent DHQ completions. Skipping report generation.');
@@ -818,14 +820,15 @@ const generateDHQReports = async (req, res) => {
 
         // Add date filtering if enabled (Firestore -> appSettings -> dhq.useDateFiltering).
         // reportOptions includes the `start_date` and `end_date` params in mm/dd/yyyy format.
-        // The start_date is (now - lookbackDays). The end_date is now.
+        // The start_date is (now - dateFilterStartDaysAgo). The end_date is (now - dateFilterEndDaysAgo).
+        // The dateFilterStartDaysAgo and dateFilterEndDaysAgo are set in Firestore -> appSettings -> dhq.dateFilterStartDaysAgo and dhq.dateFilterEndDaysAgo.
         if (useDateFiltering) {
-            const startDate = new Date(Date.now() - lookbackDays * MILLISECONDS_PER_DAY).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-            const endDate = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+            const startDate = new Date(Date.now() - dateFilterStartDaysAgo * MILLISECONDS_PER_DAY).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+            const endDate = new Date(Date.now() - dateFilterEndDaysAgo * MILLISECONDS_PER_DAY).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
 
             reportOptions.start_date = startDate;
             reportOptions.end_date = endDate;
-            console.log(`Date filtering enabled. Using start_date: ${startDate}, end_date: ${endDate}.`);
+            console.log(`Date filtering enabled. Using start_date: ${startDate}, end_date: ${endDate} (date filter range: ${dateFilterStartDaysAgo} to ${dateFilterEndDaysAgo} days ago).`);
 
         } else {
             console.log('Date filtering disabled. Processing all available data.');
@@ -887,12 +890,13 @@ const generateDHQReports = async (req, res) => {
 
 const processDHQReports = async (req, res) => {
     console.log('Processing DHQ reports for all studies.');
+    logMemoryUsage('Function start');
     try {
         if (req.method !== 'POST') {
             return res.status(405).json(getResponseJSON("Method not allowed. Use POST.", 405));
         }
 
-        const { dhqStudyIDs, dhqToken, lookbackDays, recentlyCompletedDHQStudyIDs, useDateFiltering } = await getDHQConfig();
+        const { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering } = await getDHQConfig();
         
         if (recentlyCompletedDHQStudyIDs.length === 0) {
             console.log('No studies have recent DHQ completions. Skipping report processing.');
@@ -929,7 +933,7 @@ const processDHQReports = async (req, res) => {
             for (const [fileTypeNum, fileConfig] of Object.entries(fileTypeMap)) {
                 try {
                     console.log(`\n--- Processing ${fileConfig.name} (File Type ${fileTypeNum}) for study ${studyIDToProcess} ---`);
-                    const reportData = await downloadDHQReport(studyIDToProcess, parseInt(fileTypeNum), dhqToken);
+                    let reportData = await downloadDHQReport(studyIDToProcess, parseInt(fileTypeNum), dhqToken);
 
                     if (!reportData?.data || !reportData?.contentType?.includes('zip')) {
                         throw new Error('No ZIP data received from DHQ API');
@@ -938,15 +942,28 @@ const processDHQReports = async (req, res) => {
                     let processingResult;
 
                     console.log('Extracting ZIP file contents...');
-                    const extractedFiles = await extractZipFiles(reportData.data);
+                    logMemoryUsage(`Before ZIP extraction - ${fileConfig.name}`);
+                    let extractedFiles = await extractZipFiles(reportData.data);
+                    logMemoryUsage(`After ZIP extraction - ${fileConfig.name}`);
+                    
+                    // Clear the original ZIP data to free memory
+                    reportData.data = null;
+                    reportData = null;
                     
                     for (const file of extractedFiles) {
                         if (file.filename.toLowerCase().endsWith('.csv')) {
-                            const csvContent = file.content.toString('utf8');
+
+                            logMemoryUsage(`Before CSV processing - ${fileConfig.name}`);
+                            processingResult = await fileConfig.processor(file.content.toString('utf8'), studyIDToProcess);
+                            logMemoryUsage(`After CSV processing - ${fileConfig.name}`, true);
                             
-                            processingResult = await fileConfig.processor(csvContent, studyIDToProcess);
+                            // Delete CSV content to free memory
+                            delete file.content;
                         }
                     }
+                    
+                    // Clear extracted files array
+                    extractedFiles = null;
 
                     if (processingResult?.success) {
                         console.log(`Successfully processed ${fileConfig.name}: ${processingResult.newDocuments} new documents`);
@@ -1203,121 +1220,6 @@ const updateProcessingTracking = async (studyID, collectionName, newRespondentId
 };
 
 /**
- * Process data in chunks with batch writing and tracking.
- * @param {string} studyID - The study ID
- * @param {string} collectionName - Firestore collection name
- * @param {Array} dataToProcess - Array of data to process (rows or participant entries)
- * @param {Function} documentPreparer - Function to prepare documents from data chunk
- * @param {Object} initialCounts - Initial counts for tracking
- * @returns {Promise<Object>} - Processing result
- */
-const processChunkedData = async (studyID, collectionName, dataToProcess, documentPreparer, initialCounts = {}) => {
-    let totalNewDocuments = 0;
-    let totalSkippedCount = initialCounts.skippedCount || 0;
-    let totalWriteResult = { successCount: 0, errorCount: 0, errors: [] };
-    const allSuccessfulRespondentIds = [];
-
-    const dynamicChunkSize = getDynamicChunkSize();
-    
-    for (let i = 0; i < dataToProcess.length; i += dynamicChunkSize) {
-        const chunk = dataToProcess.slice(i, i + dynamicChunkSize);
-
-        const { documents, respondentIds, skippedCount } = await documentPreparer(chunk, studyID);
-        totalSkippedCount += skippedCount;
-        
-        if (documents.length > 0) {
-            const writeResult = await batchWriteToFirestore(collectionName, documents, dynamicChunkSize);
-            totalWriteResult.successCount += writeResult.successCount;
-            totalWriteResult.errorCount += writeResult.errorCount;
-            if (writeResult.errors) totalWriteResult.errors.push(...writeResult.errors);
-
-            // Track the successfully written participant batches
-            if (writeResult.successCount === documents.length) {
-                allSuccessfulRespondentIds.push(...respondentIds);
-            } else if (writeResult.successCount > 0) {
-                console.warn(`Partial batch success: ${writeResult.successCount}/${documents.length} documents written. Skipping tracking for this chunk.`);
-            }
-            
-            totalNewDocuments += writeResult.successCount;
-        }
-    }
-
-    // Update tracking with successful participants. These participants will be skipped in future processing.
-    if (allSuccessfulRespondentIds.length > 0) {
-        await updateProcessingTracking(studyID, collectionName, allSuccessfulRespondentIds);
-    }
-
-    return {
-        totalNewDocuments,
-        totalSkippedCount,
-        totalWriteResult,
-        allSuccessfulRespondentIds
-    };
-};
-
-/**
- * Prepare documents for CSV processing (analysis results, detailed analysis, and raw answers files)
- * @param {Array} chunk - Chunk of data to process
- * @param {string} studyID - The study ID
- * @param {string} dataType - Type of data being processed ('analysisResults', 'detailedAnalysis', or 'rawAnswers')
- * @returns {Object} - Object with documents, respondentIds, and skippedCount
- */
-const prepareDocumentsForFirestore = (chunk, studyID, dataType) => {
-    const documents = [];
-    const respondentIds = [];
-    let skippedCount = 0;
-    
-    for (const item of chunk) {
-        let respondentId, documentData;
-        
-        if (dataType === 'detailedAnalysis') {
-            // For detailed analysis, the chunk contains pre-prepared documents
-            const { id, data } = item;
-            respondentId = data[fieldMapping.dhq3Username];
-            
-            if (!respondentId) {
-                console.warn(`Could not find respondent ID in document:`, id);
-                skippedCount++;
-                continue;
-            }
-            
-            documents.push({ id, data });
-            respondentIds.push(respondentId);
-            continue; // Skip the standard document processing below
-
-        } else if (dataType === 'analysisResults') {
-            respondentId = item['Respondent ID'];
-            documentData = { 
-                ...item,
-                [fieldMapping.dhq3Username]: respondentId,
-                [fieldMapping.dhq3StudyID]: studyID,
-                [fieldMapping.dhq3ResponseProcessedTime]: new Date().toISOString(),
-            };
-            delete documentData['Respondent ID'];
-
-        } else if (dataType === 'rawAnswers') {
-            respondentId = item[0];
-            documentData = item[1];
-            
-        } else {
-            throw new Error(`Invalid data type in prepareDocumentsForFirestore(): ${dataType}`);
-        }
-        
-        const docId = createResponseDocID(respondentId);
-        if (!docId) {
-            console.warn(`Could not create document ID for respondent:`, respondentId);
-            skippedCount++;
-            continue;
-        }
-        
-        documents.push({ id: docId, data: documentData });
-        respondentIds.push(respondentId);
-    }
-    
-    return { documents, respondentIds, skippedCount };
-};
-
-/**
  * Sanitize keys names for BigQuery compatibility
  * Handles special characters in DHQ keys, such as "()-* ".
  * BigQuery allows: letters, numbers, and underscores
@@ -1355,235 +1257,401 @@ const sanitizeFieldName = (fieldName) => {
 
 /**
  * Process Analysis Results CSV and write to dhqAnalysisResults collection.
- * This version processes the data in chunks to conserve memory.
+ * This CSV file has a header and one row per respondent.
+ * Firestore: one document per respondent. Batching speeds up processing.
  * @param {string} csvContent - The CSV content as a string.
  * @param {string} studyID - The study ID for tracking purposes.
  * @returns {Promise<Object>} - Processing result with success/failure counts.
  */
 const processAnalysisResultsCSV = async (csvContent, studyID) => {
     const collectionName = 'dhqAnalysisResults';
-    
+
     if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
-    
-    const parsedData = parseCSV(csvContent);
-    
-    if (parsedData.length === 0) {
-        return { success: true, message: 'No data found in CSV', newDocuments: 0 };
-    }
-    
+
     const processedIds = await getProcessedRespondentIds(studyID, collectionName);
-    console.log('Processing Analysis Results CSV for study', studyID, 'Rows:', parsedData.length, 'Found:', processedIds.size, 'already processed IDs.');
-    
-    // Filter out rows that have already been processed or are invalid.
-    const allRows = [];
-    let initialSkippedCount = 0;
-    for (const row of parsedData) {
-        const respondentId = row['Respondent ID'];
-        const validation = validateCSVRow(row, ['Respondent ID']);
-        if (!respondentId || processedIds.has(respondentId) || !validation.isValid) {
-            if (!respondentId || !validation.isValid) {
-                console.warn(`Analysis Results: Skipping row with missing required fields:`, validation.missingFields);
+    console.log('Streaming Analysis Results CSV for study', studyID, 'Already processed IDs:', processedIds.size);
+    logMemoryUsage(`Starting ${collectionName} processing`);
+
+    const dynamicBatchSize = Math.min(getDynamicChunkSize(), 500);
+    let headerRow = null;
+    let respondentIdIdx = -1;
+    let totalRows = 0;
+    let skippedRespondents = 0;
+    let newDocuments = 0;
+
+    let batch = db.batch();
+    let batchCount = 0;
+    let batchRespondentIds = [];
+    const successfulRespondentIds = [];
+
+    for await (const row of streamCSVRows(csvContent)) {
+        // First non-comment line is the header
+        if (!headerRow) {
+            headerRow = row.map(h => (h || '').toString().trim());
+            respondentIdIdx = headerRow.indexOf('Respondent ID');
+            if (respondentIdIdx === -1) {
+                throw new Error('Respondent ID column not found in Analysis Results CSV');
             }
-            initialSkippedCount++;
             continue;
         }
-        
-        // Sanitize all field names in the row for BigQuery compatibility
-        const sanitizedRow = {};
-        for (const [key, value] of Object.entries(row)) {
-            if (key === 'Respondent ID') {
-                sanitizedRow[key] = value; // Respondent ID is handled separately
-            } else {
-                const sanitizedKey = sanitizeFieldName(key);
-                sanitizedRow[sanitizedKey] = value;
-            }
+
+        totalRows++;
+        const respondentId = row[respondentIdIdx];
+
+        if (!respondentId || processedIds.has(respondentId)) {
+            skippedRespondents++;
+            continue;
         }
-        
-        allRows.push(sanitizedRow);
+
+        const documentData = {};
+        for (let i = 0; i < headerRow.length; i++) {
+            if (i === respondentIdIdx) continue;
+            const key = sanitizeFieldName(headerRow[i]);
+            documentData[key] = row[i];
+        }
+        documentData[fieldMapping.dhq3Username] = respondentId;
+        documentData[fieldMapping.dhq3StudyID] = studyID;
+        documentData[fieldMapping.dhq3ResponseProcessedTime] = new Date().toISOString();
+
+        const docId = createResponseDocID(respondentId);
+        if (!docId) {
+            skippedRespondents++;
+            continue;
+        }
+
+        const docRef = db.collection(collectionName).doc(docId);
+        batch.set(docRef, documentData, { merge: true });
+        batchCount++;
+        batchRespondentIds.push(respondentId);
+
+        if (batchCount >= dynamicBatchSize) {
+            try {
+                await batch.commit();
+                newDocuments += batchCount;
+                successfulRespondentIds.push(...batchRespondentIds);
+                logMemoryUsage(`Batch committed - ${newDocuments} documents processed`);
+            } catch (err) {
+                console.error('Error committing Analysis Results batch:', err);
+            }
+            batch = db.batch();
+            batchCount = 0;
+            batchRespondentIds = [];
+        }
     }
 
-    const chunkResult = await processChunkedData(
-        studyID,
-        collectionName, 
-        allRows, 
-        (chunk, studyID) => prepareDocumentsForFirestore(chunk, studyID, 'analysisResults'),
-        { skippedCount: initialSkippedCount }
-    );
-    
+    // Handle the last batch
+    if (batchCount > 0) {
+        try {
+            await batch.commit();
+            newDocuments += batchCount;
+            successfulRespondentIds.push(...batchRespondentIds);
+            logMemoryUsage(`Batch committed - ${newDocuments} documents processed`);
+        } catch (e) {
+            console.error('Error committing final Analysis Results batch:', e);
+        }
+    }
+
+    // Update tracking collection
+    if (successfulRespondentIds.length > 0) {
+        try {
+            await updateProcessingTracking(studyID, collectionName, successfulRespondentIds);
+        } catch (error) {
+            console.error('Error updating processing tracking:', error);
+        }
+    }
+
+    logMemoryUsage(`Completed ${collectionName} processing`, true);
+
     return {
         success: true,
-        collectionName: collectionName,
-        totalRows: parsedData.length,
-        newDocuments: chunkResult.totalNewDocuments,
-        skippedCount: chunkResult.totalSkippedCount,
-        writeResult: chunkResult.totalWriteResult
+        collectionName,
+        totalRows,
+        newDocuments,
+        skippedRespondents,
     };
 };
 
 /**
  * Process Detailed Analysis CSV and write to dhqDetailedAnalysis collection.
+ * This CSV file has a header and one row per question per respondent (variable number of rows per respondent depending on the respondent's answers)
  * @param {string} csvContent - The CSV content as a string.
  * @param {string} studyID - The study ID for tracking purposes.
  * @returns {Promise<Object>} - Processing result with success/failure counts.
  */
 const processDetailedAnalysisCSV = async (csvContent, studyID) => {
     const collectionName = 'dhqDetailedAnalysis';
-    
-    if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
-    
-    const parsedData = parseCSV(csvContent);
 
-    if (parsedData.length === 0) {
-        return { success: true, message: 'No data found in CSV', newDocuments: 0 };
-    }
-    
+    if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
+
     const processedIds = await getProcessedRespondentIds(studyID, collectionName);
-    console.log('Processing Detailed Analysis CSV for study', studyID, 'Rows:', parsedData.length, 'Found:', processedIds.size, 'already processed IDs.');
-    
-    const allDocuments = [];
-    let skippedRowCount = 0;
-    const skippedParticipants = new Set();
-    
-    for (const row of parsedData) {
-        const respondentId = row['Respondent ID'];
-        const validation = validateCSVRow(row, ['Respondent ID', 'Question ID']);
-        if (!respondentId || processedIds.has(respondentId) || !validation.isValid) {
-            skippedRowCount++;
-            if (respondentId) {
-                skippedParticipants.add(respondentId);
+    console.log('Streaming Detailed Analysis CSV for study', studyID, 'Already processed IDs:', processedIds.size);
+    logMemoryUsage(`Starting ${collectionName} processing`);
+
+    let headerRow = null;
+    let respondentIdIdx = -1;
+    let questionIdIdx = -1;
+    let foodIdIdx = -1;
+    let totalRows = 0;
+    let skippedRows = 0;
+    let skippedRespondents = new Set();
+    let newDocuments = 0;
+
+    let currentRespondent = null;
+    let currentRespondentBatch = db.batch();
+    let currentRespondentDocCount = 0;
+    const successfulRespondentIds = [];
+    const dynamicBatchSize = Math.min(getDynamicChunkSize(), 500);
+
+    // Write current respondent batch with optional completion tracking
+    async function writeCurrentRespondent(isCompleteRespondent = false) {
+        if (!currentRespondent || currentRespondentDocCount === 0) return;
+        
+        try {
+            await currentRespondentBatch.commit();
+            newDocuments += currentRespondentDocCount;
+            
+            // Only track respondent as complete when finishing all their documents
+            if (isCompleteRespondent) {
+                successfulRespondentIds.push(currentRespondent);
+            }
+            
+        } catch (error) {
+            const batchType = isCompleteRespondent ? 'respondent' : 'partial batch';
+            console.error(`Error committing ${batchType} for ${currentRespondent}:`, error);
+        }
+        
+        // Reset batch for next set of documents
+        currentRespondentBatch = db.batch();
+        currentRespondentDocCount = 0;
+    }
+
+    for await (const row of streamCSVRows(csvContent)) {
+        if (!headerRow) {
+            headerRow = row.map(h => (h || '').toString().trim());
+            respondentIdIdx = headerRow.indexOf('Respondent ID');
+            questionIdIdx = headerRow.indexOf('Question ID');
+            foodIdIdx = headerRow.indexOf('Food ID');
+            if (respondentIdIdx === -1 || questionIdIdx === -1) {
+                throw new Error('Required columns missing in Detailed Analysis CSV');
             }
             continue;
         }
 
-        // Format question ID to three digits (Q001, Q002, etc.)
-        // Detailed Analysis receives just the number (1, 2, 3). Add "Q" prefix.
-        const questionId = row['Question ID'];
-        const formattedQuestionId = `Q${questionId.padStart(3, '0')}`;
-        const foodId = row['Food ID']?.replace(/[. ]/g, '_');
-        
-        // Create document ID: {Username}_{QuestionID}_{FoodID}
-        const documentId = `${respondentId}_${formattedQuestionId}_${foodId}`;
+        totalRows++;
+        const respondentId = row[respondentIdIdx];
+        const questionIdRaw = row[questionIdIdx];
+        const foodIdRaw = foodIdIdx !== -1 ? row[foodIdIdx] : undefined;
 
-        const rowData = { ...row };
-        delete rowData['Respondent ID'];
-        
-        // Sanitize all field names within the rowData object
-        const sanitizedRowData = {};
-        for (const [key, value] of Object.entries(rowData)) {
-            const sanitizedKey = sanitizeFieldName(key);
-            sanitizedRowData[sanitizedKey] = value;
+        if (!respondentId || skippedRespondents.has(respondentId) || processedIds.has(respondentId) || !questionIdRaw) {
+            skippedRows++;
+            skippedRespondents.add(respondentId);
+            continue;
         }
-        
-        // Create individual document for this question-food combination
+
+        // Write the previous respondent once we encounter a new one. That respondent's processing is completed.
+        if (currentRespondent !== respondentId) {
+            await writeCurrentRespondent(true);
+            currentRespondent = respondentId;
+        }
+
+        const formattedQuestionId = `Q${questionIdRaw.toString().padStart(3, '0')}`;
+        const foodIdSanitized = foodIdRaw ? foodIdRaw.replace(/[. ]/g, '_') : 'NONE';
+        const docId = `${respondentId}_${formattedQuestionId}_${foodIdSanitized}`;
+
+        const rowData = {};
+        for (let i = 0; i < headerRow.length; i++) {
+            if (i === respondentIdIdx) continue;
+            const key = sanitizeFieldName(headerRow[i]);
+            rowData[key] = row[i];
+        }
+
         const documentData = {
             [fieldMapping.dhq3Username]: respondentId,
             [fieldMapping.dhq3StudyID]: studyID,
             [fieldMapping.dhq3ResponseProcessedTime]: new Date().toISOString(),
-            ...sanitizedRowData
+            ...rowData,
         };
-        
-        allDocuments.push({ id: documentId, data: documentData });
+
+        // Add to current respondent's batch and check batch size
+        const docRef = db.collection(collectionName).doc(docId);
+        currentRespondentBatch.set(docRef, documentData, { merge: true });
+        currentRespondentDocCount++;
+
+        // Commit partial batch if needed
+        if (currentRespondentDocCount >= dynamicBatchSize) {
+            await writeCurrentRespondent(false);
+        }
     }
-    
-    console.log(`Created ${allDocuments.length} individual documents. Skipped rows: ${skippedRowCount}`);
-    
-    const chunkResult = await processChunkedData(
-        studyID,
-        collectionName, 
-        allDocuments, 
-        (chunk, studyID) => prepareDocumentsForFirestore(chunk, studyID, 'detailedAnalysis'),
-        { skippedCount: 0 }
-    );
+
+    // Write the final respondent, then update tracking
+    await writeCurrentRespondent(true);
+
+    if (successfulRespondentIds.length > 0) {
+        try {
+            await updateProcessingTracking(studyID, collectionName, successfulRespondentIds);
+        } catch (error) {
+            console.error('Error updating processing tracking:', error);
+        }
+    }
+
+    logMemoryUsage(`Completed ${collectionName} processing`, true);
 
     return {
         success: true,
-        collectionName: collectionName,
-        totalRows: parsedData.length,
-        newDocuments: chunkResult.totalNewDocuments,
-        skippedRows: skippedRowCount,
-        skippedParticipants: skippedParticipants.size + chunkResult.totalSkippedCount,
-        writeResult: chunkResult.totalWriteResult
+        collectionName,
+        totalRows,
+        newDocuments,
+        skippedRows,
+        skippedRespondents: skippedRespondents.size,
     };
 };
 
 /**
  * Process Raw Answers CSV and write to dhqRawAnswers collection.
+ * This CSV file has a header and one row per question per respondent (e.g. 700+ rows per respondent).
+ * Firestore: one document per respondent. Write once accumulated per respondent.No batching.
  * @param {string} csvContent - The CSV content as a string.
  * @param {string} studyID - The study ID for tracking purposes.
  * @returns {Promise<Object>} - Processing result with success/failure counts.
  */
 const processRawAnswersCSV = async (csvContent, studyID) => {
     const collectionName = 'dhqRawAnswers';
-    
-    if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
-    
-    const parsedData = parseCSV(csvContent);
-    
-    if (parsedData.length === 0) {
-        return { success: true, message: 'No data found in CSV', newDocuments: 0 };
-    }
-    
-    const processedIds = await getProcessedRespondentIds(studyID, collectionName);
-    console.log('Processing Raw Answers CSV for study', studyID, 'Rows:', parsedData.length, 'Found:', processedIds.size, 'already processed IDs.');
 
-    const participantData = {};
-    let skippedRowCount = 0;
-    const skippedParticipants = new Set();
-    
-    for (const row of parsedData) {
-        const respondentId = row['Respondent Login ID'];
-        const validation = validateCSVRow(row, ['Respondent Login ID', 'Question ID', 'Answer']);
-        if (!respondentId || processedIds.has(respondentId) || !validation.isValid) {
-            skippedRowCount++;
-            if (respondentId) {
-                skippedParticipants.add(respondentId);
+    if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
+
+    const processedIds = await getProcessedRespondentIds(studyID, collectionName);
+    console.log('Streaming Raw Answers CSV for study', studyID, 'Already processed IDs:', processedIds.size);
+    logMemoryUsage(`Starting ${collectionName} processing`);
+
+    let headerRow = null;
+    let respondentIdx = -1;
+    let questionIdx = -1;
+    let answerIdx = -1;
+    let totalRows = 0;
+    let skippedRows = 0;
+    let newDocuments = 0;
+
+    // Process one respondent at a time
+    let currentRespondent = null;
+    let currentRespondentData = null;
+    const successfulRespondentIds = new Set();
+    const skippedRespondents = new Set();
+
+    async function writeCurrentRespondent() {
+        if (!currentRespondent || !currentRespondentData) return;
+        
+        try {
+            const docId = createResponseDocID(currentRespondent);
+            if (!docId) {
+                console.warn(`Could not create document ID for respondent: ${currentRespondent}`);
+                return;
+            }
+            
+            const docRef = db.collection(collectionName).doc(docId);
+            await docRef.set(currentRespondentData, { merge: true });
+            newDocuments++;
+            successfulRespondentIds.add(currentRespondent);
+            
+        } catch (error) {
+            console.error(`Error writing respondent ${currentRespondent}:`, error);
+        }
+    }
+
+    for await (const row of streamCSVRows(csvContent)) {
+        if (!headerRow) {
+            headerRow = row.map(h => (h || '').toString().trim());
+            respondentIdx = headerRow.indexOf('Respondent Login ID');
+            questionIdx = headerRow.indexOf('Question ID');
+            answerIdx = headerRow.indexOf('Answer');
+            if (respondentIdx === -1 || questionIdx === -1 || answerIdx === -1) {
+                throw new Error('Required columns missing in Raw Answers CSV');
             }
             continue;
         }
-        
-        const questionId = row['Question ID'];
-        const answer = row['Answer'];
-        
-        if (!participantData[respondentId]) {
-            participantData[respondentId] = {
+
+        totalRows++;
+        const respondentId = row[respondentIdx];
+        const questionIdRaw = row[questionIdx];
+        const answer = row[answerIdx];
+
+        if (!respondentId || processedIds.has(respondentId) || !questionIdRaw) {
+            skippedRows++;
+            skippedRespondents.add(respondentId);
+            continue;
+        }
+
+        if (answer === '.') { // Skip missing answers
+            continue;
+        }
+
+        // Write the previous respondent once we encounter a new one
+        if (currentRespondent !== respondentId) {
+            await writeCurrentRespondent();
+            
+            // Start new respondent
+            currentRespondent = respondentId;
+            currentRespondentData = {
                 [fieldMapping.dhq3Username]: respondentId,
                 [fieldMapping.dhq3StudyID]: studyID,
                 [fieldMapping.dhq3ResponseProcessedTime]: new Date().toISOString(),
             };
         }
-        
-        // Missing answers are stored as '.' in the CSV from DHQ. Skip them.
-        if (answer !== '.') {
-            // Format question ID to three digits (Q001, Q002, etc.)
-            // Raw Answers receives "Q1", "Q2", etc., Extract the number and reformat
-            const formattedQuestionId = questionId.replace(/^Q(\d+)$/, (match, num) => {
-                return `Q${num.padStart(3, '0')}`;
-            });
-            const sanitizedQuestionId = sanitizeFieldName(formattedQuestionId);
-            participantData[respondentId][sanitizedQuestionId] = answer;
+
+        // Add question to current respondent
+        const formattedQuestionId = questionIdRaw.replace(/^Q(\d+)$/, (match, num) => `Q${num.padStart(3, '0')}`);
+        const sanitizedQuestionId = sanitizeFieldName(formattedQuestionId);
+        currentRespondentData[sanitizedQuestionId] = answer;
+    }
+
+    // Write the final respondent
+    await writeCurrentRespondent();
+
+    if (successfulRespondentIds.size > 0) {
+        try {
+            await updateProcessingTracking(studyID, collectionName, Array.from(successfulRespondentIds));
+        } catch (error) {
+            console.error('Error updating processing tracking:', error);
         }
     }
-    
-    console.log(`Grouped data for ${Object.keys(participantData).length} new participants. Skipped rows: ${skippedRowCount}`);
-    
-    const participantEntries = Object.entries(participantData);
-    const chunkResult = await processChunkedData(
-        studyID,
-        collectionName, 
-        participantEntries, 
-        (chunk, studyID) => prepareDocumentsForFirestore(chunk, studyID, 'rawAnswers'),
-        { skippedCount: 0 }
-    );
+
+    logMemoryUsage(`Completed ${collectionName} processing`, true);
 
     return {
         success: true,
-        collectionName: collectionName,
-        totalRows: parsedData.length,
-        newDocuments: chunkResult.totalNewDocuments,
-        skippedRows: skippedRowCount,
-        skippedParticipants: skippedParticipants.size + chunkResult.totalSkippedCount,
-        writeResult: chunkResult.totalWriteResult
+        collectionName,
+        totalRows,
+        newDocuments,
+        skippedRows,
+        skippedRespondents: skippedRespondents.size,
     };
+};
+
+/**
+ * Log current memory usage with context for monitoring
+ * @param {string} context - Description of current operation
+ * @param {boolean} forceGC - Whether to force garbage collection (if --expose-gc enabled)
+ */
+const logMemoryUsage = (context, forceGC = false) => {
+    if (forceGC && global.gc) {
+        global.gc();
+    }
+    
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const externalMB = Math.round(memUsage.external / 1024 / 1024);
+    const rssMB = Math.round(memUsage.rss / 1024 / 1024);
+
+    // Log memory usage in dev only. Warn in all envs if memory usage is high.
+    if (developmentTier === 'DEV') {
+        console.log(`MEMORY: ${context}: Heap Used: ${heapUsedMB}MB, Heap Total: ${heapTotalMB}MB, External: ${externalMB}MB, RSS: ${rssMB}MB`);
+    }
+
+    if (heapUsedMB > MEMORY_WARNING_THRESHOLD) {
+        console.warn(`MEMORY WARNING: High memory usage detected (${heapUsedMB}MB) during: ${context}`);
+    }
+    
+    return { heapUsedMB, heapTotalMB, externalMB, rssMB };
 };
 
 module.exports = {
@@ -1605,7 +1673,6 @@ module.exports = {
     batchWriteToFirestore,
     createResponseDocID,
     getDynamicChunkSize,
-    processChunkedData,
-    prepareDocumentsForFirestore,
-    sanitizeFieldName
-}
+    sanitizeFieldName,
+    logMemoryUsage
+};
