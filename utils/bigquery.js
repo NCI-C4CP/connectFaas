@@ -82,9 +82,10 @@ async function getParticipantsForNotificationsBQ({
   return rows.map(convertToFirestoreData);
 }
 
-async function getParticipantsForRequestAKitBQ(conditions = [], sorts = [], limit) {
+async function getParticipantsForRequestAKitBQ(conditions = [], sorts = [], limit, selectFields = []) {
   let bqConditionArray = [];
   let bqSortArray = [];
+
 
   for (const condition of conditions) {
     if (typeof condition === "string") {
@@ -105,15 +106,22 @@ async function getParticipantsForRequestAKitBQ(conditions = [], sorts = [], limi
     bqSortArray.push(`${bqKey}${sortOrder ? ` ${sortOrder}` : ''}`)
   }
 
-  const queryStr = `SELECT token FROM \`Connect.participants\` 
+  const queryStr = `SELECT Connect_ID, token${selectFields.length ? ` ${selectFields.join(', ')}` : ''} FROM \`Connect.participants\` 
   ${bqConditionArray.length ? `WHERE ${bqConditionArray.join(" AND ")}` : ''} 
   ORDER BY ${bqSortArray.length ? bqSortArray.join(', ') : `token`} ${limit ? `LIMIT ${limit}` : ''}
   `;
-  
-  const [rows] = await bigquery.query(queryStr);
-  if (rows.length === 0) return [];
 
-  return rows.map(convertToFirestoreData);
+  try {
+    const [rows] = await bigquery.query(queryStr);
+
+    return {queryStr, rows: rows.map(convertToFirestoreData)};
+  } catch(err) {
+    // There are reasonable odds this will happen due to user error in
+    // building SQL conditions, so show them the full query for debugging
+    console.error(err);
+    throw new Error(`Error processing query string ${queryStr}: ${err?.message || err}`)
+  }
+  
 }
 
 /**
