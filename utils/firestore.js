@@ -2512,7 +2512,7 @@ const retrieveRequestAKitConditions = async (id, selectFields) => {
     // Currently there is only one requestAKitConditions document per app
     // but this is built to allow for the possibility
     // of multiple requestAKitConditions being created in the future
-    if(id) {
+    if (id) {
         query = query.doc(id);
     }
     if(selectFields) {
