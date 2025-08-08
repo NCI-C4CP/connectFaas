@@ -251,6 +251,8 @@ module.exports = {
      initialKit: 663273321,
      replacementKit1: 389478821,
      replacementKit2: 772116457,
+     kitRequestEligible: 638781731,
+     dtEligibleToKitRequest: 278539982,
      withdrawConsent: 747006172,
      activityParticipantRefusal: 685002411,
      allFutureSamples: 352996056, // Nested under activityParticipantRefusal

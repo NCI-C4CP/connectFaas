@@ -2507,6 +2507,121 @@ const getSiteDetailsWithSignInProvider = async (acronym) => {
     return snapshot.docs[0].data();
 }
 
+const retrieveRequestAKitConditions = async (id, selectFields) => {
+    let query = db.collection("requestAKitConditions");
+    // Currently there is only one requestAKitConditions document per app
+    // but this is built to allow for the possibility
+    // of multiple requestAKitConditions being created in the future
+    if (id) {
+        query = query.doc(id);
+    }
+    if(selectFields) {
+        query = query.select(...selectFields);
+    }
+    const snapshot = await query.get();
+    if(!snapshot.size) {
+        return {};
+    }
+    if(snapshot.size === 1) {
+        return {...snapshot.docs[0].data(), id: snapshot.docs[0].id};
+    }
+    throw new Error(`Multiple requestAKitConditions records found; ${id ? 'ID ' + id + ' has multiple entries' : 'Please specify ID'}.`);
+}
+
+const updateRequestAKitConditions = async(data, docId) => {
+    const docInfo = await retrieveRequestAKitConditions(docId);
+    if(!docInfo?.id) {
+        const res = await db.collection('requestAKitConditions').add(data);
+        return {success: true, docId: res.id};
+    }
+    await db.collection("requestAKitConditions").doc(docInfo.id).update(data);
+    return {success: true, docId: docId};
+}
+
+const processRequestAKitConditions = async (updateDb, docId) => {
+    const requestAKitConditions = await retrieveRequestAKitConditions(docId);
+    if(requestAKitConditions) {
+        const { bioKitMouthwash, collectionDetails, baseline, 
+            kitRequestEligible, dtEligibleToKitRequest, kitStatus, pending, yes,
+            withdrawConsent, participantMap: {destroyData}, participantDeceased, participantDeceasedNORC, 
+            verificationStatus, verified, activityParticipantRefusal, baselineMouthwashSample, 
+            allFutureSamples, refusedAllFutureActivities,
+            physicalAddress1, address1, isPOBox
+
+        } = fieldMapping;
+        const poBoxRegex = /^(?:P\.?\s*O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
+
+        let conditionsArr = [
+            // Automatically applied conditions, per request
+            [`${verificationStatus}`, 'equals', verified], // Participant is verified
+            [`${withdrawConsent}`, 'notequals', yes], // Participant has not withdrawn consent
+            [`${destroyData}`, 'notequals', yes], // Participant data is not being destroyed
+            [`${participantDeceased}`, 'notequals', yes], // Participant is not deceased
+            [`${participantDeceasedNORC}`, 'notequals', yes], // Participant is not deceased per NORC
+            [`${activityParticipantRefusal}.${baselineMouthwashSample}`, 'notequals', yes], // Participant has not refused baseline mouthwash sample
+            [`${activityParticipantRefusal}.${allFutureSamples}`, 'notequals', yes],// Participant has not refused all future samples
+            [`${refusedAllFutureActivities}`, 'notequals', yes],// Participant has not refused all future activities
+            `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${JSON.stringify(poBoxRegex.toString())}) OR NOT REGEXP_CONTAINS(d_${address1}, ${JSON.stringify(poBoxRegex.toString())})`, // Participant address is not a P.O. Box
+            `d_${isPOBox} != ${yes}`,// PO Box is not checked
+            // Participant initial kit status is pending or blank
+            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`
+        ];
+        let sortsArr = [];
+        const {conditions, sorts, limit} = requestAKitConditions;
+        if(conditions) {
+            conditionsArr = conditionsArr.concat(JSON.parse(conditions));
+        }
+        if(sorts) {
+            sortsArr = JSON.parse(sorts);
+        }
+        const {getParticipantsForRequestAKitBQ} = require('./bigquery');
+        const {queryStr, rows} = await getParticipantsForRequestAKitBQ(conditionsArr, sortsArr, updateDb ? limit : undefined);
+        const participantsToUpdate = rows.map(row => row.token);
+
+        if(updateDb) {
+            // Update the corresponding participants via batches in Firestore to have the appropriate
+            // status and date
+            let snapshot;
+            let batch;
+            let start = 0;
+            const maxSize = 30;
+            const runTimestamp = new Date().toISOString();
+
+            do {
+                batch = db.batch();
+                let query = db.collection('participants')
+                    .where('token', 'in', participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length)))
+                    .select(`${collectionDetails}`);
+
+                
+                snapshot = await query.get();
+                if (snapshot.empty) {
+                    console.log('No participants found.');
+                    break;
+                }
+                
+                for (const doc of snapshot.docs) {
+                    const docData = doc.data();
+                    const updatedData = {
+                        [`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitRequestEligible}`]: yes,
+                        [`${collectionDetails}.${baseline}.${bioKitMouthwash}.${dtEligibleToKitRequest}`]: docData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dtEligibleToKitRequest] || runTimestamp, // dtEligibleToKitRequest cannot be overwritten if it has already been set
+                    };
+
+                    batch.update(doc.ref, updatedData);
+                }
+
+                await batch.commit();
+                start += maxSize;
+                
+            } while (snapshot.size === maxSize);
+        }
+        
+
+        return {queryStr, count: participantsToUpdate.length};
+    }
+
+}
+
 const retrieveNotificationSchemaByID = async (id) => {
   const snapshot = await db.collection("notificationSpecifications").where("id", "==", id).get();
   printDocsCount(snapshot, "retrieveNotificationSchemaByID");
@@ -5244,6 +5359,9 @@ module.exports = {
     storeSSN,
     getTokenForParticipant,
     getSiteDetailsWithSignInProvider,
+    retrieveRequestAKitConditions,
+    updateRequestAKitConditions,
+    processRequestAKitConditions,
     retrieveNotificationSchemaByID,
     retrieveNotificationSchemaByCategory,
     storeNewNotificationSchema,
