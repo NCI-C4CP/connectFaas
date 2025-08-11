@@ -532,13 +532,22 @@ const SSOValidation = async (dashboardType, idToken) => {
         const { validateMultiTenantIDToken } = require('./firestore');
         const decodedToken = await validateMultiTenantIDToken(idToken, tenant);
 
+        console.log("Decoded Token:", decodedToken);
+
         if(decodedToken instanceof Error) {
             return false;
         }
 
         const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]['group']];
+
+        console.log("All Groups:", allGroups);
+
         if(!allGroups) return;
         const email = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]['email']];
+
+        console.log("Email:", email);
+
+        console.log("Attributes:", decodedToken.firebase.sign_in_attributes);
 
         if(!SSOConfig[tenant][dashboardType]) return false;
         let requiredGroups = new RegExp(SSOConfig[tenant][dashboardType], 'g').test(allGroups.toString());
