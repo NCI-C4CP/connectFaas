@@ -1372,6 +1372,7 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
  */
 const processDetailedAnalysisCSV = async (csvContent, studyID) => {
     const collectionName = 'dhqDetailedAnalysis';
+    const trackingBatchSize = 25; // Number of respondents for responseTracking update
 
     if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
 
@@ -1391,7 +1392,22 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
     let currentRespondent = null;
     let currentRespondentBatch = db.batch();
     let currentRespondentDocCount = 0;
+    let successfulRespondentIds = new Set();
+    
     const dynamicBatchSize = Math.min(getDynamicChunkSize(), 500);
+
+    // Flush tracking buffer when the threshold is reached or on final flush
+    async function flushTrackingBuffer(force = false) {
+        const shouldFlush = force ? successfulRespondentIds.size > 0 : successfulRespondentIds.size >= trackingBatchSize;
+        if (!shouldFlush) return;
+        try {
+            await updateProcessingTracking(studyID, collectionName, Array.from(successfulRespondentIds));
+            successfulRespondentIds.clear();
+        } catch (trackingError) {
+            const context = force ? `final process tracking update: (${successfulRespondentIds.size}) respondents` : `buffered respondents (${successfulRespondentIds.size})`;
+            console.error(`Error flushing ${context}:`, trackingError);
+        }
+    }
 
     // Write current respondent batch with optional completion tracking
     async function writeCurrentRespondent(isCompleteRespondent = false) {
@@ -1402,13 +1418,10 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
             newDocuments += currentRespondentDocCount;
             
             // Only track respondent as complete when finishing all their documents
-            // Immediately update responseTracking since this CSV can be massive
+            // Batch responseTracking updates since this CSV can be massive
             if (isCompleteRespondent) {
-                try {
-                    await updateProcessingTracking(studyID, collectionName, [currentRespondent]);
-                } catch (trackingError) {
-                    console.error(`Error updating processing tracking for ${currentRespondent}:`, trackingError);
-                }
+                successfulRespondentIds.add(currentRespondent);
+                await flushTrackingBuffer(false);
             }
             
         } catch (error) {
@@ -1481,6 +1494,9 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
 
     // Write the final respondent and update responseTracking
     await writeCurrentRespondent(true);
+
+    // Flush the remaining tracking updates
+    await flushTrackingBuffer(true);
 
     logMemoryUsage(`Completed ${collectionName} processing`, true);
 
