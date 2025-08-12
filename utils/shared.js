@@ -294,6 +294,7 @@ const listOfCollectionsRelatedToDataDestruction = [
     "dhqAnalysisResults",
     "dhqDetailedAnalysis",
     "dhqRawAnswers",
+    "cancerOccurrence",
 ];
 
 const incentiveConcepts = {
