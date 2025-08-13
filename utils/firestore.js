@@ -2315,7 +2315,7 @@ const getSpecimenCollections = async (token, siteCode) => {
 const preQueryBuilder = (filters, query, trackingId, endDate, startDate, source, siteCode) => {
     if (Object.keys(filters).length === 0 && source === `bptlShippingReport`) {
         const currentDate = new Date(new Date().getTime()).toISOString();
-        const dateTwoWeeksAgo = new Date(new Date().getTime() - (1209600000)).toISOString();
+        const dateTwoWeeksAgo = new Date(new Date().getTime() - (1209600000)).toISOString(); // 1209600000 m/s = 14 days
         return query.where('656548982', '>=', dateTwoWeeksAgo).where('656548982', '<=', currentDate)
     }
     else {
@@ -2333,6 +2333,9 @@ const buildQueryWithFilters = (query, trackingId, endDate, startDate, source, si
 
 // TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
 const getBoxesPagination = async (siteCode, body) => {
+    console.log("🚀 ~ getBoxesPagination ~ body:", body)
+    console.log("🚀 ~ getBoxesPagination ~ siteCode:", siteCode)
+
     const currPage = body.pageNumber;
     const orderByField = body.orderBy;
     const elementsPerPage = body.elementsPerPage;
@@ -2341,18 +2344,97 @@ const getBoxesPagination = async (siteCode, body) => {
     const startDate = filters.startDate ?? ``;
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
+    let firstDocId = body.firstDocId;
+    let lastDocId = body.lastDocId;
+    let direction = body.direction;
+
+    console.log("------");
+    console.log("currPage:", currPage);
+    console.log("orderByField:", orderByField);
+    console.log("elementsPerPage:", elementsPerPage);
+    console.log("filters:", filters);
+    console.log("source:", source);
+    console.log("startDate:", startDate);
+    console.log("trackingId:", trackingId);
+    console.log("endDate:", endDate);
+    console.log("firstDocId:", firstDocId);
+    console.log("lastDocId:", lastDocId);
+    console.log("direction:", direction);
+    console.log("------");
+    const paginationButtons = ['first', 'prev', 'next', 'last'];
+
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909);
+        let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes); // 145971562 Submit Shipment Flag
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
-        query = query.orderBy(orderByField, 'desc').limit(elementsPerPage).offset(currPage * elementsPerPage);
+
+        /*
+        `query.where('789843387', '==', siteCode);` non BPTL
+
+            db.collection('boxes')
+            .where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes)
+            .where('789843387', '==', siteCode);
+            .orderBy(orderByField, 'desc') // orderBy must be the same as startAt
+            .limit(elementsPerPage)
+            .offset(currPage * elementsPerPage);
+        */
+
+        // if lastDocId is passed in the body, use it to start the query from the document after or before it
+        if (direction && paginationButtons.includes(direction)) { // directional based pagination
+            // const firstDocsnapshot = db.collection('boxes').doc(firstDocId);
+            // console.log("🚀 ~ getBoxesPagination ~ firstDocRef:", firstDocRef)
+
+            /*
+            Logic for first, prev, next, last pagination buttons:
+            first: start from the beginning
+            prev: start before from using first document id reference and grabbing next n elements
+            next: start after from using last document id reference and grabbing next n elements
+            last: start from the end
+            */
+            if (direction === 'prev') {
+                
+            } else if (direction === 'next')  {
+                const lastDocSnapshot = await db.collection('boxes').doc(lastDocId).get();
+                console.log("🚀 ~ getBoxesPagination ~ lastDocSnapshot:", lastDocSnapshot);
+                if (lastDocSnapshot.exists) {
+
+                    console.log("🚀 ~ getBoxesPagination ~ direction: next");
+                    query = query
+                        .orderBy(orderByField, 'desc')
+                        .startAfter(lastDocSnapshot) 
+                        .limit(elementsPerPage);
+                }
+                // TODO: add error handling if lastDocSnapshot does not exist
+            } 
+        } else { // initial load
+            query = query.orderBy(orderByField, 'desc')
+                .limit(elementsPerPage)
+                // .offset(currPage * elementsPerPage);
+        }
+        
         const snapshot = await query.get();
-        printDocsCount(snapshot, `getBoxesPagination; offset: ${currPage * elementsPerPage}`);
+
+        // if (snapshot.empty) {
+        //     console.log("No matching documents found.");
+        //     return {
+        //         boxes: [],
+        //         firstDocId: null,
+        //         lastDocId: null,
+        //     };
+        // }
+
+        printDocsCount(snapshot, `getBoxesPagination; cursor: ${currPage * elementsPerPage}`);
         const result = snapshot.docs.map(document => document.data());
-        return result;
-    } 
+        console.log("🚀 ~ getBoxesPagination ~ result:", result)
+
+        return {
+            boxes: result,
+            firstDocId: snapshot.docs[0].id || null, // Get the first document ID for pagination
+            lastDocId: snapshot.docs[snapshot.docs.length - 1].id || null, // Get the last document ID for pagination
+        }
+    }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
     catch (error) {
         console.error(error);
-        return [];
+        return []; // make into an array later
     }
 };
 
@@ -2364,7 +2446,7 @@ const getNumBoxesShipped = async (siteCode, body) => {
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909);
+        let query = db.collection('boxes').where('145971562', '==', 353358909); // TODO: replace hardcoded values
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
         const snapshot = await query.count().get();
         return snapshot.data().count;
