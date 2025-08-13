@@ -238,7 +238,7 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
                 fieldMapping.submitted,
                 results?.status_date || '',
                 results?.viewed_hei_report || false,
-                results?.language,
+                results?.language?.toLowerCase(),
                 uid
             );
 
@@ -249,7 +249,7 @@ const syncDHQ3RespondentInfo = async (studyID, respondentUsername, dhq3SurveySta
                 fieldMapping.started,
                 results?.status_date || '',
                 results?.viewed_hei_report || false,
-                results?.language,
+                results?.language?.toLowerCase(),
                 uid
             );
         }
@@ -283,37 +283,29 @@ const updateDHQ3ProgressStatus = async (isSubmitted, completionStatus, dhqSubmit
         };
 
         if (isSubmitted) {
-          // TODO: we're unsure when DHQ will implement the `language` flag in production.
-          // `language` will start populating in the DHQ API once DHQ pushes these changes to prod.
-          // The below getDHQConfig() call and `useLanguageFlag` check is a temporary filter so we can control testing on our end.
-          // The getDHQConfig() call and `useLanguageFlag` check can be removed once DHQ implements the flag and we've tested it in dev/stage/prod.
-          if (language) {
-            const { useLanguageFlag } = await getDHQConfig();
-            if (useLanguageFlag) {
-              if (language.toLowerCase() === 'es') {
-                updateData[fieldMapping.dhq3Language] = fieldMapping.spanish;
-              } else if (language.toLowerCase() === 'en') {
+            if (language === 'en') {
                 updateData[fieldMapping.dhq3Language] = fieldMapping.english;
-              } else {
+            } else if (language === 'es') {
+                updateData[fieldMapping.dhq3Language] = fieldMapping.spanish;
+            } else if (!language) {
+                // Language not specified by DHQ API. No language field will be set
+                console.error(`No language specified for participant ${uid} - language field will not be set.`);
+            } else {
                 console.error(`Error: Invalid language ${language} for participant ${uid}.`);
-              }
             }
-          } else {
-            console.log(`Language not provided from DHQ API for participant ${uid}.`);
-          }
 
-          if (dhqSubmittedTimestamp) {
-            const parsedTimestamp = normalizeIso8601Timestamp(dhqSubmittedTimestamp);
-            updateData[fieldMapping.dhq3SurveyCompletionTime] = parsedTimestamp;
-          } else {
-            updateData[fieldMapping.dhq3SurveyCompletionTime] = new Date().toISOString();
-          }
+            if (dhqSubmittedTimestamp) {
+                const parsedTimestamp = normalizeIso8601Timestamp(dhqSubmittedTimestamp);
+                updateData[fieldMapping.dhq3SurveyCompletionTime] = parsedTimestamp;
+            } else {
+                updateData[fieldMapping.dhq3SurveyCompletionTime] = new Date().toISOString();
+            }
 
-          const viewedStatus = viewedHEIReport === true || viewedHEIReport === 'true' ? fieldMapping.reportStatus.viewed : fieldMapping.reportStatus.unread;
+            const viewedStatus = viewedHEIReport === true || viewedHEIReport === 'true' ? fieldMapping.reportStatus.viewed : fieldMapping.reportStatus.unread;
 
-          // Trigger the report availability at survey completion
-          updateData[fieldMapping.dhq3HEIReportStatusInternal] = fieldMapping.reportStatus.unread;
-          updateData[fieldMapping.dhq3HEIReportStatusExternal] = viewedStatus;
+            // Trigger the report availability at survey completion
+            updateData[fieldMapping.dhq3HEIReportStatusInternal] = fieldMapping.reportStatus.unread;
+            updateData[fieldMapping.dhq3HEIReportStatusExternal] = viewedStatus;
         }
 
         const participantSnapshot = await db.collection('participants')
@@ -1380,6 +1372,7 @@ const processAnalysisResultsCSV = async (csvContent, studyID) => {
  */
 const processDetailedAnalysisCSV = async (csvContent, studyID) => {
     const collectionName = 'dhqDetailedAnalysis';
+    const trackingBatchSize = 25; // Number of respondents for responseTracking update
 
     if (!studyID.startsWith('study_')) studyID = `study_${studyID}`;
 
@@ -1399,8 +1392,22 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
     let currentRespondent = null;
     let currentRespondentBatch = db.batch();
     let currentRespondentDocCount = 0;
-    const successfulRespondentIds = [];
+    let successfulRespondentIds = new Set();
+    
     const dynamicBatchSize = Math.min(getDynamicChunkSize(), 500);
+
+    // Flush tracking buffer when the threshold is reached or on final flush
+    async function flushTrackingBuffer(force = false) {
+        const shouldFlush = force ? successfulRespondentIds.size > 0 : successfulRespondentIds.size >= trackingBatchSize;
+        if (!shouldFlush) return;
+        try {
+            await updateProcessingTracking(studyID, collectionName, Array.from(successfulRespondentIds));
+            successfulRespondentIds.clear();
+        } catch (trackingError) {
+            const context = force ? `final process tracking update: (${successfulRespondentIds.size}) respondents` : `buffered respondents (${successfulRespondentIds.size})`;
+            console.error(`Error flushing ${context}:`, trackingError);
+        }
+    }
 
     // Write current respondent batch with optional completion tracking
     async function writeCurrentRespondent(isCompleteRespondent = false) {
@@ -1411,8 +1418,10 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
             newDocuments += currentRespondentDocCount;
             
             // Only track respondent as complete when finishing all their documents
+            // Batch responseTracking updates since this CSV can be massive
             if (isCompleteRespondent) {
-                successfulRespondentIds.push(currentRespondent);
+                successfulRespondentIds.add(currentRespondent);
+                await flushTrackingBuffer(false);
             }
             
         } catch (error) {
@@ -1483,16 +1492,11 @@ const processDetailedAnalysisCSV = async (csvContent, studyID) => {
         }
     }
 
-    // Write the final respondent, then update tracking
+    // Write the final respondent and update responseTracking
     await writeCurrentRespondent(true);
 
-    if (successfulRespondentIds.length > 0) {
-        try {
-            await updateProcessingTracking(studyID, collectionName, successfulRespondentIds);
-        } catch (error) {
-            console.error('Error updating processing tracking:', error);
-        }
-    }
+    // Flush the remaining tracking updates
+    await flushTrackingBuffer(true);
 
     logMemoryUsage(`Completed ${collectionName} processing`, true);
 

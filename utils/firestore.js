@@ -751,9 +751,7 @@ const removeDocumentFromCollection = async (connectID, token, dhq3Username = nul
 
         // Collection query mappings. All remaining collections default to Connect_ID.
         const tokenCollections = new Set(['notifications', 'ssn']);
-
-        // TODO: DHQ Data Destruction held for Aug 2025 release (final decisions & details TBD)
-        //const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
+        const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
         
         for (const collection of listOfCollectionsRelatedToDataDestruction) {
             const query = db.collection(collection);
@@ -763,10 +761,9 @@ const removeDocumentFromCollection = async (connectID, token, dhq3Username = nul
             if (tokenCollections.has(collection)) {
                 snapshot = await query.where("token", "==", token).get();
 
-            // TODO: DHQ Data Destruction held for next release (final decisions & details TBD)
-            // } else if (dhqCollections.has(collection)) {
-            //     if (!dhq3Username) continue; // If dhq3Username is null, there's no DHQ data to destroy.
-            //     snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
+            } else if (dhqCollections.has(collection)) {
+                if (!dhq3Username) continue; // If dhq3Username is null, participant has not interacted with DHQ. There's no DHQ data to destroy.
+                snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
             
             } else {
                 snapshot = await query.where("Connect_ID", "==", connectID).get();
