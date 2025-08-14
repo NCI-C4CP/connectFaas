@@ -2390,8 +2390,21 @@ const getBoxesPagination = async (siteCode, body) => {
             next: start after from using last document id reference and grabbing next n elements
             last: start from the end
             */
-            if (direction === 'prev') {
-                
+            if (direction === 'first') {
+                console.log("🚀 ~ getBoxesPagination ~ direction: first");
+                query = query
+                    .orderBy(orderByField, 'desc')
+                    .limit(elementsPerPage);
+            } else if (direction === 'prev') {
+                const firstDocSnapshot = await db.collection('boxes').doc(firstDocId).get();
+                console.log("🚀 ~ getBoxesPagination ~ firstDocSnapshot:", firstDocSnapshot)
+                if (firstDocSnapshot.exists) {
+                    console.log("🚀 ~ getBoxesPagination ~ direction: prev");
+                    query = query
+                        .orderBy(orderByField, 'asc')
+                        .startAfter(firstDocSnapshot)
+                        .limit(elementsPerPage);
+                };
             } else if (direction === 'next')  {
                 const lastDocSnapshot = await db.collection('boxes').doc(lastDocId).get();
                 console.log("🚀 ~ getBoxesPagination ~ lastDocSnapshot:", lastDocSnapshot);
@@ -2401,17 +2414,24 @@ const getBoxesPagination = async (siteCode, body) => {
                     query = query
                         .orderBy(orderByField, 'desc')
                         .startAfter(lastDocSnapshot) 
-                        .limit(elementsPerPage);
+                        .limit(elementsPerPage);   
                 }
                 // TODO: add error handling if lastDocSnapshot does not exist
-            } 
+            } else if (direction === 'last') {
+                query = query
+                    .orderBy(orderByField, 'asc')
+                    .limit(elementsPerPage)
+
+            }
         } else { // initial load
             query = query.orderBy(orderByField, 'desc')
                 .limit(elementsPerPage)
-                // .offset(currPage * elementsPerPage);
-        }
+                // .offset(currPage * elementsPerPage
         
+        }
         const snapshot = await query.get();
+        let docs = snapshot.docs;
+
 
         // if (snapshot.empty) {
         //     console.log("No matching documents found.");
@@ -2423,7 +2443,19 @@ const getBoxesPagination = async (siteCode, body) => {
         // }
 
         printDocsCount(snapshot, `getBoxesPagination; cursor: ${currPage * elementsPerPage}`);
-        const result = snapshot.docs.map(document => document.data());
+        // const result = snapshot.docs.map(document => document.data()); // was not using reverse here... (bug)
+
+        if (direction === 'prev' || direction === 'last') { 
+            // reverse the result only for previous pagination
+            docs.reverse();
+        }
+
+        const result = docs.map(document => document.data());
+
+        // if (direction === 'prev')  {
+        //     // reverse the result only for previous pagination
+        //     result.reverse();
+        // }
         console.log("🚀 ~ getBoxesPagination ~ result:", result)
 
         return {
@@ -2431,8 +2463,7 @@ const getBoxesPagination = async (siteCode, body) => {
             firstDocId: snapshot.docs[0].id || null, // Get the first document ID for pagination
             lastDocId: snapshot.docs[snapshot.docs.length - 1].id || null, // Get the last document ID for pagination
         }
-    }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
-    catch (error) {
+    } catch (error) {
         console.error(error);
         return []; // make into an array later
     }
