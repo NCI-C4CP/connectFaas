@@ -2344,7 +2344,7 @@ const getBoxesPagination = async (siteCode, body) => {
     const firstDocId = body.firstDocId;
     const lastDocId = body.lastDocId;
     const paginationDirection = body.paginationDirection;
-    const paginationButtons = ['first', 'prev', 'next', 'last'];
+    const validDirections = ['first', 'prev', 'next', 'last'];
 
     const emptyResult = {
         boxes: [],
@@ -2357,7 +2357,7 @@ const getBoxesPagination = async (siteCode, body) => {
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
         
         // check for directional pagination
-        if (paginationDirection && paginationButtons.includes(paginationDirection)) {
+        if (paginationDirection && validDirections.includes(paginationDirection)) {
             if (paginationDirection === 'first') {
                 query = query
                     .orderBy(orderByField, 'desc')
