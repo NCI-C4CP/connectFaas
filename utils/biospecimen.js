@@ -623,17 +623,20 @@ const biospecimenAPIs = async (req, res) => {
         await updateTempCheckDate(siteAcronym);
         return res.status(200).json({message: 'Success!', code:200});
     }
-    else if (api === 'getBoxesPagination'){ // Make changes here
+    else if (api === 'getBoxesPagination'){
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
         }
         const {getBoxesPagination} = require('./firestore');
         const requestData = req.body;
-        
-        console.log("🚀 ~ biospecimenAPIs ~ requestData:", requestData)
 
-        let toReturn = await getBoxesPagination(siteCode, requestData);
-        return res.status(200).json({ data: toReturn, code:200 });
+        try {
+            let toReturn = await getBoxesPagination(siteCode, requestData);
+            return res.status(200).json({ data: toReturn, code:200 });
+        } catch (error) {
+            console.error("🚀 ~ biospecimenAPIs ~ error:", error);
+            return res.status(500).json(getResponseJSON(error.message || `${error}`, 500));
+        }
     }
     else if(api === 'getNumBoxesShipped'){
         if(req.method !== 'POST') {
