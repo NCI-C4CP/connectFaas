@@ -2333,7 +2333,7 @@ const buildQueryWithFilters = (query, trackingId, endDate, startDate, source, si
 
 const getBoxesPagination = async (siteCode, body) => {
     const currPage = body.pageNumber;
-    const orderByField = body.orderBy;
+    const orderByField = body.orderBy; // fieldMapping.submitShipmentTimestamp
     const elementsPerPage = body.elementsPerPage;
     const filters = body.filters ?? ``;
     const source = body.source ?? ``;
