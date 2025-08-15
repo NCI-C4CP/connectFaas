@@ -2450,7 +2450,7 @@ const getNumBoxesShipped = async (siteCode, body) => {
         return snapshot.data().count;
     } catch (error) {
         console.error(error);
-        return new Error(error)
+        throw error;
     }
 }
 
