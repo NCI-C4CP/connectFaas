@@ -2331,10 +2331,7 @@ const buildQueryWithFilters = (query, trackingId, endDate, startDate, source, si
     return query
 }
 
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
 const getBoxesPagination = async (siteCode, body) => {
-    console.log("🚀 ~ getBoxesPagination ~ body:", body)
-    console.log("🚀 ~ getBoxesPagination ~ siteCode:", siteCode)
 
     const currPage = body.pageNumber;
     const orderByField = body.orderBy;
@@ -2346,9 +2343,8 @@ const getBoxesPagination = async (siteCode, body) => {
     const endDate = filters.endDate ?? ``;
     let firstDocId = body.firstDocId;
     let lastDocId = body.lastDocId;
-    let direction = body.direction;
+    let paginationDirection = body.paginationDirection;
 
-    console.log("------");
     console.log("currPage:", currPage);
     console.log("orderByField:", orderByField);
     console.log("elementsPerPage:", elementsPerPage);
@@ -2359,27 +2355,16 @@ const getBoxesPagination = async (siteCode, body) => {
     console.log("endDate:", endDate);
     console.log("firstDocId:", firstDocId);
     console.log("lastDocId:", lastDocId);
-    console.log("direction:", direction);
+    console.log("paginationDirection:", paginationDirection);
     console.log("------");
     const paginationButtons = ['first', 'prev', 'next', 'last'];
 
     try {
         let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes); // 145971562 Submit Shipment Flag
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
-
-        /*
-        `query.where('789843387', '==', siteCode);` non BPTL
-
-            db.collection('boxes')
-            .where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes)
-            .where('789843387', '==', siteCode);
-            .orderBy(orderByField, 'desc') // orderBy must be the same as startAt
-            .limit(elementsPerPage)
-            .offset(currPage * elementsPerPage);
-        */
-
+        
         // if lastDocId is passed in the body, use it to start the query from the document after or before it
-        if (direction && paginationButtons.includes(direction)) { // directional based pagination
+        if (paginationDirection && paginationButtons.includes(paginationDirection)) { // directional based pagination
             // const firstDocsnapshot = db.collection('boxes').doc(firstDocId);
             // console.log("🚀 ~ getBoxesPagination ~ firstDocRef:", firstDocRef)
 
@@ -2390,37 +2375,51 @@ const getBoxesPagination = async (siteCode, body) => {
             next: start after from using last document id reference and grabbing next n elements
             last: start from the end
             */
-            if (direction === 'first') {
-                console.log("🚀 ~ getBoxesPagination ~ direction: first");
+            if (paginationDirection === 'first') {
+                console.log("🚀 ~ getBoxesPagination ~ paginationDirection: first");
                 query = query
                     .orderBy(orderByField, 'desc')
                     .limit(elementsPerPage);
-            } else if (direction === 'prev') {
+            } else if (paginationDirection === 'prev') {
                 const firstDocSnapshot = await db.collection('boxes').doc(firstDocId).get();
                 console.log("🚀 ~ getBoxesPagination ~ firstDocSnapshot:", firstDocSnapshot)
                 if (firstDocSnapshot.exists) {
-                    console.log("🚀 ~ getBoxesPagination ~ direction: prev");
+                    console.log("🚀 ~ getBoxesPagination ~ paginationDirection: prev");
                     query = query
                         .orderBy(orderByField, 'asc')
                         .startAfter(firstDocSnapshot)
                         .limit(elementsPerPage);
                 };
-            } else if (direction === 'next')  {
+            } else if (paginationDirection === 'next')  {
                 const lastDocSnapshot = await db.collection('boxes').doc(lastDocId).get();
                 console.log("🚀 ~ getBoxesPagination ~ lastDocSnapshot:", lastDocSnapshot);
                 if (lastDocSnapshot.exists) {
 
-                    console.log("🚀 ~ getBoxesPagination ~ direction: next");
+                    console.log("🚀 ~ getBoxesPagination ~ paginationDirection: next");
                     query = query
                         .orderBy(orderByField, 'desc')
                         .startAfter(lastDocSnapshot) 
                         .limit(elementsPerPage);   
                 }
                 // TODO: add error handling if lastDocSnapshot does not exist
-            } else if (direction === 'last') {
+            } else if (paginationDirection === 'last') {
+                const numberOfBoxes = await getNumBoxesShipped(siteCode, body);
+                console.log("🚀 ~ getBoxesPagination ~ paginationDirection: last, numberOfBoxes:", numberOfBoxes);
+                
+                // if boxes get return either elementsPerPage or modulo number
+
+                const remainingElements = numberOfBoxes % elementsPerPage;
+                let elementsPerLastPage = 0;
+
+                if (remainingElements !== 0) {
+                    elementsPerLastPage = remainingElements; // use the remaining elements for the last page
+                }
+
+                console.log("🚀 ~ getBoxesPagination ~ elementsPerLastPage:", elementsPerLastPage);
+
                 query = query
                     .orderBy(orderByField, 'asc')
-                    .limit(elementsPerPage)
+                    .limit(elementsPerLastPage)
 
             }
         } else { // initial load
@@ -2445,17 +2444,12 @@ const getBoxesPagination = async (siteCode, body) => {
         printDocsCount(snapshot, `getBoxesPagination; cursor: ${currPage * elementsPerPage}`);
         // const result = snapshot.docs.map(document => document.data()); // was not using reverse here... (bug)
 
-        if (direction === 'prev' || direction === 'last') { 
-            // reverse the result only for previous pagination
+        if (paginationDirection === 'prev' || paginationDirection === 'last') { // reverse the docs
             docs.reverse();
         }
 
         const result = docs.map(document => document.data());
 
-        // if (direction === 'prev')  {
-        //     // reverse the result only for previous pagination
-        //     result.reverse();
-        // }
         console.log("🚀 ~ getBoxesPagination ~ result:", result)
 
         return {
@@ -2465,7 +2459,11 @@ const getBoxesPagination = async (siteCode, body) => {
         }
     } catch (error) {
         console.error(error);
-        return []; // make into an array later
+        return {
+            boxes: [],
+            firstDocId: null,
+            lastDocId: null,
+        }
     }
 };
 
