@@ -2441,7 +2441,7 @@ const getNumBoxesShipped = async (siteCode, body) => {
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909); // TODO: replace hardcoded values
+        let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes);
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
         const snapshot = await query.count().get();
         return snapshot.data().count;

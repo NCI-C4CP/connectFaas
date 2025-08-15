@@ -634,7 +634,7 @@ const biospecimenAPIs = async (req, res) => {
             let toReturn = await getBoxesPagination(siteCode, requestData);
             return res.status(200).json({ data: toReturn, code:200 });
         } catch (error) {
-            console.error("🚀 ~ biospecimenAPIs ~ error:", error);
+            console.error('Error in getBoxesPagination:', error);
             return res.status(500).json(getResponseJSON(error.message || `${error}`, 500));
         }
     }
@@ -644,9 +644,13 @@ const biospecimenAPIs = async (req, res) => {
         }
         const {getNumBoxesShipped} = require('./firestore');
         const requestData = req.body;
-        let response = await getNumBoxesShipped(siteCode, requestData);
-        console.log("🚀 ~ biospecimenAPIs ~ response:", response)
-        return res.status(200).json({data:response, code:200});
+        try {
+            let response = await getNumBoxesShipped(siteCode, requestData);
+            return res.status(200).json({data:response, code:200});
+        } catch (error) {
+            console.error('Error in getNumBoxesShipped:', error);
+            return res.status(500).json(getResponseJSON(error.message || `${error}`, 500));
+        }
     }
 
     else if (api === 'addKitData'){
