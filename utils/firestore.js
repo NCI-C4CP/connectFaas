@@ -7,6 +7,7 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
+const { submit } = require('./submission');
 
 const nciCode = 13;
 const nciConceptId = `517700004`;
@@ -2392,13 +2393,15 @@ const getBoxesPagination = async (siteCode, body) => {
 
                     if (remainingElements !== 0) {
                         elementsPerLastPage = remainingElements; // use the remaining elements for the last page
+                    } else if (numberOfBoxes > 0) {
+                        elementsPerLastPage = elementsPerPage; // assign elementsPerPage in case of no remainder and at least one box
                     }
 
                     query = query
                         .orderBy(orderByField, 'asc')
                         .limit(elementsPerLastPage)
                 } catch (error) {
-                    throw new Error(`Error fetching number of boxes shipped`);
+                    throw new Error(`Error fetching number of boxes shipped in getNumBoxesShipped: ${error.message}`, { cause: error });
                 }
             } 
         } else { // initial load no pagination
@@ -2425,8 +2428,8 @@ const getBoxesPagination = async (siteCode, body) => {
 
         return {
             boxes: result,
-            firstDocId: snapshot.docs[0].id || null, // Get the first document ID for pagination
-            lastDocId: snapshot.docs[snapshot.docs.length - 1].id || null, // Get the last document ID for pagination
+            firstDocId: docs[0].id || null, // Get the first document ID for pagination
+            lastDocId: docs[docs.length - 1].id || null, // Get the last document ID for pagination
         }
     } catch (error) {
         console.error(error);
