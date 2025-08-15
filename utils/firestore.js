@@ -7,6 +7,7 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
+const { submit } = require('./submission');
 
 const nciCode = 13;
 const nciConceptId = `517700004`;
@@ -2315,7 +2316,7 @@ const getSpecimenCollections = async (token, siteCode) => {
 const preQueryBuilder = (filters, query, trackingId, endDate, startDate, source, siteCode) => {
     if (Object.keys(filters).length === 0 && source === `bptlShippingReport`) {
         const currentDate = new Date(new Date().getTime()).toISOString();
-        const dateTwoWeeksAgo = new Date(new Date().getTime() - (1209600000)).toISOString();
+        const dateTwoWeeksAgo = new Date(new Date().getTime() - (1209600000)).toISOString(); // 1209600000 m/s = 14 days
         return query.where('656548982', '>=', dateTwoWeeksAgo).where('656548982', '<=', currentDate)
     }
     else {
@@ -2331,31 +2332,110 @@ const buildQueryWithFilters = (query, trackingId, endDate, startDate, source, si
     return query
 }
 
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
 const getBoxesPagination = async (siteCode, body) => {
     const currPage = body.pageNumber;
-    const orderByField = body.orderBy;
+    const orderByField = body.orderBy; // fieldMapping.submitShipmentTimestamp
     const elementsPerPage = body.elementsPerPage;
     const filters = body.filters ?? ``;
     const source = body.source ?? ``;
     const startDate = filters.startDate ?? ``;
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
+    const firstDocId = body.firstDocId;
+    const lastDocId = body.lastDocId;
+    const paginationDirection = body.paginationDirection;
+    const validDirections = ['first', 'prev', 'next', 'last'];
+
+    const emptyResult = {
+        boxes: [],
+        firstDocId: null,
+        lastDocId: null,
+    };
+
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909);
+        let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes);
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
-        query = query.orderBy(orderByField, 'desc').limit(elementsPerPage).offset(currPage * elementsPerPage);
+        
+        // check for directional pagination
+        if (paginationDirection && validDirections.includes(paginationDirection)) {
+            if (paginationDirection === 'first') {
+                query = query
+                    .orderBy(orderByField, 'desc')
+                    .limit(elementsPerPage);
+
+            } else if (paginationDirection === 'prev') {
+                const firstDocSnapshot = await db.collection('boxes').doc(firstDocId).get();
+
+                if (firstDocSnapshot.exists) {
+                    query = query
+                        .orderBy(orderByField, 'asc')
+                        .startAfter(firstDocSnapshot)
+                        .limit(elementsPerPage);
+                } else {
+                    throw new Error(`Invalid pagination cursor: document with ID ${firstDocId} not found.`);
+                }
+            } else if (paginationDirection === 'next')  {
+                const lastDocSnapshot = await db.collection('boxes').doc(lastDocId).get();
+
+                if (lastDocSnapshot.exists) {
+                    query = query
+                        .orderBy(orderByField, 'desc')
+                        .startAfter(lastDocSnapshot) 
+                        .limit(elementsPerPage);
+                } else {
+                    throw new Error(`Invalid pagination cursor: document with ID ${lastDocId} not found.`);
+                }
+            } else if (paginationDirection === 'last') { 
+                try {
+                    const numberOfBoxes = await getNumBoxesShipped(siteCode, body);
+                    const remainingElements = numberOfBoxes % elementsPerPage;
+                    let elementsPerLastPage = 0;
+
+                    if (remainingElements !== 0) {
+                        elementsPerLastPage = remainingElements; // use the remaining elements for the last page
+                    } else if (numberOfBoxes > 0) {
+                        elementsPerLastPage = elementsPerPage; // assign elementsPerPage in case of no remainder and at least one box
+                    }
+
+                    query = query
+                        .orderBy(orderByField, 'asc')
+                        .limit(elementsPerLastPage)
+                } catch (error) {
+                    throw new Error(`Error fetching number of boxes shipped in getNumBoxesShipped: ${error.message}`, { cause: error });
+                }
+            } 
+        } else { // initial load no pagination
+            query = query.orderBy(orderByField, 'desc')
+                .limit(elementsPerPage);
+        }
+
         const snapshot = await query.get();
-        printDocsCount(snapshot, `getBoxesPagination; offset: ${currPage * elementsPerPage}`);
-        const result = snapshot.docs.map(document => document.data());
-        return result;
-    } 
-    catch (error) {
+        let docs = snapshot.docs;
+
+        if (snapshot.empty) {
+            console.log("No matching documents found.");
+            return emptyResult;
+        }
+
+        printDocsCount(snapshot, `getBoxesPagination; current page number: ${currPage + 1}`);
+
+        if (paginationDirection === 'prev' || 
+            paginationDirection === 'last') { // reverse the docs to match cursor ids with docs
+            docs.reverse();
+        }
+
+        const result = docs.map(document => document.data());
+
+        return {
+            boxes: result,
+            firstDocId: docs[0].id || null, // Get the first document ID for pagination
+            lastDocId: docs[docs.length - 1].id || null, // Get the last document ID for pagination
+        }
+    } catch (error) {
         console.error(error);
-        return [];
+        throw error;
     }
 };
-
 
 const getNumBoxesShipped = async (siteCode, body) => {
     const filters = body.filters ?? ``;
@@ -2364,13 +2444,13 @@ const getNumBoxesShipped = async (siteCode, body) => {
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909);
+        let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes);
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
         const snapshot = await query.count().get();
         return snapshot.data().count;
     } catch (error) {
         console.error(error);
-        return new Error(error)
+        throw error;
     }
 }
 
