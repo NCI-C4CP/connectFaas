@@ -2653,7 +2653,6 @@ const processRequestAKitConditions = async (updateDb, docId) => {
         }
         const {getParticipantsForRequestAKitBQ} = require('./bigquery');
         const {queryStr, rows} = await getParticipantsForRequestAKitBQ(conditionsArr, sortsArr, updateDb ? limit : undefined);
-        console.log('rows', JSON.stringify(rows, null, '\t'));
         const participantsToUpdate = rows.map(row => row.token);
 
         if(updateDb) {
