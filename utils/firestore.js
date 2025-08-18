@@ -2631,15 +2631,15 @@ const processRequestAKitConditions = async (updateDb, docId) => {
         let conditionsArr = [
             // Automatically applied conditions, per request
             [`${verificationStatus}`, 'equals', verified], // Participant is verified
-            [`${withdrawConsent}`, 'notequals', yes], // Participant has not withdrawn consent
-            [`${destroyData}`, 'notequals', yes], // Participant data is not being destroyed
-            [`${participantDeceased}`, 'notequals', yes], // Participant is not deceased
-            [`${participantDeceasedNORC}`, 'notequals', yes], // Participant is not deceased per NORC
-            [`${activityParticipantRefusal}.${baselineMouthwashSample}`, 'notequals', yes], // Participant has not refused baseline mouthwash sample
-            [`${activityParticipantRefusal}.${allFutureSamples}`, 'notequals', yes],// Participant has not refused all future samples
-            [`${refusedAllFutureActivities}`, 'notequals', yes],// Participant has not refused all future activities
+            `d_${withdrawConsent} != ${yes} OR d_${withdrawConsent} IS NULL`, // Participant has not withdrawn consent
+            `d_${destroyData} != ${yes} OR d_${destroyData} IS NULL`, // Participant data is not being destroyed
+            `d_${participantDeceased} != ${yes} OR d_${participantDeceased} IS NULL`, // Participant is not deceased
+            `d_${participantDeceasedNORC} != ${yes} OR d_${participantDeceasedNORC} IS NULL`, // Participant is not deceased per NORC
+            `d_${activityParticipantRefusal}.d_${baselineMouthwashSample} != ${yes} OR d_${activityParticipantRefusal}.d_${baselineMouthwashSample} IS NULL`,  // Participant has not refused baseline mouthwash sample
+            `d_${activityParticipantRefusal}.d_${allFutureSamples} != ${yes} OR d_${activityParticipantRefusal}.d_${allFutureSamples} IS NULL`, // Participant has not refused all future samples
+            `d_${refusedAllFutureActivities} != ${yes} OR d_${refusedAllFutureActivities} IS NULL`, // Participant has not refused all future activities
             `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${JSON.stringify(poBoxRegex.toString())}) OR NOT REGEXP_CONTAINS(d_${address1}, ${JSON.stringify(poBoxRegex.toString())})`, // Participant address is not a P.O. Box
-            `d_${isPOBox} != ${yes}`,// PO Box is not checked
+            `d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL`, // PO Box is not checked
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`
         ];
