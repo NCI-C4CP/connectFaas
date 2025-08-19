@@ -114,11 +114,7 @@ const streamRequestFilesToBucket = async (httpRequest, bucketName, pathInBucket 
           allFilenames = allFiles.map((f) => f.name.replace(`${pathInBucket}/`, ""));
         }
 
-        if (allFilenames.length > 0) {
-          resolve({ successFilenames, failureFilenames, allFilenames, fields });
-        }
-
-        resolve({ successFilenames, failureFilenames, fields });
+        resolve({ successFilenames, failureFilenames, allFilenames, fields });
       } catch (error) {
         reject(error);
       }

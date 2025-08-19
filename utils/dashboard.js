@@ -188,7 +188,7 @@ const dashboard = async (req, res) => {
             if (err.code) {
                 return res.status(err.code).json(getResponseJSON(err.message, err.code));
             }
-            return res.status(500).getResponseJSON.json(err.message, 500);
+            return res.status(500).json(getResponseJSON(err.message, 500));
         }
     } else if (api === `updateParticipantIncentiveEligibility`) {
         if (req.method !== 'POST') {
