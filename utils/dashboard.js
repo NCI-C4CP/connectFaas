@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const { uploadPathologyReports, getUploadedPathologyReportNames } = require('./fileUploads');
+const { uploadPathologyReports, getUploadedPathologyReportNames, uploadEhr, getUploadedEhrNames } = require('./fileUploads');
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -188,7 +188,7 @@ const dashboard = async (req, res) => {
             if (err.code) {
                 return res.status(err.code).json(getResponseJSON(err.message, err.code));
             }
-            return res.status(500).getResponseJSON.json(err.message, code);
+            return res.status(500).getResponseJSON.json(err.message, 500);
         }
     } else if (api === `updateParticipantIncentiveEligibility`) {
         if (req.method !== 'POST') {
@@ -237,16 +237,13 @@ const dashboard = async (req, res) => {
         }
 
     } else if (api === "uploadPathologyReports") {
-        try {
-            return await uploadPathologyReports(req, res);
-        } catch (error) {
-            return res.status(500).json(getResponseJSON('Error uploading pathology reports. ' + error.message, 500));
-        }
+        return await uploadPathologyReports(req, res);
     } else if (api === "getUploadedPathologyReportNames") {
-        try {
-            return await getUploadedPathologyReportNames(req, res);
-        } catch (error) {
-            return res.status(500).json(getResponseJSON('Error retrieving uploaded pathology report names. ' + error.message, 500));}
+        return await getUploadedPathologyReportNames(req, res);
+    } else if (api === "uploadEhr") {
+        return await uploadEhr(req, res, SSOObject.siteDetails.acronym);
+    } else if (api === "getUploadedEhrNames") {
+        return await getUploadedEhrNames(req, res, SSOObject.siteDetails.acronym);
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
