@@ -2626,7 +2626,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             physicalAddress1, address1, isPOBox
 
         } = fieldMapping;
-        const poBoxRegex = /^(?:P\.?\s*O\.?\s*(?:Box|B\.?)?|Post\s+Office\s+(?:Box|B\.?)?)\s*(\s*#?\s*\d*)((?:\s+(.+))?$)$/i;
+        const poBoxRegex = `r'(?i)^(?:P\\.?\\s*O\\.?\\s*(?:Box|B\\.?)?|Post\\s+Office\\s+(?:Box|B\\.?)?)\\s*(\\s*#?\\s*\\d*)((?:\\s+(.+))?$)$'`;
 
         let conditionsArr = [
             // Automatically applied conditions, per request
@@ -2638,7 +2638,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             `d_${activityParticipantRefusal}.d_${baselineMouthwashSample} != ${yes} OR d_${activityParticipantRefusal}.d_${baselineMouthwashSample} IS NULL`,  // Participant has not refused baseline mouthwash sample
             `d_${activityParticipantRefusal}.d_${allFutureSamples} != ${yes} OR d_${activityParticipantRefusal}.d_${allFutureSamples} IS NULL`, // Participant has not refused all future samples
             `d_${refusedAllFutureActivities} != ${yes} OR d_${refusedAllFutureActivities} IS NULL`, // Participant has not refused all future activities
-            `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${JSON.stringify(poBoxRegex.toString())}) OR NOT REGEXP_CONTAINS(d_${address1}, ${JSON.stringify(poBoxRegex.toString())})`, // Participant address is not a P.O. Box
+            `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) OR NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex})`, // Participant address is not a P.O. Box
             `d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL`, // PO Box is not checked
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`
@@ -2653,6 +2653,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
         }
         const {getParticipantsForRequestAKitBQ} = require('./bigquery');
         const {queryStr, rows} = await getParticipantsForRequestAKitBQ(conditionsArr, sortsArr, updateDb ? limit : undefined);
+        console.log('rows', JSON.stringify(rows, null, '\t'));
         const participantsToUpdate = rows.map(row => row.token);
 
         if(updateDb) {
