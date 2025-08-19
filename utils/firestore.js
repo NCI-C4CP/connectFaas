@@ -2626,6 +2626,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             physicalAddress1, address1, isPOBox
 
         } = fieldMapping;
+        // RegEx formatting for case insensitivity as specified here: https://stackoverflow.com/questions/42987537/google-bigquery-possible-to-do-case-insensitive-regexp-match
         const poBoxRegex = `r'(?i)^(?:P\\.?\\s*O\\.?\\s*(?:Box|B\\.?)?|Post\\s+Office\\s+(?:Box|B\\.?)?)\\s*(\\s*#?\\s*\\d*)((?:\\s+(.+))?$)$'`;
 
         let conditionsArr = [
