@@ -7,6 +7,7 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
+const { submit } = require('./submission');
 
 const nciCode = 13;
 const nciConceptId = `517700004`;
@@ -751,9 +752,7 @@ const removeDocumentFromCollection = async (connectID, token, dhq3Username = nul
 
         // Collection query mappings. All remaining collections default to Connect_ID.
         const tokenCollections = new Set(['notifications', 'ssn']);
-
-        // TODO: DHQ Data Destruction held for Aug 2025 release (final decisions & details TBD)
-        //const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
+        const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
         
         for (const collection of listOfCollectionsRelatedToDataDestruction) {
             const query = db.collection(collection);
@@ -763,10 +762,9 @@ const removeDocumentFromCollection = async (connectID, token, dhq3Username = nul
             if (tokenCollections.has(collection)) {
                 snapshot = await query.where("token", "==", token).get();
 
-            // TODO: DHQ Data Destruction held for next release (final decisions & details TBD)
-            // } else if (dhqCollections.has(collection)) {
-            //     if (!dhq3Username) continue; // If dhq3Username is null, there's no DHQ data to destroy.
-            //     snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
+            } else if (dhqCollections.has(collection)) {
+                if (!dhq3Username) continue; // If dhq3Username is null, participant has not interacted with DHQ. There's no DHQ data to destroy.
+                snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
             
             } else {
                 snapshot = await query.where("Connect_ID", "==", connectID).get();
@@ -2318,7 +2316,7 @@ const getSpecimenCollections = async (token, siteCode) => {
 const preQueryBuilder = (filters, query, trackingId, endDate, startDate, source, siteCode) => {
     if (Object.keys(filters).length === 0 && source === `bptlShippingReport`) {
         const currentDate = new Date(new Date().getTime()).toISOString();
-        const dateTwoWeeksAgo = new Date(new Date().getTime() - (1209600000)).toISOString();
+        const dateTwoWeeksAgo = new Date(new Date().getTime() - (1209600000)).toISOString(); // 1209600000 m/s = 14 days
         return query.where('656548982', '>=', dateTwoWeeksAgo).where('656548982', '<=', currentDate)
     }
     else {
@@ -2334,31 +2332,110 @@ const buildQueryWithFilters = (query, trackingId, endDate, startDate, source, si
     return query
 }
 
-// TODO: Avoid using `offset` for pagination, because offset documents are still read and charged.
 const getBoxesPagination = async (siteCode, body) => {
     const currPage = body.pageNumber;
-    const orderByField = body.orderBy;
+    const orderByField = body.orderBy; // fieldMapping.submitShipmentTimestamp
     const elementsPerPage = body.elementsPerPage;
     const filters = body.filters ?? ``;
     const source = body.source ?? ``;
     const startDate = filters.startDate ?? ``;
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
+    const firstDocId = body.firstDocId;
+    const lastDocId = body.lastDocId;
+    const paginationDirection = body.paginationDirection;
+    const validDirections = ['first', 'prev', 'next', 'last'];
+
+    const emptyResult = {
+        boxes: [],
+        firstDocId: null,
+        lastDocId: null,
+    };
+
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909);
+        let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes);
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
-        query = query.orderBy(orderByField, 'desc').limit(elementsPerPage).offset(currPage * elementsPerPage);
+        
+        // check for directional pagination
+        if (paginationDirection && validDirections.includes(paginationDirection)) {
+            if (paginationDirection === 'first') {
+                query = query
+                    .orderBy(orderByField, 'desc')
+                    .limit(elementsPerPage);
+
+            } else if (paginationDirection === 'prev') {
+                const firstDocSnapshot = await db.collection('boxes').doc(firstDocId).get();
+
+                if (firstDocSnapshot.exists) {
+                    query = query
+                        .orderBy(orderByField, 'asc')
+                        .startAfter(firstDocSnapshot)
+                        .limit(elementsPerPage);
+                } else {
+                    throw new Error(`Invalid pagination cursor: document with ID ${firstDocId} not found.`);
+                }
+            } else if (paginationDirection === 'next')  {
+                const lastDocSnapshot = await db.collection('boxes').doc(lastDocId).get();
+
+                if (lastDocSnapshot.exists) {
+                    query = query
+                        .orderBy(orderByField, 'desc')
+                        .startAfter(lastDocSnapshot) 
+                        .limit(elementsPerPage);
+                } else {
+                    throw new Error(`Invalid pagination cursor: document with ID ${lastDocId} not found.`);
+                }
+            } else if (paginationDirection === 'last') { 
+                try {
+                    const numberOfBoxes = await getNumBoxesShipped(siteCode, body);
+                    const remainingElements = numberOfBoxes % elementsPerPage;
+                    let elementsPerLastPage = 0;
+
+                    if (remainingElements !== 0) {
+                        elementsPerLastPage = remainingElements; // use the remaining elements for the last page
+                    } else if (numberOfBoxes > 0) {
+                        elementsPerLastPage = elementsPerPage; // assign elementsPerPage in case of no remainder and at least one box
+                    }
+
+                    query = query
+                        .orderBy(orderByField, 'asc')
+                        .limit(elementsPerLastPage)
+                } catch (error) {
+                    throw new Error(`Error fetching number of boxes shipped in getNumBoxesShipped: ${error.message}`, { cause: error });
+                }
+            } 
+        } else { // initial load no pagination
+            query = query.orderBy(orderByField, 'desc')
+                .limit(elementsPerPage);
+        }
+
         const snapshot = await query.get();
-        printDocsCount(snapshot, `getBoxesPagination; offset: ${currPage * elementsPerPage}`);
-        const result = snapshot.docs.map(document => document.data());
-        return result;
-    } 
-    catch (error) {
+        let docs = snapshot.docs;
+
+        if (snapshot.empty) {
+            console.log("No matching documents found.");
+            return emptyResult;
+        }
+
+        printDocsCount(snapshot, `getBoxesPagination; current page number: ${currPage + 1}`);
+
+        if (paginationDirection === 'prev' || 
+            paginationDirection === 'last') { // reverse the docs to match cursor ids with docs
+            docs.reverse();
+        }
+
+        const result = docs.map(document => document.data());
+
+        return {
+            boxes: result,
+            firstDocId: docs[0].id || null, // Get the first document ID for pagination
+            lastDocId: docs[docs.length - 1].id || null, // Get the last document ID for pagination
+        }
+    } catch (error) {
         console.error(error);
-        return [];
+        throw error;
     }
 };
-
 
 const getNumBoxesShipped = async (siteCode, body) => {
     const filters = body.filters ?? ``;
@@ -2367,13 +2444,13 @@ const getNumBoxesShipped = async (siteCode, body) => {
     const trackingId = filters.trackingId ?? ``;
     const endDate = filters.endDate ?? ``;
     try {
-        let query = db.collection('boxes').where('145971562', '==', 353358909);
+        let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes);
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
         const snapshot = await query.count().get();
         return snapshot.data().count;
     } catch (error) {
         console.error(error);
-        return new Error(error)
+        throw error;
     }
 }
 
@@ -2505,6 +2582,122 @@ const getSiteDetailsWithSignInProvider = async (acronym) => {
     const snapshot = await db.collection('siteDetails').where('acronym', '==', acronym).get();
     printDocsCount(snapshot, "getSiteDetailsWithSignInProvider");
     return snapshot.docs[0].data();
+}
+
+const retrieveRequestAKitConditions = async (id, selectFields) => {
+    let query = db.collection("requestAKitConditions");
+    // Currently there is only one requestAKitConditions document per app
+    // but this is built to allow for the possibility
+    // of multiple requestAKitConditions being created in the future
+    if (id) {
+        query = query.doc(id);
+    }
+    if(selectFields) {
+        query = query.select(...selectFields);
+    }
+    const snapshot = await query.get();
+    if(!snapshot.size) {
+        return {};
+    }
+    if(snapshot.size === 1) {
+        return {...snapshot.docs[0].data(), id: snapshot.docs[0].id};
+    }
+    throw new Error(`Multiple requestAKitConditions records found; ${id ? 'ID ' + id + ' has multiple entries' : 'Please specify ID'}.`);
+}
+
+const updateRequestAKitConditions = async(data, docId) => {
+    const docInfo = await retrieveRequestAKitConditions(docId);
+    if(!docInfo?.id) {
+        const res = await db.collection('requestAKitConditions').add(data);
+        return {success: true, docId: res.id};
+    }
+    await db.collection("requestAKitConditions").doc(docInfo.id).update(data);
+    return {success: true, docId: docId};
+}
+
+const processRequestAKitConditions = async (updateDb, docId) => {
+    const requestAKitConditions = await retrieveRequestAKitConditions(docId);
+    if(requestAKitConditions) {
+        const { bioKitMouthwash, collectionDetails, baseline, 
+            kitRequestEligible, dtEligibleToKitRequest, kitStatus, pending, yes,
+            withdrawConsent, participantMap: {destroyData}, participantDeceased, participantDeceasedNORC, 
+            verificationStatus, verified, activityParticipantRefusal, baselineMouthwashSample, 
+            allFutureSamples, refusedAllFutureActivities,
+            physicalAddress1, address1, isPOBox
+
+        } = fieldMapping;
+        // RegEx formatting for case insensitivity as specified here: https://stackoverflow.com/questions/42987537/google-bigquery-possible-to-do-case-insensitive-regexp-match
+        const poBoxRegex = `r'(?i)^(?:P\\.?\\s*O\\.?\\s*(?:Box|B\\.?)?|Post\\s+Office\\s+(?:Box|B\\.?)?)\\s*(\\s*#?\\s*\\d*)((?:\\s+(.+))?$)$'`;
+
+        let conditionsArr = [
+            // Automatically applied conditions, per request
+            [`${verificationStatus}`, 'equals', verified], // Participant is verified
+            `d_${withdrawConsent} != ${yes} OR d_${withdrawConsent} IS NULL`, // Participant has not withdrawn consent
+            `d_${destroyData} != ${yes} OR d_${destroyData} IS NULL`, // Participant data is not being destroyed
+            `d_${participantDeceased} != ${yes} OR d_${participantDeceased} IS NULL`, // Participant is not deceased
+            `d_${participantDeceasedNORC} != ${yes} OR d_${participantDeceasedNORC} IS NULL`, // Participant is not deceased per NORC
+            `d_${activityParticipantRefusal}.d_${baselineMouthwashSample} != ${yes} OR d_${activityParticipantRefusal}.d_${baselineMouthwashSample} IS NULL`,  // Participant has not refused baseline mouthwash sample
+            `d_${activityParticipantRefusal}.d_${allFutureSamples} != ${yes} OR d_${activityParticipantRefusal}.d_${allFutureSamples} IS NULL`, // Participant has not refused all future samples
+            `d_${refusedAllFutureActivities} != ${yes} OR d_${refusedAllFutureActivities} IS NULL`, // Participant has not refused all future activities
+            `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) OR NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex})`, // Participant address is not a P.O. Box
+            `d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL`, // PO Box is not checked
+            // Participant initial kit status is pending or blank
+            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`
+        ];
+        let sortsArr = [];
+        const {conditions, sorts, limit} = requestAKitConditions;
+        if(conditions) {
+            conditionsArr = conditionsArr.concat(JSON.parse(conditions));
+        }
+        if(sorts) {
+            sortsArr = JSON.parse(sorts);
+        }
+        const {getParticipantsForRequestAKitBQ} = require('./bigquery');
+        const {queryStr, rows} = await getParticipantsForRequestAKitBQ(conditionsArr, sortsArr, updateDb ? limit : undefined);
+        const participantsToUpdate = rows.map(row => row.token);
+
+        if(updateDb) {
+            // Update the corresponding participants via batches in Firestore to have the appropriate
+            // status and date
+            let snapshot;
+            let batch;
+            let start = 0;
+            const maxSize = 30;
+            const runTimestamp = new Date().toISOString();
+
+            do {
+                batch = db.batch();
+                let query = db.collection('participants')
+                    .where('token', 'in', participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length)))
+                    .select(`${collectionDetails}`);
+
+                
+                snapshot = await query.get();
+                if (snapshot.empty) {
+                    console.log('No participants found.');
+                    break;
+                }
+                
+                for (const doc of snapshot.docs) {
+                    const docData = doc.data();
+                    const updatedData = {
+                        [`${collectionDetails}.${baseline}.${bioKitMouthwash}.${kitRequestEligible}`]: yes,
+                        [`${collectionDetails}.${baseline}.${bioKitMouthwash}.${dtEligibleToKitRequest}`]: docData?.[collectionDetails]?.[baseline]?.[bioKitMouthwash]?.[dtEligibleToKitRequest] || runTimestamp, // dtEligibleToKitRequest cannot be overwritten if it has already been set
+                    };
+
+                    batch.update(doc.ref, updatedData);
+                }
+
+                await batch.commit();
+                start += maxSize;
+                
+            } while (snapshot.size === maxSize);
+        }
+        
+
+        return {queryStr, count: participantsToUpdate.length};
+    }
+
 }
 
 const retrieveNotificationSchemaByID = async (id) => {
@@ -5244,6 +5437,9 @@ module.exports = {
     storeSSN,
     getTokenForParticipant,
     getSiteDetailsWithSignInProvider,
+    retrieveRequestAKitConditions,
+    updateRequestAKitConditions,
+    processRequestAKitConditions,
     retrieveNotificationSchemaByID,
     retrieveNotificationSchemaByCategory,
     storeNewNotificationSchema,

@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const { uploadPathologyReports, getUploadedPathologyReportNames } = require('./fileUploads');
+const { uploadPathologyReports, getUploadedPathologyReportNames, uploadEhr, getUploadedEhrNames } = require('./fileUploads');
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -134,6 +134,42 @@ const dashboard = async (req, res) => {
     } else if (api === 'getSiteNotification' && isHelpDesk === false) { // Everyone except HelpDesk
         const { getSiteNotification } = require('./notifications');
         return await getSiteNotification(req, res, authObj);
+    } else if (api === 'retrieveRequestAKitConditions') {
+
+        if (req.method !== "GET") return res.status(405).json(getResponseJSON("Only GET requests are accepted!", 405));
+
+        const { retrieveRequestAKitConditions } = require('./firestore');
+        try {
+            const data = await retrieveRequestAKitConditions(req.query?.docId);
+            return res.status(200).json({ data, code: 200 });
+        } catch(error) {
+            return res.status(500).json({ data: {}, message: error.message, code: 500 });
+        }
+    } else if (api === 'updateRequestAKitConditions') {
+
+        if (req.method !== "POST") return res.status(405).json(getResponseJSON("Only POST requests are accepted!", 405));
+
+        if (req.body.data === undefined || Object.keys(req.body.data).length < 1)
+                return res.status(400).json(getResponseJSON("Bad request.", 400));
+        const { updateRequestAKitConditions } = require('./firestore');
+        try {
+            const {success, docId} = await updateRequestAKitConditions(req.body.data, req.query?.docId);
+            return res.status(200).json({ success, docId, code: 200 });
+        } catch(error) {
+            return res.status(500).json({ success: false, message: error.message, code: 500 });
+        }
+    } else if (api === 'processRequestAKitConditions') {
+        if (req.method !== "GET") return res.status(405).json(getResponseJSON("Only GET requests are accepted!", 405));
+
+        const { processRequestAKitConditions } = require('./firestore');
+        
+        try {
+            const data = await processRequestAKitConditions(req.query?.updateDb === 'true', req.query?.docId);
+            return res.status(200).json({ success: true, data, code: 200 });
+        }  catch(error) {
+            console.error('Error in processRequestAKitConditions', error);
+            return res.status(500).json({ success: false, message: error.message, code: 500 });
+        }
     } else if (api === 'participantDataCorrection') {
         const { participantDataCorrection } = require('./sites');
         return await participantDataCorrection(req, res);
@@ -188,7 +224,7 @@ const dashboard = async (req, res) => {
             if (err.code) {
                 return res.status(err.code).json(getResponseJSON(err.message, err.code));
             }
-            return res.status(500).getResponseJSON.json(err.message, code);
+            return res.status(500).json(getResponseJSON(err.message, 500));
         }
     } else if (api === `updateParticipantIncentiveEligibility`) {
         if (req.method !== 'POST') {
@@ -237,16 +273,13 @@ const dashboard = async (req, res) => {
         }
 
     } else if (api === "uploadPathologyReports") {
-        try {
-            return await uploadPathologyReports(req, res);
-        } catch (error) {
-            return res.status(500).json(getResponseJSON('Error uploading pathology reports. ' + error.message, 500));
-        }
+        return await uploadPathologyReports(req, res);
     } else if (api === "getUploadedPathologyReportNames") {
-        try {
-            return await getUploadedPathologyReportNames(req, res);
-        } catch (error) {
-            return res.status(500).json(getResponseJSON('Error retrieving uploaded pathology report names. ' + error.message, 500));}
+        return await getUploadedPathologyReportNames(req, res);
+    } else if (api === "uploadEhr") {
+        return await uploadEhr(req, res, SSOObject.siteDetails.acronym);
+    } else if (api === "getUploadedEhrNames") {
+        return await getUploadedEhrNames(req, res, SSOObject.siteDetails.acronym);
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
