@@ -2621,7 +2621,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
         const { bioKitMouthwash, collectionDetails, baseline, 
             kitRequestEligible, dtEligibleToKitRequest, kitStatus, pending, yes,
             withdrawConsent, participantMap: {destroyData}, participantDeceased, participantDeceasedNORC, 
-            verificationStatus, verified, activityParticipantRefusal, baselineMouthwashSample, 
+            verificationStatus, verified, activityParticipantRefusal, baselineMouthwashSample, baselineMouthwashCollected,
             allFutureSamples, refusedAllFutureActivities,
             physicalAddress1, address1, isPOBox
 
@@ -2642,7 +2642,9 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) OR NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex})`, // Participant address is not a P.O. Box
             `d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL`, // PO Box is not checked
             // Participant initial kit status is pending or blank
-            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`
+            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`,
+            `d_${baselineMouthwashCollected} != ${yes} OR d_${baselineMouthwashCollected} IS NULL`, // Participant does not already have a mouthwash sample collected
+
         ];
         let sortsArr = [];
         const {conditions, sorts, limit} = requestAKitConditions;
