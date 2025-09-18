@@ -51,6 +51,7 @@ module.exports = {
     duplicate: 922622075,
     cannotBeVerified: 219863910,
     outreachTimeOut: 160161595,
+    noLongerEnrolling: 290379732,
     collectionId: 820476880,
     temperatureProbeInBox: 105891443,
     boxTrackingNumberScan: 959708259,
