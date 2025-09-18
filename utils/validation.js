@@ -90,7 +90,7 @@ const validatePin = async (res, body, uid) => {
             return res.status(202).json(getResponseJSON('Duplicate account', 202));
 
         } else if (noLongerEnrolling) {
-            return res.status(204).json(getResponseJSON(healthCareProvider, 204));
+            return res.status(286).json(getResponseJSON(healthCareProvider, 286));
         } else if (isValid) {
             const linkAccountResponse = await linkInvitationRecordWithParticipantUID(docId, pin, firstSignInTimestamp, uid);
             if (linkAccountResponse instanceof Error) {
