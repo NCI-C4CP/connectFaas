@@ -66,7 +66,7 @@ const verifyToken = async ({ token }) => {
 
 const verifyPin = async (pin) => {
     try {
-        const resultObj = { isDuplicateAccount: false, isValid: false, docId: null };
+        const resultObj = { isDuplicateAccount: false, isValid: false, docId: null, noLongerEnrolling: false, healthCareProvider: null };
         if (!pin) return resultObj;
 
         const snapshot = await db.collection('participants').where('pin', '==', pin).get();
@@ -80,10 +80,17 @@ const verifyPin = async (pin) => {
                 return resultObj;
             }
 
+            if (participantData[fieldMapping.verificationStatus] === fieldMapping.noLongerEnrolling) {
+                resultObj.noLongerEnrolling = true;
+                resultObj.healthCareProvider = participantData[fieldMapping.healthCareProvider];
+                return resultObj;
+            }
+
             if (participantData.state.uid === undefined) {
                 resultObj.isValid = true;
                 resultObj.docId = snapshot.docs[0].id;
             }
+
         }
 
         return resultObj;

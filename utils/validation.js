@@ -84,11 +84,13 @@ const validatePin = async (res, body, uid) => {
             return res.status(400).json(getResponseJSON('Bad request: firstSignInTimestamp required and must be an ISO 8601 timestamp', 400));
         }
 
-        const { isDuplicateAccount, isValid, docId } = await verifyPin(pin);
+        const { isDuplicateAccount, isValid, docId, noLongerEnrolling, healthCareProvider } = await verifyPin(pin);
 
         if (isDuplicateAccount) {
             return res.status(202).json(getResponseJSON('Duplicate account', 202));
 
+        } else if (noLongerEnrolling) {
+            return res.status(204).json(getResponseJSON(healthCareProvider, 204));
         } else if (isValid) {
             const linkAccountResponse = await linkInvitationRecordWithParticipantUID(docId, pin, firstSignInTimestamp, uid);
             if (linkAccountResponse instanceof Error) {
