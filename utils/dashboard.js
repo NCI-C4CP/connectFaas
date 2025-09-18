@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const { uploadPathologyReports, getUploadedPathologyReportNames, uploadEhr, getUploadedEhrNames } = require('./fileUploads');
+const { uploadPathologyReports, getUploadedPathologyReportNames, createEhrUploadUrls, getUploadedEhrNames } = require('./fileUploads');
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -276,8 +276,8 @@ const dashboard = async (req, res) => {
         return await uploadPathologyReports(req, res);
     } else if (api === "getUploadedPathologyReportNames") {
         return await getUploadedPathologyReportNames(req, res);
-    } else if (api === "uploadEhr") {
-        return await uploadEhr(req, res, SSOObject.siteDetails.acronym);
+    } else if (api === "createEhrUploadUrls") {
+        return await createEhrUploadUrls(req, res, SSOObject.siteDetails.acronym);
     } else if (api === "getUploadedEhrNames") {
         return await getUploadedEhrNames(req, res, SSOObject.siteDetails.acronym);
     } else {

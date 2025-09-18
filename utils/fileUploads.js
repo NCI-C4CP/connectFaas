@@ -302,62 +302,6 @@ const createEhrUploadUrls = async (req, res, acronym) => {
   }
 };
 
-const uploadEhr = async (req, res, acronym) => {
-  if (!validTierStr.includes(tierStr)) {
-    return res.status(500).json({ message: `Invalid tier "${tierStr}"`, code: 500 });
-  }
-
-  if (!acronym) {
-    return res.status(400).json({ message: "Missing acronym for EHR uploads!", code: 400 });
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Only POST requests are accepted!", code: 405 });
-  }
-
-  if (!req.headers["content-type"] || !req.headers["content-type"].includes("multipart/form-data")) {
-    return res.status(400).json({ message: "content-type must be multipart/form-data", code: 400 });
-  }
-
-  const acronymLower = acronym.toLowerCase();
-  const bucketName = ehrBucketNames[acronymLower];
-  if (!bucketName) {
-    return res.status(400).json({ message: `No bucket for ${acronym} in ${tierStr} tier.`, code: 400 });
-  }
-
-  const currentDate = getCurrentDate();
-  try {
-    const { successFilenames, failureFilenames, allFilenames } = await streamRequestFilesToBucket(
-      req,
-      bucketName,
-      currentDate
-    );
-
-    if (successFilenames.length === 0) {
-      return res.status(500).json({ message: "Failed to upload EHR files!", code: 500 });
-    }
-
-    if (failureFilenames.length > 0) {
-      return res.status(207).json({
-        message: "Some files failed to upload",
-        data: { successFilenames, failureFilenames, allFilenames },
-        code: 207,
-      });
-    }
-
-    return res.status(200).json({
-      message: "Files uploaded successfully",
-      data: { successFilenames, allFilenames },
-      code: 200,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Error uploading EHR files: " + error.message,
-      code: 500,
-    });
-  }
-};
-
 const getUploadedEhrNames = async (req, res, acronym) => {
   if (!validTierStr.includes(tierStr)) {
     return res.status(500).json({ message: `Invalid tier "${tierStr}"`, code: 500 });
@@ -397,7 +341,6 @@ const getUploadedEhrNames = async (req, res, acronym) => {
 module.exports = {
   uploadPathologyReports,
   getUploadedPathologyReportNames,
-  uploadEhr,
   createEhrUploadUrls,
   getUploadedEhrNames,
 };
