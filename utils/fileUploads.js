@@ -239,9 +239,6 @@ const createSignedUploadUrl = (bucketName, filenameWithPath, contentType) => {
       action: "write",
       expires: Date.now() + 60 * 60 * 1000, // 1 hour
       contentType: contentType || "application/octet-stream",
-      extensionHeaders: {
-        "x-goog-resumable": "start", // resumable uploads
-      },
     });
 };
 
