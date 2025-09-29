@@ -125,55 +125,72 @@ const scheduledSyncDHQ3Status = async (req, res) => {
         updatesToProcess = participantsSnapshot.size;
         console.log(`Found ${updatesToProcess} participants to process.`);
 
-        // If we have updates to process, we'll need the DHQ API token from secret manager.
-        const dhqToken = await getSecret(process.env.DHQ_TOKEN);
+        // Get DHQ configuration (token and batch parameters)
+        const { dhqToken, syncBatchSize, syncBatchDelay } = await getDHQConfig();
         if (!dhqToken) {
             console.error('DHQ API token not found in secret manager.');
             return res.status(500).json(getResponseJSON("DHQ API token not found in secret manager.", 500));
         }
 
-        const updatePromises = [];
+        // Process in batches to avoid overwhelming the DHQ API
+        const participants = participantsSnapshot.docs;
+        
+        console.log(`Processing ${participants.length} participants in batches of ${syncBatchSize} with ${syncBatchDelay}ms delay between batches`);
 
-        for (const participantDoc of participantsSnapshot.docs) {
-            const participantData = participantDoc.data();
-            const uid = participantData.state.uid;
-            const dhq3StudyID = participantData[fieldMapping.dhq3StudyID];
-            const dhq3Username = participantData[fieldMapping.dhq3Username];
-            const dhq3SurveyStatus = participantData[fieldMapping.dhq3SurveyStatus];
-            const dhq3SurveyStatusExternal = participantData[fieldMapping.dhq3SurveyStatusExternal];
+        for (let i = 0; i < participants.length; i += syncBatchSize) {
+            const batch = participants.slice(i, i + syncBatchSize);
+            const batchNumber = Math.floor(i / syncBatchSize) + 1;
+            const totalBatches = Math.ceil(participants.length / syncBatchSize);
+            const batchPromises = [];
+            
+            for (const participantDoc of batch) {
+                const participantData = participantDoc.data();
+                const uid = participantData.state.uid;
+                const dhq3StudyID = participantData[fieldMapping.dhq3StudyID];
+                const dhq3Username = participantData[fieldMapping.dhq3Username];
+                const dhq3SurveyStatus = participantData[fieldMapping.dhq3SurveyStatus];
+                const dhq3SurveyStatusExternal = participantData[fieldMapping.dhq3SurveyStatusExternal];
 
-            if (!uid) {
-                console.error(`Participant document ${participantDoc.id} missing state.uid. Skipping.`);
-                errorCount++;
-                continue;
-            }
-            if (!dhq3Username) {
-                console.error(`Participant ${uid} has no DHQ username. Skipping.`);
-                errorCount++;
-                continue;
-            }
-            if (!dhq3StudyID) {
-                console.error(`Participant ${uid} has no DHQ studyID (${fieldMapping.dhq3StudyID}). Skipping.`);
-                errorCount++;
-                continue;
+                if (!uid) {
+                    console.error(`Participant document ${participantDoc.id} missing state.uid. Skipping.`);
+                    errorCount++;
+                    continue;
+                }
+                if (!dhq3Username) {
+                    console.error(`Participant ${uid} has no DHQ username. Skipping.`);
+                    errorCount++;
+                    continue;
+                }
+                if (!dhq3StudyID) {
+                    console.error(`Participant ${uid} has no DHQ studyID (${fieldMapping.dhq3StudyID}). Skipping.`);
+                    errorCount++;
+                    continue;
+                }
+
+                batchPromises.push(
+                    syncDHQ3RespondentInfo(dhq3StudyID, dhq3Username, dhq3SurveyStatus, dhq3SurveyStatusExternal, uid, dhqToken)
+                        .then(result => ({ status: 'fulfilled', value: { uid, result } }))
+                        .catch(error => ({ status: 'rejected', reason: { uid, error } }))
+                );
             }
 
-            updatePromises.push(
-                syncDHQ3RespondentInfo(dhq3StudyID, dhq3Username, dhq3SurveyStatus, dhq3SurveyStatusExternal, uid, dhqToken)
-                    .then(result => ({ status: 'fulfilled', value: { uid, result } }))
-                    .catch(error => ({ status: 'rejected', reason: { uid, error } }))
-            );
+            const batchResults = await Promise.allSettled(batchPromises);
+            batchResults.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    successCount++;
+                } else {
+                    console.error(`Error updating participant ${result.reason.uid}:`, result.reason.error);
+                    errorCount++;
+                }
+            });
+            
+            console.log(`Batch ${batchNumber} completed. Success: ${batchResults.filter(r => r.status === 'fulfilled').length}, Errors: ${batchResults.filter(r => r.status === 'rejected').length}`);
+            
+            // Add delay between batches
+            if (i + syncBatchSize < participants.length) {
+                await new Promise(resolve => setTimeout(resolve, syncBatchDelay));
+            }
         }
-
-        const results = await Promise.allSettled(updatePromises);
-        results.forEach(result => {
-            if (result.status === 'fulfilled') {
-                successCount++;
-            } else {
-                console.error(`Error updating participant ${result.reason.uid}:`, result.reason.error);
-                errorCount++;
-            }
-        });
 
         console.log(`DHQ Status Sync Summary: Total Found=${updatesToProcess}, Succeeded=${successCount}, Failed/Skipped=${errorCount}`);
         return res.status(200).json(getResponseJSON("DHQ survey status sync completed successfully.", 200));
@@ -696,6 +713,8 @@ const getDHQConfig = async () => {
     const useLanguageFlag = appSettingsData.dhq.useLanguageFlag || false;
     const dateFilterStartDaysAgo = appSettingsData.dhq.dateFilterStartDaysAgo || 90; // Default to 90 days ago
     const dateFilterEndDaysAgo = appSettingsData.dhq.dateFilterEndDaysAgo || 0; // Default to "today"
+    const syncBatchSize = appSettingsData.dhq.syncBatchSize || 1; // Default to sequential processing
+    const syncBatchDelay = appSettingsData.dhq.syncBatchDelay || 0; // Default to 0ms delay between batches
     
     if (dhqStudyIDs.length === 0) {
         throw new Error('No DHQ study IDs found in app settings.');
@@ -711,7 +730,7 @@ const getDHQConfig = async () => {
         throw new Error('DHQ API token not found.');
     }
 
-    return { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering, useLanguageFlag, dateFilterStartDaysAgo, dateFilterEndDaysAgo };
+    return { dhqStudyIDs, dhqToken, recentlyCompletedDHQStudyIDs, useDateFiltering, useLanguageFlag, dateFilterStartDaysAgo, dateFilterEndDaysAgo, syncBatchSize, syncBatchDelay };
 };
 
 /**
