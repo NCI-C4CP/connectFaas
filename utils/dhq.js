@@ -134,7 +134,6 @@ const scheduledSyncDHQ3Status = async (req, res) => {
 
         // Process in batches to avoid overwhelming the DHQ API
         const participants = participantsSnapshot.docs;
-        
         console.log(`Processing ${participants.length} participants in batches of ${syncBatchSize} with ${syncBatchDelay}ms delay between batches`);
 
         for (let i = 0; i < participants.length; i += syncBatchSize) {
@@ -184,7 +183,7 @@ const scheduledSyncDHQ3Status = async (req, res) => {
                 }
             });
             
-            console.log(`Batch ${batchNumber} completed. Success: ${batchResults.filter(r => r.status === 'fulfilled').length}, Errors: ${batchResults.filter(r => r.status === 'rejected').length}`);
+            console.log(`Batch ${batchNumber} completed out of ${totalBatches} batches. Success: ${batchResults.filter(r => r.status === 'fulfilled').length}, Errors: ${batchResults.filter(r => r.status === 'rejected').length}`);
             
             // Add delay between batches
             if (i + syncBatchSize < participants.length) {
