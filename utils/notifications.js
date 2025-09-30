@@ -194,10 +194,9 @@ const retrieveNotifications = async (req, res, uid) => {
   }
 
   const { retrieveUserNotifications } = require("./firestore");
-
   try {
     const notificationArray = await retrieveUserNotifications(uid);
-    if (notificationArray.length > 0) {
+    if (notificationArray.length > 0 && req.query.markasread === 'true') {
       markAllNotificationsAsAlreadyRead(
         notificationArray.map((notification) => notification.id),
         "notifications"
