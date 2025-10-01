@@ -66,7 +66,7 @@ const verifyToken = async ({ token }) => {
 
 const verifyPin = async (pin) => {
     try {
-        const resultObj = { isDuplicateAccount: false, isValid: false, docId: null };
+        const resultObj = { isDuplicateAccount: false, isValid: false, docId: null, noLongerEnrolling: false, healthCareProvider: null };
         if (!pin) return resultObj;
 
         const snapshot = await db.collection('participants').where('pin', '==', pin).get();
@@ -80,10 +80,17 @@ const verifyPin = async (pin) => {
                 return resultObj;
             }
 
+            if (participantData[fieldMapping.verificationStatus] === fieldMapping.noLongerEnrolling) {
+                resultObj.noLongerEnrolling = true;
+                resultObj.healthCareProvider = participantData[fieldMapping.healthCareProvider];
+                return resultObj;
+            }
+
             if (participantData.state.uid === undefined) {
                 resultObj.isValid = true;
                 resultObj.docId = snapshot.docs[0].id;
             }
+
         }
 
         return resultObj;
@@ -1574,7 +1581,7 @@ const storeSpecimen = async (data) => {
 
 const submitSpecimen = async (biospecimenData, participantData, siteTubesList) => {
     const { checkDerivedVariables, processMouthwashEligibility } = require('./validation');
-    const { buildStreckPlaceholderData, updateBaselineData } = require('./shared');
+    const { buildStreckPlaceholderData, updateBaselineData, getAddedStrayTubes } = require('./shared');
 
     // Get the existing participant data (necessary for data reconciliation purposes)
     const siteCode = participantData[fieldMapping.healthCareProvider];
@@ -1602,11 +1609,37 @@ const submitSpecimen = async (biospecimenData, participantData, siteTubesList) =
         const participantDocRef = participantSnapshot.docs[0].ref;
         const participantSnapshotData = participantSnapshot.docs[0].data();
         const specimenDocRef = specimenCollectionSnapshot.docs[0].ref;
+        const specimenSnapshotData = specimenCollectionSnapshot.docs[0].data();
 
         // If necessary, update the biospecimenData to have the correct Streck placeholder data
         if (!biospecimenData[fieldMapping.tubesBagsCids.streckTube]) { // Check for streck data due to intermittent null streck values in Firestore (11/2023).
             const { buildStreckPlaceholderData } = require('./shared');
             buildStreckPlaceholderData(biospecimenData[fieldMapping.collectionId], biospecimenData[fieldMapping.tubesBagsCids.streckTube] = {});
+        }
+
+
+        // If specimen has not been finalized, finalize it as normal.
+        // Occasionally, a stray tube is found and an already-finalized collection gets updated. In this case, don't update the properties associated with finalizing.
+        const isPreviouslyFinalized = specimenSnapshotData[fieldMapping.collectionIsFinalized] === fieldMapping.yes;
+        if (!isPreviouslyFinalized) {
+            // This logic was moved here from the front end for increased stability
+            biospecimenData[fieldMapping.collectionIsFinalized] = fieldMapping.yes;
+            biospecimenData[fieldMapping.collectionFinalizedTimestamp] = new Date().toISOString();
+            biospecimenData[fieldMapping.boxedStatus] = fieldMapping.notBoxed;
+            biospecimenData[fieldMapping.strayTubesList] = [];
+        } else {
+            // If the specimen has already been finalized, make sure to update the stray tubes list and boxed status
+            // (This code was previously only in onContinue and leading to missing stray tubes
+            // when the continue button was not clicked at the right time. (Issues 1211, 1296, 1381))
+            const currentBoxedStatus = specimenSnapshotData[fieldMapping.boxedStatus];
+            if (currentBoxedStatus === fieldMapping.partiallyBoxed || currentBoxedStatus === fieldMapping.boxed) {
+                const addedStrayTubes = getAddedStrayTubes(specimenSnapshotData, biospecimenData);
+                const strayTubesList = biospecimenData[fieldMapping.strayTubesList] || [];
+                strayTubesList.push(...addedStrayTubes);
+                biospecimenData[fieldMapping.strayTubesList] = strayTubesList;
+                // If somehow we get here without added stray tubes, do not update the boxed status
+                biospecimenData[fieldMapping.boxedStatus] = addedStrayTubes.length ? fieldMapping.partiallyBoxed : specimenSnapshotData[fieldMapping.boxedStatus];
+            }
         }
 
         // Run the transaction
@@ -1720,7 +1753,7 @@ const getSpecimensByBoxedStatus = async (siteCode, boxedStatusConceptId, isBPTL 
 
 /**
  * Add a bag to the box. Orphan tubes are treated as separate bags.
- * Also manage/update/maintain the specimen doc's boxedStatus and strayTubeArray fields.
+ * Also manage/update/maintain the specimen doc's boxedStatus and  strayTubeArray fields.
  * @param {string} id - id of the box to update.
  * @param {object} boxAndTubesData - data package to update the box and specimen doc.
  * @param {array<string>} addedTubes - array of collectionIds of the tubes to add to the box. Format: `${collectionId} ${tubeType}`

@@ -1055,6 +1055,45 @@ const updateBaselineData = (biospecimenData, participantData, siteTubesList) => 
 }
 
 /**
+ * Matches function used on front end in biospecimen
+ * Used to determine stray tubes being added to an already finalized collection
+ * 
+ * @param {object} originalSpecimenData Original biospecimen object
+ * @param {object} currentSpecimenData Incoming biospecimen object updates
+ * @returns {array} Array of stray tube IDs
+ */
+const getAddedStrayTubes = (originalSpecimenData, currentSpecimenData) => {
+    const tubeCidList = [
+    '299553921',
+    '703954371',
+    '838567176',
+    '454453939',
+    '652357376',
+    '973670172',
+    '143615646',
+    // '787237543' and '223999569' are used as containers for tubes
+    '376960806',
+    '232343615',
+    '589588440',
+    '958646668',
+    '677469051',
+    '683613884',
+    '505347689',
+  ];
+    const originalCollectedTubesSet = new Set(
+        Object.keys(originalSpecimenData).filter(key =>
+            tubeCidList.includes(key) && originalSpecimenData[key][fieldMapping.tubeIsCollected] === fieldMapping.yes
+        )
+    );
+
+    return Object.keys(currentSpecimenData).filter(key =>
+        tubeCidList.includes(key) &&
+        currentSpecimenData[key][fieldMapping.tubeIsCollected] === fieldMapping.yes &&
+        !originalCollectedTubesSet.has(key)).map(tubeKey => currentSpecimenData[tubeKey][fieldMapping.objectId]
+    );
+}
+
+/**
  * Broken into a separate helper function for easier testing
  */
 const getHomeMWKitData = (data) => {
@@ -2351,6 +2390,7 @@ module.exports = {
     bagConceptIDs,
     cleanSurveyData,
     updateBaselineData,
+    getAddedStrayTubes,
     getHomeMWKitData,
     replacementKitSort,
     manualRequestSort,

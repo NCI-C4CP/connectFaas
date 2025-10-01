@@ -1,5 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
-const { uploadPathologyReports, getUploadedPathologyReportNames, uploadEhr, getUploadedEhrNames } = require('./fileUploads');
+const { uploadPathologyReports, getUploadedPathologyReportNames, createEhrUploadUrls, getUploadedEhrNames } = require('./fileUploads');
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -180,8 +180,8 @@ const dashboard = async (req, res) => {
         if (req.method !== 'POST') {
           return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
         }
-        // Only permit for dev apps
-        if (process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-dev') {
+        // Only permit for dev and stage apps
+        if (['nih-nci-dceg-connect-dev', 'nih-nci-dceg-connect-stg-5519'].includes(process.env.GCLOUD_PROJECT)) {
           let body = req.body;
           if (!body.uid) {
               return res.status(405).json(getResponseJSON('Missing UID!', 405));
@@ -276,8 +276,8 @@ const dashboard = async (req, res) => {
         return await uploadPathologyReports(req, res);
     } else if (api === "getUploadedPathologyReportNames") {
         return await getUploadedPathologyReportNames(req, res);
-    } else if (api === "uploadEhr") {
-        return await uploadEhr(req, res, SSOObject.siteDetails.acronym);
+    } else if (api === "createEhrUploadUrls") {
+        return await createEhrUploadUrls(req, res, SSOObject.siteDetails.acronym);
     } else if (api === "getUploadedEhrNames") {
         return await getUploadedEhrNames(req, res, SSOObject.siteDetails.acronym);
     } else {
