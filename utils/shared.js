@@ -255,6 +255,7 @@ const moduleConceptsToCollections = {
     "D_506648060" :     "experience2024",
     "D_369168474":      "cancerScreeningHistorySurvey",
     "D_497020618" :     "dhq3Survey",
+    "D_312845734" :     "preference2025"
 };
 
 const moduleStatusConcepts = {
@@ -270,8 +271,9 @@ const moduleStatusConcepts = {
     "547363263" :       "mouthwash",
     "320303124" :       "promis",
     "956490759" :       "experience2024",
-    "176068627":        "cancerScreeningHistorySurvey",
-    "497020618":        "dhq3Survey",
+    "176068627" :       "cancerScreeningHistorySurvey",
+    "497020618" :       "dhq3Survey",
+    "692560814" :       "preference2025"
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -295,6 +297,7 @@ const listOfCollectionsRelatedToDataDestruction = [
     "dhqDetailedAnalysis",
     "dhqRawAnswers",
     "cancerOccurrence",
+    "preference2025"
 ];
 
 const incentiveConcepts = {
