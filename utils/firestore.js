@@ -4452,7 +4452,7 @@ const storePackageReceipt = async (data) => {
 
         // Look up the box with this tracking number
         // and, if it has been marked as lost, clear that flag
-        const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', trackingNum).get();
+        const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', trackingNum).select(packageLost).get();
         if(!snapshot.size) {
             throw new Error('No package found with tracking number ' + trackingNum);
         }
@@ -4591,7 +4591,7 @@ const validatePackageReceipt = async ({barcode}) => {
 const markPackageLost = async (scannedBarcode) => {
     // No try/catch because error is handled by the calling function
     const {boxTrackingNumberScan, packageLost, datePackageLost, yes,} = fieldMapping;
-    const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', scannedBarcode).get();
+    const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', scannedBarcode).select().get();
     printDocsCount(snapshot, "markPackageLost");
     if(!snapshot.size) {
         const err = Error(`No package found with tracking number ${scannedBarcode}`);
@@ -4604,7 +4604,6 @@ const markPackageLost = async (scannedBarcode) => {
         throw err;
     }
     const docId = snapshot.docs[0].id;
-    console.log(`updating box ${docId} (tracking number ${snapshot.docs[0].data()[boxTrackingNumberScan]})`);
     await db.collection("boxes").doc(docId).update(
     { 
         [packageLost]: yes,
