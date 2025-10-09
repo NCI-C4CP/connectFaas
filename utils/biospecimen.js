@@ -1102,7 +1102,6 @@ const biospecimenAPIs = async (req, res) => {
             const { validatePackageReceipt } = require('./firestore');
             const response = await validatePackageReceipt({barcode});
             if(response) {
-                // @TODO: Actually, should this message be sent in a different format?
                 return res.status(200).json(getResponseJSON(response, 200));
             } else {
                 // We should never reach this case, but just in case
