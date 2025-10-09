@@ -4590,7 +4590,7 @@ const validatePackageReceipt = async ({barcode}) => {
 
 const markPackageLost = async (scannedBarcode) => {
     // No try/catch because error is handled by the calling function
-    const {boxTrackingNumberScan, packageLost, datePackageLost, yes,} = fieldMapping;
+    const { boxTrackingNumberScan, packageLost, datePackageLost, yes } = fieldMapping;
     const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', scannedBarcode).select().get();
     printDocsCount(snapshot, "markPackageLost");
     if(!snapshot.size) {
