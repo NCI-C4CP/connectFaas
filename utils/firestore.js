@@ -4445,7 +4445,29 @@ const shipKits = async (data) => {
 
 const storePackageReceipt = async (data) => {
     try {
-        if (data.scannedBarcode.length === 12 || data.scannedBarcode.length === 34) return await setPackageReceiptFedex(data); 
+        
+        const {boxTrackingNumberScan, packageLost, yes, no} = fieldMapping;
+
+        const trackingNum = data.scannedBarcode;
+
+        // Look up the box with this tracking number
+        // and, if it has been marked as lost, clear that flag
+        const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', trackingNum).select(packageLost).get();
+        if(!snapshot.size) {
+            throw new Error('No package found with tracking number ' + trackingNum);
+        }
+        const boxData = snapshot.docs[0].data();
+
+        if(boxData[packageLost] === yes) {
+            const newBoxData = {
+                [packageLost]: no,
+                datePackageLost: FieldValue.delete()
+            }
+            await db.collection('boxes').doc(snapshot.docs[0].id).update(newBoxData);
+        }
+
+
+        if (trackingNum.length === 12 || trackingNum.length === 34) return await setPackageReceiptFedex(data); 
         else return await setPackageReceiptUSPS(data);
     } catch (error) {
         console.error(`Error in the package receipt process: ${error.message}`, { cause: error });
@@ -4540,6 +4562,56 @@ const setPackageReceiptFedex = async (boxUpdateData) => {
     }
 }
 
+const validatePackageReceipt = async ({barcode}) => {
+    // No try/catch because error is handled by the calling function
+
+    const {boxTrackingNumberScan, packageLost, yes} = fieldMapping;
+    const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', barcode).get();
+
+    if(!snapshot.size) {
+        const err = Error(`No package found with tracking number ${barcode}`);
+        err.code = 404;
+        throw err;
+    }
+    if(snapshot.size > 1) {
+        const err = Error(`Multiple packages found with tracking number ${barcode}`);
+        err.code = 409;
+        throw err;
+    }
+
+    const docData = snapshot.docs[0].data();
+
+    if(docData[packageLost] === yes) {
+        return 'This package was previously marked as lost. Do you wish to continue with package receipt?';
+    }
+
+    return true;
+}
+
+const markPackageLost = async (scannedBarcode) => {
+    // No try/catch because error is handled by the calling function
+    const { boxTrackingNumberScan, packageLost, datePackageLost, yes } = fieldMapping;
+    const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', scannedBarcode).select().get();
+    printDocsCount(snapshot, "markPackageLost");
+    if(!snapshot.size) {
+        const err = Error(`No package found with tracking number ${scannedBarcode}`);
+        err.code = 404;
+        throw err;
+    }
+    if(snapshot.size > 1) {
+        const err = Error(`Multiple packages found with tracking number ${scannedBarcode}`);
+        err.code = 409;
+        throw err;
+    }
+    const docId = snapshot.docs[0].id;
+    await db.collection("boxes").doc(docId).update(
+    { 
+        [packageLost]: yes,
+        [datePackageLost]: new Date().toISOString()
+    });
+    return true;
+}
+
 const processReceiptData = async (collectionIdHolder, boxUpdateData, boxDocRef) => {
     const miscTubeIdSet = new Set(['0050', '0051', '0052', '0053', '0054']);
     try {
@@ -4564,6 +4636,9 @@ const processReceiptData = async (collectionIdHolder, boxUpdateData, boxDocRef) 
 
         for (const key in collectionIdHolder) {
             const specimenDoc = specimenDocs.find(specimenDoc => specimenDoc.data[fieldMapping.collectionId] === key);
+            if(!specimenDoc) {
+                throw new Error(`Unable to find matching specimen for collection ID ${key}. This is known to be caused by deleted collections after a participant reset. If you see this for production data, please report this error.`);
+            }
             const specimenDocRef = specimenDoc.ref;
             const specimenData = specimenDoc.data;
 
@@ -5497,6 +5572,8 @@ module.exports = {
     getParticipantsByKitStatus,
     shipKits,
     storePackageReceipt,
+    markPackageLost,
+    validatePackageReceipt,
     getBptlMetrics,
     getBptlMetricsForShipped,
     sendClientEmail,
