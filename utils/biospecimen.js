@@ -1054,6 +1054,70 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
 
+    // Package lost -- BPTL
+    else if (api === 'markPackageLost') {
+        if(req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+        try {
+            const requestData = req.body;
+        
+            if (!requestData || Object.keys(requestData).length === 0) {
+                return res.status(400).json(getResponseJSON('Request body is empty!', 400));
+            }
+
+            const {barcode} = requestData;
+            
+            if(!barcode) {
+                return res.status(400).json(getResponseJSON('Barcode is missing!', 400));
+            }
+
+            const { markPackageLost } = require('./firestore');
+            const response = await markPackageLost(barcode);
+            if(response) {
+                return res.status(200).json(getResponseJSON('Success', 200));
+            } else {
+                // We should never reach this case, but just in case
+                return res.status(500).json(getResponseJSON(`Unknown error.`, 500));
+            }
+        } catch(err) {
+            if(err.code) {
+                return res.status(err.code).json(getResponseJSON(`${err.message}`, err.code));
+            } else {
+                return res.status(500).json(getResponseJSON(`Internal server error. ${err.message}`, 500));
+            }
+        }
+    }
+
+    // Backend specimen receipt validation -- currently only for package lost
+    else if (api === 'validatePackageReceipt') {
+        if(req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+        try {
+            const {barcode} = query;
+            if(!barcode) {
+                return res.status(400).json(getResponseJSON('Barcode is missing!', 400));
+            }
+            const { validatePackageReceipt } = require('./firestore');
+            const response = await validatePackageReceipt({barcode});
+            if(response) {
+                // @TODO: Actually, should this message be sent in a different format?
+                return res.status(200).json(getResponseJSON(response, 200));
+            } else {
+                // We should never reach this case, but just in case
+                return res.status(500).json(getResponseJSON(`Unknown error.`, 500));
+            }
+        } catch(err) {
+            if(err.code) {
+                return res.status(err.code).json(getResponseJSON(`${err.message}`, err.code));
+            } else {
+                return res.status(500).json(getResponseJSON(`Internal server error. ${err.message}`, 500));
+            }
+        }
+        
+    }
+
     // BPTL Metrics GET- BPTL 
     else  if(api === 'bptlMetrics') {
             if(req.method !== 'GET') {
