@@ -4452,7 +4452,7 @@ const storePackageReceipt = async (data) => {
 
         // Look up the box with this tracking number
         // and, if it has been marked as lost, clear that flag
-        const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', trackingNum).select(packageLost).get();
+        const snapshot = await db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', trackingNum).select(`${packageLost}`).get();
         if(!snapshot.size) {
             throw new Error('No package found with tracking number ' + trackingNum);
         }
