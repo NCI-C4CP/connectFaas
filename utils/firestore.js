@@ -4446,7 +4446,7 @@ const shipKits = async (data) => {
 const storePackageReceipt = async (data) => {
     try {
         
-        const {boxTrackingNumberScan, packageLost, yes, no} = fieldMapping;
+        const {boxTrackingNumberScan, packageLost, datePackageLost, yes, no} = fieldMapping;
 
         const trackingNum = data.scannedBarcode;
 
@@ -4461,7 +4461,7 @@ const storePackageReceipt = async (data) => {
         if(boxData[packageLost] === yes) {
             const newBoxData = {
                 [packageLost]: no,
-                datePackageLost: FieldValue.delete()
+                [datePackageLost]: FieldValue.delete()
             }
             await db.collection('boxes').doc(snapshot.docs[0].id).update(newBoxData);
         }
