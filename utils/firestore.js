@@ -516,13 +516,14 @@ const resetParticipantHelper = async (uid, saveToDb) => {
  * @param {string} [to] - An upper bound for filtering documents by the `fromTo` field defined in the conditions. If provided, only documents with `fromTo` <= `to` are returned.
  * @param {string} [site] - The site code for filtering documents. If provided, only documents with `site` == `site` are returned.
  * @param {string} [refusalConcept] - The concept ID for filtering documents by refusal/withdrawal status.
+ * @param {string} [refusalTimestampConcept] - The concept ID of refusal/withdrawal timestamp.
  * @returns {Promise<{docs: Object[], cursor: string}>} An object containing:
  *   - `docs`: An array of participant document data.
  *   - `cursor`: The ID of the last document in the returned set (useful for pagination).
  *
  * @throws {Error} Will throw an error if the query or document retrieval fails.
  */
-const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, from, to, site, refusalConcept) => {
+const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, from, to, site, refusalConcept, refusalTimestampConcept) => {
     try {
         const conditions = {
             'verified': {
@@ -573,7 +574,8 @@ const retrieveParticipants = async (siteCode, type, isParent, limit, cursor, fro
             },
             'refusalswithdrawals': {
                 where: [[refusalConcept, '==', 353358909]],
-                orderBy: ['Connect_ID', 'asc']
+                orderBy: ['Connect_ID', 'asc'],
+                fromTo: refusalTimestampConcept
             }
         }  
 

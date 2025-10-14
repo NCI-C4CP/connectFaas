@@ -268,19 +268,20 @@ const getParticipants = async (req, res, authObj) => {
     }
     else if (acceptedTypes.includes(type)) {
         
-        let refusalConcept;
+        let refusalConcept, refusalTimestampConcept;
 
         if (type === 'refusalswithdrawals') {
-            const { refusalWithdrawalConcepts } = require('./shared');
+            const { refusalWithdrawalConcepts, refusalWithdrawalTimestampConcepts } = require('./shared');
 
             if (option && !refusalWithdrawalConcepts[option]) {
                 return res.status(400).json(getResponseJSON('Bad request', 400));
             }
             refusalConcept = refusalWithdrawalConcepts[option] ?? refusalWithdrawalConcepts.anyRefusalWithdrawal;
+            refusalTimestampConcept = refusalWithdrawalTimestampConcepts[option];
         }
 
         const { retrieveParticipants } = require(`./firestore`);
-        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, site, refusalConcept);
+        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, site, refusalConcept, refusalTimestampConcept);
 
         if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
 
