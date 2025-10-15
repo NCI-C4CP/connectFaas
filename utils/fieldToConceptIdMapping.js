@@ -539,6 +539,8 @@ module.exports = {
         physicalActivity: 686238347,
         flagForReportUnreadViewedDeclined: 446235715,
         dateRoiPaReportFirstViewed: 749055145,
+        preference2025SurveyStatus: 278023676,
+        preference2025SurveyCompletionTime: 543379310
     },
 
     norcBirthdayCard: 359309143,
