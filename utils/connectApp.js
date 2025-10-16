@@ -260,6 +260,26 @@ const connectApp = async (req, res) => {
       const appSettings = await getAppSettings('connectApp', selectedParamsArray);
       
       return res.status(200).json({data: appSettings, code: 200});
+    } else if (api === 'requestHomeKit') {
+        let body = req.body;
+
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+        const {connectId} = body;
+
+        if(!connectId) {
+            return res.status(405).json(getResponseJSON('Missing connect ID!', 405));
+        }
+
+        try {
+            const {requestHomeKit} = require('./firestore');
+            await requestHomeKit(connectId, true);
+            return res.status(200).json(getResponseJSON('Success!', 200));
+        } catch(err) {
+            console.error('Error', err);
+            return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
+        }
     }
 
     else return res.status(400).json(getResponseJSON('Bad request!', 400));
