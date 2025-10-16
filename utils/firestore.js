@@ -3256,7 +3256,7 @@ const eligibleParticipantsForKitAssignment = async () => {
     }
 }
 
-const requestHomeKit = async(connectId) => {
+const requestHomeKit = async(connectId, userInitiated = false) => {
     return await db.runTransaction(async transaction => {
         // First find the user
         const participantQuery = db.collection('participants').where('Connect_ID', '==', connectId);
@@ -3265,6 +3265,12 @@ const requestHomeKit = async(connectId) => {
             throw new Error('Could not find participant ' + connectId);
         }
         const data = participantSnapshot.docs[0].data();
+
+        if(userInitiated && data[fieldMapping.kitRequestEligible] !== fieldMapping.yes) {
+            // Verify that the user is marked as eligible to request a kit if
+            // this is user-initiated (e.g. comes from connectApp)
+            throw new Error('User is not eligible to request a home kit at this time.');
+        }
         
         try {
             if (data[fieldMapping.withdrawConsent] == fieldMapping.yes) {
