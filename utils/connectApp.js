@@ -266,6 +266,10 @@ const connectApp = async (req, res) => {
         if (req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
         }
+
+        if(!body) {
+          return res.status(500).json(getResponseJSON('Missing request body', 500));
+        }
         const {connectId} = body;
 
         if(!connectId) {
