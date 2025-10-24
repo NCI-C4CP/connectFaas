@@ -72,7 +72,6 @@
     "@google-cloud/storage": {
       "form-data": "2.5.5"
     },
-    
     "@types/request": {
       "form-data": "2.5.5"
     }
