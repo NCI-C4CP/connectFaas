@@ -33,7 +33,7 @@
     "@google-cloud/secret-manager": "^5.0.1",
     "@google-cloud/storage": "^7.7.0",
     "@sendgrid/eventwebhook": "^8.0.0",
-    "@sendgrid/mail": "^8.1.0",
+    "@sendgrid/mail": "^8.1.6",
     "busboy": "^1.6.0",
     "crypto-js": "^4.2.0",
     "fast-crc32c": "^2.0.0",
@@ -41,15 +41,39 @@
     "firebase-functions": "^5.1.1",
     "googleapis": "^129.0.0",
     "showdown": "^2.1.0",
-    "twilio": "^4.20.0",
+    "twilio": "^4.23.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@google-cloud/functions-framework": "^3.2.0",
     "chai": "^4.5.0",
-    "mocha": "^10.2.0",
+    "mocha": "^10.8.2",
     "node-mocks-http": "^1.16.0",
     "sinon": "^19.0.2",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.4"
+  },
+  "overridesNote": "Temporary: pin form-data to 2.5.5. Keep until upgrade of @google-cloud/* packages. Once upgraded, remove this note and the overrides section.",
+  "overrides": {
+    "@google-cloud/bigquery": {
+      "form-data": "2.5.5"
+    },
+    "@google-cloud/firestore": {
+      "form-data": "2.5.5"
+    },
+    "@google-cloud/kms": {
+      "form-data": "2.5.5"
+    },
+    "@google-cloud/pubsub": {
+      "form-data": "2.5.5"
+    },
+    "@google-cloud/secret-manager": {
+      "form-data": "2.5.5"
+    },
+    "@google-cloud/storage": {
+      "form-data": "2.5.5"
+    },
+    "@types/request": {
+      "form-data": "2.5.5"
+    }
   }
 }
