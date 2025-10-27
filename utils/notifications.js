@@ -11,12 +11,16 @@ const conceptIds = require("./fieldToConceptIdMapping");
 const converter = new showdown.Converter();
 const langArray = ["english", "spanish"];
 let twilioClient, messagingServiceSid, twilioNotifyServiceSid;
+let isSendGridSetup = false;
 let isTwilioSetup = false;
 let isSendingNotifications = false; // A more robust soluttion is needed when using multiple servers 
 
-getSecret(process.env.GCLOUD_SENDGRID_SECRET).then((apiKey) => {
+const setupSendGrid = async () => {
+  if (isSendGridSetup) return;
+  const apiKey = await getSecret(process.env.GCLOUD_SENDGRID_SECRET);
   sgMail.setApiKey(apiKey);
-});
+  isSendGridSetup = true;
+};
 
 const setupTwilio = async () => {
   const secretsToFetch = {
@@ -210,6 +214,7 @@ const retrieveNotifications = async (req, res, uid) => {
 };
 
 const sendEmail = async (emailTo, messageSubject, html, cc) => {
+    await setupSendGrid();
     const msg = {
         to: emailTo,
         from: {
@@ -247,6 +252,7 @@ async function sendScheduledNotifications(req, res) {
     return res.status(400).json(getResponseJSON("Field scheduleAt is missing in request body.", 400));
   }
 
+  await setupSendGrid();
   isSendingNotifications = true;
   try {
     const notificationSpecArray = await getNotificationSpecsByScheduleOncePerDay(req.body.scheduleAt);
@@ -993,6 +999,7 @@ const sendInstantNotification = async (requestData) => {
   };
 
   try {
+    await setupSendGrid();
     await sgMail.send(emailDataToSg);
     await storeNotification(currEmailRecord);
   } catch (err) {

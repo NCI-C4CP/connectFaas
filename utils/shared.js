@@ -255,6 +255,7 @@ const moduleConceptsToCollections = {
     "D_506648060" :     "experience2024",
     "D_369168474":      "cancerScreeningHistorySurvey",
     "D_497020618" :     "dhq3Survey",
+    "D_312845734" :     "preference2025"
 };
 
 const moduleStatusConcepts = {
@@ -270,8 +271,9 @@ const moduleStatusConcepts = {
     "547363263" :       "mouthwash",
     "320303124" :       "promis",
     "956490759" :       "experience2024",
-    "176068627":        "cancerScreeningHistorySurvey",
-    "497020618":        "dhq3Survey",
+    "176068627" :       "cancerScreeningHistorySurvey",
+    "497020618" :       "dhq3Survey",
+    "692560814" :       "preference2025"
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -295,6 +297,7 @@ const listOfCollectionsRelatedToDataDestruction = [
     "dhqDetailedAnalysis",
     "dhqRawAnswers",
     "cancerOccurrence",
+    "preference2025"
 ];
 
 const incentiveConcepts = {
@@ -330,7 +333,7 @@ const refusalWithdrawalConcepts = {
     "refusedAllFutureConnectExperienceSurveys": "685002411.525277409",
     "refusedQOL3moSurveys": "685002411.936015433",
     "refusedAllFutureQOLSurveys": "685002411.688142378",
-    "refusedCanScreeningHistorySurvey": "685002411.671903816",
+    "refusedCancerScreeningHistorySurvey": "685002411.671903816",
 
     "suspendedContact": "726389747",
     "withdrewConsent": "747006172",
@@ -341,6 +344,28 @@ const refusalWithdrawalConcepts = {
 
     "anyRefusalWithdrawal": "451953807"
 }
+
+const refusalWithdrawalTimestampConcepts = {
+    "refusedBaselineSurveys": "982105411",
+    "refusedBaselineSpecimenSurvey": "657475009",
+    "refusedBaselineBlood": "390198398",
+    "refusedBaselineSaliva": "262357957",
+    "refusedBaselineUrine": "808663245",
+    "refusedFutureSurveys": "974100830",
+    "refusedFutureActivities": "614264509",
+    "refusedFutureSamples": "711256590",
+    "refusedAllFutureConnectExperienceSurveys": "182718292",
+    "refusedAllFutureQOLSurveys": "953225775",
+    "refused2024ConnectExperienceSurveys": "688172931",
+    "refusedFollowUpBloodCollection": "747647081",
+    "refusedQOL3moSurveys": "667960135",
+    "refusedCancerScreeningHistorySurvey": "957406695",
+    "suspendedContact": "161366008",
+    "withdrewConsent": "659990606",
+    "revokeHIPAA": "664453818",
+    "dataDestroyed": "269050420",
+    "deceased": "672401635"
+};
 
 const nihSSOConfig = {
     group: 'https://federation.nih.gov/person/DLGroups',
@@ -2388,6 +2413,7 @@ module.exports = {
     standardHomeKitSort,
     processParticipantHomeMouthwashKitData,
     refusalWithdrawalConcepts,
+    refusalWithdrawalTimestampConcepts,
     withdrawalConcepts,
     convertSiteLoginToNumber,
     swapObjKeysAndValues,
