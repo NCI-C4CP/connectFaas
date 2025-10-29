@@ -230,14 +230,18 @@ const getParticipants = async (req, res, authObj) => {
         obj = await isParentEntity(authorized);
     }
 
-    const type      = req.query.type;
-    const limit     = req.query.limit ? parseInt(req.query.limit) : 100;
-    const cursor    = req.query.cursor ?? null;
-    const from      = req.query.from ?? null;
-    const to        = req.query.to ?? null;
-    const token     = req.query.token ?? null;
-    const option    = req.query.option ?? null;
-    const site      = req.query.site && obj.isParent && obj.siteCodes.includes(parseInt(req.query.site)) ? parseInt(req.query.site) : null;
+    const queryObj = {};
+    Object.keys(req.query).forEach(key => {
+        queryObj[key.toLowerCase()] = req.query[key];
+    });
+    const type      = queryObj.type;
+    const limit     = queryObj.limit ? parseInt(queryObj.limit) : 100;
+    const cursor    = queryObj.cursor ?? null;
+    const from      = queryObj.from ?? null;
+    const to        = queryObj.to ?? null;
+    const token     = queryObj.token ?? null;
+    const option    = queryObj.option ?? null;
+    const site      = queryObj.site && obj.isParent && obj.siteCodes.includes(parseInt(queryObj.site)) ? parseInt(queryObj.site) : null;
 
     if (from) {
         const validate = validateIso8601Timestamp(from);
@@ -268,19 +272,20 @@ const getParticipants = async (req, res, authObj) => {
     }
     else if (acceptedTypes.includes(type)) {
         
-        let refusalConcept;
+        let refusalConcept, refusalTimestampConcept;
 
         if (type === 'refusalswithdrawals') {
-            const { refusalWithdrawalConcepts } = require('./shared');
+            const { refusalWithdrawalConcepts, refusalWithdrawalTimestampConcepts } = require('./shared');
 
             if (option && !refusalWithdrawalConcepts[option]) {
                 return res.status(400).json(getResponseJSON('Bad request', 400));
             }
             refusalConcept = refusalWithdrawalConcepts[option] ?? refusalWithdrawalConcepts.anyRefusalWithdrawal;
+            refusalTimestampConcept = refusalWithdrawalTimestampConcepts[option];
         }
 
         const { retrieveParticipants } = require(`./firestore`);
-        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, site, refusalConcept);
+        const response = await retrieveParticipants(obj.siteCodes, type, obj.isParent, limit, cursor, from, to, site, refusalConcept, refusalTimestampConcept);
 
         if (response instanceof Error) return res.status(500).json(getResponseJSON(response.message, 500));
 
