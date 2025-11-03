@@ -3290,6 +3290,37 @@ const requestHomeKit = async(connectId, userInitiated = false) => {
     });
 }
 
+/**
+ * Gets the supply kit tracking information for a kit
+ * @param {*} uniqueKitID 
+ */
+const getSupplyKitTrackingNumber = async (uniqueKitID, uid) => {
+    const [kitInfo, userInfo] = await Promise.all([
+        db.collection("kitAssembly").where(`${fieldMapping.uniqueKitID}`, '==', `${uniqueKitID}`).get(),
+        db.collection('participants').where('state.uid', '==', uid).get()
+    ]);
+    if(!kitInfo.size) {
+        const err = new Error('No kit for this ID found.');
+        err.code = 404;
+        throw err;
+    }
+
+    if(!userInfo.size) {
+        const err = new Error('No valid user provided for this request.');
+        err.code = 401;
+        throw err;
+    }
+    const kitData = kitInfo.docs[0].data();
+    if(kitData['Connect_ID'] !== userInfo.docs[0].data()['Connect_ID']) {
+        const err = new Error('User does not have permission to view this information.');
+        err.code = 401;
+        throw err;
+    }
+
+    return kitData[fieldMapping.supplyKitTrackingNum];
+
+}
+
 const addKitStatusToParticipant = async (participantsCID) => {
     try {
         const { collectionDetails, baseline, bioKitMouthwash, kitStatus, addressPrinted } = fieldMapping;
@@ -5613,6 +5644,7 @@ module.exports = {
     markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
     requestHomeKit,
+    getSupplyKitTrackingNumber,
     processSendGridEvent,
     processTwilioEvent,
     getSpecimenAndParticipant,
