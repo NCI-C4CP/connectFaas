@@ -3292,7 +3292,8 @@ const requestHomeKit = async(connectId, userInitiated = false) => {
 
 /**
  * Gets the supply kit tracking information for a kit
- * @param {*} uniqueKitID 
+ * @param {string} uniqueKitID The ID of the kit being looked up
+ * @param {string} uid The UID of the user making the request
  */
 const getSupplyKitTrackingNumber = async (uniqueKitID, uid) => {
     const [kitInfo, userInfo] = await Promise.all([
