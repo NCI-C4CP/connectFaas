@@ -1,5 +1,5 @@
-const { cleanSurveyData, getResponseJSON, lockedAttributes, setHeaders, logIPAddress, moduleConceptsToCollections, moduleStatusConcepts } = require('./shared');
-const { updateResponse } = require('./firestore');
+const { cleanSurveyData, getResponseJSON, lockedAttributes, setHeaders, logIPAddress, moduleConceptsToCollections, moduleStatusConcepts, generateConnectID } = require('./shared');
+const { updateResponse, sanityCheckConnectID, retrieveUserProfile } = require('./firestore');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { validateIso8601Timestamp } = require('./validation');
 
@@ -9,21 +9,22 @@ const submit = async (res, data, uid) => {
     lockedAttributes.forEach(atr => delete data[atr]);
 
     try {
-        // generate Connect_ID if Consent form submitted
-        if(data[919254129] !== undefined && data[919254129] === 353358909) {
-            const { generateConnectID } = require('./shared');
-            const { sanityCheckConnectID } = require('./firestore');
-            let boo = false;
-            let Connect_ID;
-            while(boo === false){
-                const ID = generateConnectID();
-                const response = await sanityCheckConnectID(ID);
-                if(response === true) {
-                    Connect_ID = ID;
-                    boo = true;
+        if (data[fieldMapping.participantMap.consentFormSubmitted] === fieldMapping.yes) {
+            const participantData = await retrieveUserProfile(uid);
+            if (!participantData.Connect_ID) {
+                let isIdFound = false;
+                let Connect_ID;
+                while (!isIdFound) {
+                    const newId = generateConnectID();
+                    const isIdUsable = await sanityCheckConnectID(newId);
+                    if (isIdUsable) {
+                        Connect_ID = newId;
+                        isIdFound = true;
+                    }
                 }
+
+                data = {...data, Connect_ID};
             }
-            data = {...data, Connect_ID}
         }
 
         let keys = Object.keys(data);
@@ -56,8 +57,6 @@ const submit = async (res, data, uid) => {
                     }
                 }
             });
-
-            const { retrieveUserProfile } = require('./firestore');
 
             if (moduleComplete) {
                 const { checkDerivedVariables } = require('./validation');
@@ -210,9 +209,15 @@ const getParticipants = async (req, res, authObj) => {
 
     if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
     if (req.method !== 'GET') return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
-    if (req.query.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
-    if (!req.query.type) return res.status(404).json(getResponseJSON('Resource not found', 404));
+
+    const queryObj = {};
+    Object.keys(req.query).forEach(key => {
+        queryObj[key.toLowerCase()] = req.query[key];
+    });
+
+    if (queryObj.limit && parseInt(queryObj.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
+    if (queryObj.page) return res.status(410).json(getResponseJSON("IMPORTANT: 'page' parameter has been replaced with 'cursor' | please update API calls if pagination is required", 410));
+    if (!queryObj.type) return res.status(404).json(getResponseJSON('Resource not found', 404));
 
     let obj;
     
@@ -230,10 +235,6 @@ const getParticipants = async (req, res, authObj) => {
         obj = await isParentEntity(authorized);
     }
 
-    const queryObj = {};
-    Object.keys(req.query).forEach(key => {
-        queryObj[key.toLowerCase()] = req.query[key];
-    });
     const type      = queryObj.type;
     const limit     = queryObj.limit ? parseInt(queryObj.limit) : 100;
     const cursor    = queryObj.cursor ?? null;
