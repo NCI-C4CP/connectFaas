@@ -1206,17 +1206,11 @@ const updateSurvey = async (data, collection, doc) => {
 
 
 const sanityCheckConnectID = async (ID) => {
-    try{
-        const snapshot = await db.collection('participants').where('Connect_ID', '==', ID).get();
-        printDocsCount(snapshot, "sanityCheckConnectID");
+    const snapshot = await db.collection('participants').where('Connect_ID', '==', ID).get();
+    printDocsCount(snapshot, "sanityCheckConnectID");
 
-        return snapshot.size === 0;
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
-}
+    return snapshot.size === 0;
+};
 
 const sanityCheckPIN = async (pin) => {
     try{

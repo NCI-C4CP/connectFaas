@@ -11,6 +11,7 @@ const submit = async (res, data, uid) => {
     try {
         if (data[fieldMapping.participantMap.consentFormSubmitted] === fieldMapping.yes) {
             const participantData = await retrieveUserProfile(uid);
+            if (participantData instanceof Error) throw participantData;
             if (!participantData.Connect_ID) {
                 let isIdFound = false;
                 let Connect_ID;
