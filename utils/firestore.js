@@ -5484,6 +5484,11 @@ const getUploadedPathologyReportNamesFromFirestore = async ({ bucketName, Connec
   return snapshot.docs.map((doc) => doc.data()[`${fieldMapping.pathologyReportFilename}`]);
 };
 
+/**
+ * Get EHR delivery data for a site
+ * @param {string} acronymLower - Site acronym in lowercase
+ * @returns {Promise<Object>} EHR delivery data for the site
+ */
 const getEhrDeliveries = async (acronymLower) => {
   const snapshot = await db
     .collection("appSettings")
@@ -5497,6 +5502,13 @@ const getEhrDeliveries = async (acronymLower) => {
   return docData[acronymLower] || {};
 };
 
+/**
+ * Update EHR delivery data for a site. The saved data are used in queries to quickly get recent deliveries for each site.
+ * @param {string} acronymLower - Site acronym in lowercase
+ * @param {Array<{name: string, uploadStartedAt: string}>} deliveryDataArray - Array of delivery data
+ * @param {boolean} [replace=false] - Whether to replace existing deliveries
+ * @returns {Promise<boolean>} Resolve to true if update is a success, false otherwise
+ */
 const updateEhrDeliveries = async (acronymLower, deliveryDataArray, replace = false) => {
   try {
     const snapshot = await db

@@ -262,7 +262,7 @@ const createEhrUploadUrls = async (req, res, acronym) => {
   }
 
   const { fileInfoArray, name, uploadStartedAt } = req.body;
-  if (!fileInfoArray || !Array.isArray(fileInfoArray) || fileInfoArray.length === 0 || !name) {
+  if (!fileInfoArray || !Array.isArray(fileInfoArray) || fileInfoArray.length === 0 || !name || !uploadStartedAt) {
     return res.status(400).json({ message: "Invalid request body", code: 400 });
   }
   try {
