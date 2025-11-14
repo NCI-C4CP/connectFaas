@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
 admin.initializeApp();
+const storage = admin.storage();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort } = require('./shared');
@@ -822,7 +823,6 @@ const deletePathologyReports = async (connectId) => {
       }
     }
 
-    const storage = admin.storage();
     const fileDeletePromises = [];
     const failedDeletionSet = new Set();
     for (const bucketName of bucketNameSet) {
@@ -2829,9 +2829,9 @@ const getNotificationSpecsBySchedule = async (scheduleAt) => {
  * @returns 
  */
 const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
-  const eastTimezone = { timezone: "America/New_York" };
+  const eastTimeZone = { timeZone: "America/New_York" };
   const currTime = new Date();
-  const currDate = currTime.toLocaleDateString("en-US", eastTimezone);
+  const currDate = currTime.toLocaleDateString("en-US", eastTimeZone);
   const currTimeIsoStr = currTime.toISOString();
   const batch = db.batch();
   const snapshot = await db
@@ -2844,7 +2844,7 @@ const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
   for (const doc of snapshot.docs) {
     const docData = doc.data();
     const lastRunTime = docData.lastRunTime || "2020-01-01";
-    const lastRunDate = new Date(lastRunTime).toLocaleDateString("en-US", eastTimezone);
+    const lastRunDate = new Date(lastRunTime).toLocaleDateString("en-US", eastTimeZone);
     if (docData.id && currDate !== lastRunDate) {
       notificationSpecArray.push(docData);
       batch.update(doc.ref, { lastRunTime: currTimeIsoStr });
@@ -5510,8 +5510,78 @@ const getUploadedPathologyReportNamesFromFirestore = async ({ bucketName, Connec
   return snapshot.docs.map((doc) => doc.data()[`${fieldMapping.pathologyReportFilename}`]);
 };
 
+/**
+ * Get EHR delivery data for a site
+ * @param {string} acronymLower - Site acronym in lowercase
+ * @returns {Promise<Object>} EHR delivery data for the site
+ */
+const getEhrDeliveries = async (acronymLower) => {
+  const snapshot = await db
+    .collection("appSettings")
+    .where("appName", "==", "backendEhrDeliveries")
+    .select(acronymLower)
+    .get();
+
+  if (snapshot.empty) return {};
+
+  const docData = snapshot.docs[0].data();
+  return docData[acronymLower] || {};
+};
+
+/**
+ * Update EHR delivery data for a site. The saved data are used in queries to quickly get recent deliveries for each site.
+ * @param {string} acronymLower - Site acronym in lowercase
+ * @param {Array<{name: string, uploadStartedAt: string}>} deliveryDataArray - Array of delivery data
+ * @param {boolean} [replace=false] - Whether to replace existing deliveries
+ * @returns {Promise<boolean>} Resolve to true if update is a success, false otherwise
+ */
+const updateEhrDeliveries = async (acronymLower, deliveryDataArray, replace = false) => {
+  try {
+    const snapshot = await db
+      .collection("appSettings")
+      .where("appName", "==", "backendEhrDeliveries")
+      .select(acronymLower)
+      .get();
+
+    if (snapshot.empty) {
+      throw new Error("No document found for updateEhrDeliveries()");
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    const docData = snapshot.docs[0].data();
+    if (replace) {
+      await docRef.update(`${acronymLower}.recentDeliveries`, deliveryDataArray);
+      return true;
+    }
+
+    const siteData = docData[acronymLower] || { recentDeliveries: [] };
+    const deliveryCount = siteData.recentDeliveries.length;
+    for (const deliveryData of deliveryDataArray) {
+      const deliveryName = deliveryData.name;
+      const isDeliveryStored = siteData.recentDeliveries.some(
+        (delivery) => delivery.name === deliveryName
+      );
+
+      if (!isDeliveryStored) {
+        siteData.recentDeliveries.push(deliveryData);
+      }
+    }
+
+    if (deliveryCount < siteData.recentDeliveries.length) {
+      await docRef.update(`${acronymLower}.recentDeliveries`, siteData.recentDeliveries);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error in updateEhrDeliveries(): ", error);
+    return false;
+  }
+};
+
 module.exports = {
     db,
+    storage,
     verifyToken,
     updateResponse,
     retrieveParticipants,
@@ -5659,4 +5729,6 @@ module.exports = {
     savePathologyReportNamesToFirestore,
     getUploadedPathologyReportNamesFromFirestore,
     deletePathologyReports,
+    getEhrDeliveries,
+    updateEhrDeliveries,
 };
