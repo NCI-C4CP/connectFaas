@@ -3260,7 +3260,7 @@ const requestHomeKit = async(connectId, userInitiated = false) => {
         }
         const data = participantSnapshot.docs[0].data();
 
-        if(userInitiated && data[fieldMapping.kitRequestEligible] !== fieldMapping.yes) {
+        if(userInitiated && data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]?.[fieldMapping.kitRequestEligible] !== fieldMapping.yes) {
             // Verify that the user is marked as eligible to request a kit if
             // this is user-initiated (e.g. comes from connectApp)
             throw new Error('User is not eligible to request a home kit at this time.');
