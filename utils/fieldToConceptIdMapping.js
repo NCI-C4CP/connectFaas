@@ -231,9 +231,8 @@ module.exports = {
     pkgCrushed: 545319575,
     pkgImproperPackaging: 938338155,
     pkgCollectionCupDamaged: 205954477,
-    //  pkgCollectionCupLeaked: 289239334, // remove this once concept ids are created
-    pkgCollectionCupLeakedPartialLoss: 888888888, // Temp placeholder
-    pkgCollectionCupLeakedTotalLoss: 999999999, // Temp placeholder
+    pkgCollectionCupLeakedPartialLoss: 289239334,
+    pkgCollectionCupLeakedTotalLoss: 309189173,
     pkgEmptyCupReturned: 992420392,
     pkgIncorrectMaterialType: 541085383,
     pkgCollectionCupNotReturned: 427719697,
