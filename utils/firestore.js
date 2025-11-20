@@ -3833,6 +3833,7 @@ const storeKitReceipt = async (pkg) => {
             biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
         let toReturn;
+
         await db.runTransaction(async (transaction) => {
             const kitSnapshot = await transaction.get(
                 db.collection("kitAssembly")
@@ -3931,6 +3932,7 @@ const storeKitReceipt = async (pkg) => {
                 'token': token,
                 'uid': uid
             }
+            console.log("🚀 ~ storeKitReceipt ~ biospecPkg:", biospecPkg)
 
             // This should be a new document, but just in case
             let biospecimenDocRef;
@@ -3940,7 +3942,7 @@ const storeKitReceipt = async (pkg) => {
             } else {
                 biospecimenDocRef = db.collection('biospecimen').doc();
             }
-            
+            // UNCOMMENT FOR TESTING LOGS
             transaction.set(biospecimenDocRef, biospecPkg);
 
             transaction.update(kitDoc.ref, {
@@ -4000,7 +4002,7 @@ const processPackageConditions = (pkgConditions) => {
         fieldMapping.pkgIncorrectMaterialType,
         fieldMapping.pkgCollectionCupNotReturned,
         fieldMapping.pkgOther
-    ]
+    ];
     const result = {};
     
     for (const key of keys) {
