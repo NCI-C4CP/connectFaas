@@ -3941,7 +3941,7 @@ const storeKitReceipt = async (pkg) => {
             } else {
                 biospecimenDocRef = db.collection('biospecimen').doc();
             }
-            // UNCOMMENT FOR TESTING LOGS
+            
             transaction.set(biospecimenDocRef, biospecPkg);
 
             transaction.update(kitDoc.ref, {
