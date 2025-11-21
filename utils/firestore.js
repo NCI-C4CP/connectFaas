@@ -3931,8 +3931,7 @@ const storeKitReceipt = async (pkg) => {
                 'Connect_ID': Connect_ID,
                 'token': token,
                 'uid': uid
-            }
-            console.log("🚀 ~ storeKitReceipt ~ biospecPkg:", biospecPkg)
+            };
 
             // This should be a new document, but just in case
             let biospecimenDocRef;
