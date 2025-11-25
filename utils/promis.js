@@ -19,6 +19,8 @@ const processPromisResults = async (uid) => {
     const doc = await surveyExists(collection, uid);
     const surveyResults = doc.data();
 
+    console.log(`[PROMIS DEBUG] Starting processPromisResults for uid: ${uid}`);
+
     const forms = Object.keys(promisConfig);
     const scoresPayload = {};
     const scoresPromises = [];
@@ -44,23 +46,43 @@ const processPromisResults = async (uid) => {
                 }
             }
 
+            console.log(`[PROMIS DEBUG] Form: ${form}, Scoring data:`, scoringData);
+
             scoresPromises.push(
                 getScoringData(promisConfig[form].id, scoringData, token).then(scores => {
                     if (scores) {
-                        scoresPayload[promisConfig[form].score] = parseInt(scores['T-Score']);
-                        scoresPayload[promisConfig[form].error] = parseInt(scores['SError']);
+                        console.log(`[PROMIS DEBUG] Form: ${form}, Raw scores received:`, scores);
+                        console.log(`[PROMIS DEBUG] Form: ${form}, T-Score value: "${scores['T-Score']}", type: ${typeof scores['T-Score']}`);
+                        console.log(`[PROMIS DEBUG] Form: ${form}, SError value: "${scores['SError']}", type: ${typeof scores['SError']}`);
+                        
+                        const tScore = parseInt(scores['T-Score']);
+                        const sError = parseInt(scores['SError']);
+                        
+                        console.log(`[PROMIS DEBUG] Form: ${form}, Parsed T-Score: ${tScore}, isNaN: ${isNaN(tScore)}`);
+                        console.log(`[PROMIS DEBUG] Form: ${form}, Parsed SError: ${sError}, isNaN: ${isNaN(sError)}`);
+                        
+                        scoresPayload[promisConfig[form].score] = tScore;
+                        scoresPayload[promisConfig[form].error] = sError;
+                    } else {
+                        console.log(`[PROMIS DEBUG] Form: ${form}, No scores returned (null)`);
                     }
                 })
             );
+        } else {
+            console.log(`[PROMIS DEBUG] Form: ${form}, No source question data found`);
         }
     }
 
     Promise.all(scoresPromises).then(async () => {
+        console.log(`[PROMIS DEBUG] Final scoresPayload to save:`, scoresPayload);
         if (Object.keys(scoresPayload).length > 0) {
             await updateSurvey(scoresPayload, collection, doc);
+            console.log(`[PROMIS DEBUG] Survey updated successfully`);
+        } else {
+            console.log(`[PROMIS DEBUG] No scores to save (empty payload)`);
         }
     }).catch(error => {
-        console.error("Error in processing scoring data:", error);
+        console.error("[PROMIS DEBUG] Error in processing scoring data:", error);
     });
 }
 
@@ -74,6 +96,9 @@ const getScoringData = async (id, data, token) => {
     });
 
     try {
+        console.log(`[PROMIS DEBUG] Fetching scores from: ${url}`);
+        console.log(`[PROMIS DEBUG] Request body:`, formData.toString());
+        
         const response = await fetch(url, {
             method: "POST",
             headers: {
@@ -83,16 +108,21 @@ const getScoringData = async (id, data, token) => {
             body: formData.toString()
         });
 
+        console.log(`[PROMIS DEBUG] Response status: ${response.status}`);
+        
         const scores = await response.json();
+        console.log(`[PROMIS DEBUG] Response JSON:`, JSON.stringify(scores, null, 2));
 
         if (scores.ItemErrors) {
+            console.error(`[PROMIS DEBUG] ItemErrors found:`, scores.ItemErrors);
             throw new Error(`Errors in request data sent to PROMIS Scoring API: ${scores.ItemErrors}`);
         }
 
+        console.log(`[PROMIS DEBUG] Returning Form[0]:`, scores.Form[0]);
         return scores.Form[0];
     }
     catch (error) {
-        console.error('Error fetching PROMIS Scoring Data: ', error);
+        console.error('[PROMIS DEBUG] Error fetching PROMIS Scoring Data: ', error);
         return null;
     }
 }
