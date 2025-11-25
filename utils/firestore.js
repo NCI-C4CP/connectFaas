@@ -3849,8 +3849,7 @@ const storeKitReceipt = async (pkg) => {
             biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
         let toReturn;
-        /* @TODO: 
-        Add QC to check that the kit has not previously been receipted */
+
         await db.runTransaction(async (transaction) => {
             const kitSnapshot = await transaction.get(
                 db.collection("kitAssembly")
@@ -3948,7 +3947,7 @@ const storeKitReceipt = async (pkg) => {
                 'Connect_ID': Connect_ID,
                 'token': token,
                 'uid': uid
-            }
+            };
 
             // This should be a new document, but just in case
             let biospecimenDocRef;
@@ -4007,11 +4006,24 @@ const storeKitReceipt = async (pkg) => {
 }
 
 const processPackageConditions = (pkgConditions) => {
-    const keys = [950521660, 545319575, 938338155, 205954477, 289239334, 992420392, 541085383, 427719697, 100618603];
+    const keys = [
+        fieldMapping.pkgGoodCondition,
+        fieldMapping.pkgCrushed,
+        fieldMapping.pkgImproperPackaging,
+        fieldMapping.pkgCollectionCupDamaged,
+        fieldMapping.pkgCollectionCupLeakedPartialLoss,
+        fieldMapping.pkgCollectionCupLeakedTotalLoss,
+        fieldMapping.pkgEmptyCupReturned,
+        fieldMapping.pkgIncorrectMaterialType,
+        fieldMapping.pkgCollectionCupNotReturned,
+        fieldMapping.pkgOther
+    ];
     const result = {};
     
     for (const key of keys) {
-        result[key] = pkgConditions.includes(String(key)) ? 353358909 : 104430631;
+        result[key] = pkgConditions.includes(String(key)) 
+            ? fieldMapping.yes 
+            : fieldMapping.no;
     }
 
     return result;
