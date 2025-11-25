@@ -5,7 +5,7 @@ steps:
   args: [
     'functions', 
     'deploy', 
-    'triggerPromisProcessing', 
+    'promis', 
     '--trigger-http', 
     '--runtime=${_RUNTIME}', 
     '--memory=${_MEMORY}',
@@ -18,7 +18,7 @@ steps:
   args: [
     'functions', 
     'add-iam-policy-binding', 
-    'triggerPromisProcessing', 
+    'promis', 
     '--member=${_MEMBER}', 
     '--role=${_ROLE}'
   ]
