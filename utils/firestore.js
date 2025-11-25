@@ -352,15 +352,21 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             fieldMapping.additionalEmail3,
             fieldMapping.address1,
             fieldMapping.address2,
+            fieldMapping.address3,
             fieldMapping.city,
             fieldMapping.state,
             fieldMapping.zip,
+            fieldMapping.country,
             fieldMapping.isPOBox,
+            fieldMapping.isIntlAddr,
             fieldMapping.physicalAddress1,
             fieldMapping.physicalAddress2,
+            fieldMapping.physicalAddress3,
             fieldMapping.physicalCity,
             fieldMapping.physicalState,
             fieldMapping.physicalZip,
+            fieldMapping.physicalCountry,
+            fieldMapping.physicalAddrIntl,
             fieldMapping.canWeVoicemailMobile,
             fieldMapping.canWeVoicemailHome,
             fieldMapping.canWeVoicemailOther,
@@ -2652,7 +2658,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             withdrawConsent, participantMap: {destroyData}, participantDeceased, participantDeceasedNORC, 
             verificationStatus, verified, activityParticipantRefusal, baselineMouthwashSample, baselineMouthwashCollected,
             allFutureSamples, refusedAllFutureActivities,
-            physicalAddress1, address1, isPOBox
+            physicalAddress1, address1, isPOBox, isIntlAddr, physicalAddrIntl
 
         } = fieldMapping;
         // RegEx formatting for case insensitivity as specified here: https://stackoverflow.com/questions/42987537/google-bigquery-possible-to-do-case-insensitive-regexp-match
@@ -2668,8 +2674,8 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             `d_${activityParticipantRefusal}.d_${baselineMouthwashSample} != ${yes} OR d_${activityParticipantRefusal}.d_${baselineMouthwashSample} IS NULL`,  // Participant has not refused baseline mouthwash sample
             `d_${activityParticipantRefusal}.d_${allFutureSamples} != ${yes} OR d_${activityParticipantRefusal}.d_${allFutureSamples} IS NULL`, // Participant has not refused all future samples
             `d_${refusedAllFutureActivities} != ${yes} OR d_${refusedAllFutureActivities} IS NULL`, // Participant has not refused all future activities
-            `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) OR NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex})`, // Participant address is not a P.O. Box
-            `d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL`, // PO Box is not checked
+            // Participant has a valid non-PO, non-international address to send kit to
+            `(NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) AND (d_${physicalAddrIntl} != ${yes} OR d_${physicalAddrIntl} IS NULL) AND (d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL)) OR (NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex}) AND (d_${isIntlAddr} != ${yes} OR d_${isIntlAddr} IS NULL))`,
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`,
             `d_${baselineMouthwashCollected} != ${yes} OR d_${baselineMouthwashCollected} IS NULL`, // Participant does not already have a mouthwash sample collected

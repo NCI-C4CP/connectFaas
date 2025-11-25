@@ -633,7 +633,7 @@ describe('biospecimen', async () => {
     });
 
     describe('processParticipantHomeMouthwashKitData', () => {
-        const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, yes, no } = fieldToConceptIdMapping;
+        const { collectionDetails, baseline, bioKitMouthwash, firstName, lastName, isPOBox, isIntlAddr, address1, address2, physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, physicalAddrIntl, yes, no } = fieldToConceptIdMapping;
         it('Should return null for PO boxes', () => {
             const result1 = shared.processParticipantHomeMouthwashKitData({
                 [address1]: 'PO Box 1033'
@@ -945,7 +945,117 @@ describe('biospecimen', async () => {
             assert.equal(result1, null);
             assert.equal(result2, null);
         });
+
+        it('Should use mailing address if physical address is international and mailing is not', () => {
+            const result1 = shared.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [isPOBox]: no,
+                [address1]: '123 Fake St',
+                [city]: 'City',
+                [state]: 'PA',
+                [zip]: '19104',
+                [physicalAddress1]: '987 False Road',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '17102',
+                [physicalAddrIntl]: yes,
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.deepEqual(result1, {
+                first_name: 'First',
+                last_name: 'Last',
+                requestDate: undefined,
+                visit: 'BL',
+                connect_id: 123456789,
+                address_1: '123 Fake St',
+                address_2: '',
+                city: 'City',
+                state: 'PA',
+                zip_code: '19104'
+              });
+        });
+
+        it('Should return null if mailing address is international and there is no physical address', () => {
+            const result1 = shared.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [address1]: '123 Fake St',
+                [isIntlAddr]: yes,
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.equal(result1, null);
+        });
+
+        it('Should return null if mailing address is PO box and physical is international', () => {
+            const result1 = shared.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [address1]: 'PO Box 1033',
+                [physicalAddress1]: '123 Fake St',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                [physicalAddrIntl]: yes,
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            const result2 = shared.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [isPOBox]: yes,
+                [address1]: 'PznO Box 1033',
+                [physicalAddress1]: '123 Fake St',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                [physicalAddrIntl]: yes,
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.equal(result1, null);
+            assert.equal(result2, null);
+        });
         
+        it('Should return null if both physical and mailing addresses are international', () => {
+            const result1 = shared.processParticipantHomeMouthwashKitData({
+                [firstName]: 'First',
+                [lastName]: 'Last',
+                [address1]: '987 False Rd',
+                [isIntlAddr]: yes,
+                [physicalAddress1]: '123 Fake St',
+                [physicalCity]: 'City',
+                [physicalState]: 'PA',
+                [physicalZip]: '19104',
+                [physicalAddrIntl]: yes,
+                'Connect_ID': 123456789,
+                [collectionDetails]: {
+                    [baseline]: {
+                        [bioKitMouthwash]: undefined
+                    }
+                }
+            }, true);
+            assert.equal(result1, null);
+        });
+
     });
 
     describe('processMouthwashEligibility', async () => {
@@ -2277,75 +2387,81 @@ describe('biospecimen', async () => {
             const prevUserData = snapshot.docs[0].data();
 
             let keysToPreserve = [
-                fieldToConceptIdMapping.iDoNotHaveAPIN.toString(),
-                fieldToConceptIdMapping.healthCareProvider.toString(),
-                fieldToConceptIdMapping.heardAboutStudyFrom.toString(),
-                fieldToConceptIdMapping.dataDestruction.consentFirstName.toString(),
-                fieldToConceptIdMapping.dataDestruction.consentMiddleName.toString(),
-                fieldToConceptIdMapping.dataDestruction.consentLastName.toString(),
-                fieldToConceptIdMapping.dataDestruction.consentSuffixName.toString(),
-                fieldToConceptIdMapping.dataDestruction.userProfileNameFirstName.toString(),
-                fieldToConceptIdMapping.dataDestruction.userProfileNameMiddleName.toString(),
-                fieldToConceptIdMapping.dataDestruction.userProfileNameLastName.toString(),
-                fieldToConceptIdMapping.dataDestruction.userProfileNameSuffixName.toString(),
+                fieldToConceptIdMapping.iDoNotHaveAPIN,
+                fieldToConceptIdMapping.healthCareProvider,
+                fieldToConceptIdMapping.heardAboutStudyFrom,
+                fieldToConceptIdMapping.dataDestruction.consentFirstName,
+                fieldToConceptIdMapping.dataDestruction.consentMiddleName,
+                fieldToConceptIdMapping.dataDestruction.consentLastName,
+                fieldToConceptIdMapping.dataDestruction.consentSuffixName,
+                fieldToConceptIdMapping.dataDestruction.userProfileNameFirstName,
+                fieldToConceptIdMapping.dataDestruction.userProfileNameMiddleName,
+                fieldToConceptIdMapping.dataDestruction.userProfileNameLastName,
+                fieldToConceptIdMapping.dataDestruction.userProfileNameSuffixName,
                 'query',
-                fieldToConceptIdMapping.autogeneratedConsentDate.toString(),
-                fieldToConceptIdMapping.participantMap.consentFormSubmitted.toString(),
-                fieldToConceptIdMapping.dataDestruction.informedConsentDateSigned.toString(),
-                fieldToConceptIdMapping.dataDestruction.informedConsentVersion.toString(),
-                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationDateSigned.toString(),
-                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationFlag.toString(),
-                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationVersion.toString(),
-                fieldToConceptIdMapping.dataDestruction.firebaseAuthenticationEmail.toString(),
-                fieldToConceptIdMapping.firebaseAuthenticationFirstAndLastName.toString(),
-                fieldToConceptIdMapping.authenticationPhone.toString(),
-                fieldToConceptIdMapping.signInMechanism.toString(),
-                fieldToConceptIdMapping.preferredLanguage.toString(),
-                fieldToConceptIdMapping.preferredName.toString(),
-                fieldToConceptIdMapping.dataDestruction.birthMonth.toString(),
-                fieldToConceptIdMapping.dataDestruction.birthDay.toString(),
-                fieldToConceptIdMapping.dataDestruction.birthYear.toString(),
-                fieldToConceptIdMapping.dataDestruction.dateOfBirth.toString(),
-                fieldToConceptIdMapping.cellPhone.toString(),
-                fieldToConceptIdMapping.homePhone.toString(),
-                fieldToConceptIdMapping.otherPhone.toString(),
-                fieldToConceptIdMapping.prefEmail.toString(),
-                fieldToConceptIdMapping.additionalEmail1.toString(),
-                fieldToConceptIdMapping.additionalEmail2.toString(),
-                fieldToConceptIdMapping.additionalEmail3.toString(),
-                fieldToConceptIdMapping.address1.toString(),
-                fieldToConceptIdMapping.address2.toString(),
-                fieldToConceptIdMapping.city.toString(),
-                fieldToConceptIdMapping.state.toString(),
-                fieldToConceptIdMapping.zip.toString(),
-                fieldToConceptIdMapping.isPOBox.toString(),
-                fieldToConceptIdMapping.physicalAddress1.toString(),
-                fieldToConceptIdMapping.physicalAddress2.toString(),
-                fieldToConceptIdMapping.physicalCity.toString(),
-                fieldToConceptIdMapping.physicalState.toString(),
-                fieldToConceptIdMapping.physicalZip.toString(),
-                fieldToConceptIdMapping.canWeVoicemailMobile.toString(),
-                fieldToConceptIdMapping.canWeVoicemailHome.toString(),
-                fieldToConceptIdMapping.canWeVoicemailOther.toString(),
-                fieldToConceptIdMapping.canWeText.toString(),
-                fieldToConceptIdMapping.prefContactMethod.toString(),
-                fieldToConceptIdMapping.haveYouEverBeenDiagnosedWithCancer.toString(),
-                fieldToConceptIdMapping.whatYearWereYouDiagnosed.toString(),
-                fieldToConceptIdMapping.whatTypeOfCancer.toString(),
-                fieldToConceptIdMapping.anyCommentsAboutYourCancerDiagnosis.toString(),
-                fieldToConceptIdMapping.derivedAge.toString(),
-                fieldToConceptIdMapping.dataDestruction.userProfileSubmittedFlag.toString(),
-                fieldToConceptIdMapping.autogeneratedProfileSubmittedTime.toString(),
-                fieldToConceptIdMapping.participantMap.consentFormSubmitted.toString(),
-                fieldToConceptIdMapping.verificationStatus.toString(),
-                fieldToConceptIdMapping.autogeneratedSignedInTime.toString(),
-                fieldToConceptIdMapping.autogeneratedVerificationStatusUpdatedTime.toString(),
+                fieldToConceptIdMapping.autogeneratedConsentDate,
+                fieldToConceptIdMapping.participantMap.consentFormSubmitted,
+                fieldToConceptIdMapping.dataDestruction.informedConsentDateSigned,
+                fieldToConceptIdMapping.dataDestruction.informedConsentVersion,
+                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationDateSigned,
+                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationFlag,
+                fieldToConceptIdMapping.dataDestruction.hipaaAuthorizationVersion,
+                fieldToConceptIdMapping.dataDestruction.firebaseAuthenticationEmail,
+                fieldToConceptIdMapping.firebaseAuthenticationFirstAndLastName,
+                fieldToConceptIdMapping.authenticationPhone,
+                fieldToConceptIdMapping.signInMechanism,
+                fieldToConceptIdMapping.preferredLanguage,
+                fieldToConceptIdMapping.preferredName,
+                fieldToConceptIdMapping.dataDestruction.birthMonth,
+                fieldToConceptIdMapping.dataDestruction.birthDay,
+                fieldToConceptIdMapping.dataDestruction.birthYear,
+                fieldToConceptIdMapping.dataDestruction.dateOfBirth,
+                fieldToConceptIdMapping.cellPhone,
+                fieldToConceptIdMapping.homePhone,
+                fieldToConceptIdMapping.otherPhone,
+                fieldToConceptIdMapping.prefEmail,
+                fieldToConceptIdMapping.additionalEmail1,
+                fieldToConceptIdMapping.additionalEmail2,
+                fieldToConceptIdMapping.additionalEmail3,
+                fieldToConceptIdMapping.address1,
+                fieldToConceptIdMapping.address2,
+                fieldToConceptIdMapping.address3,
+                fieldToConceptIdMapping.city,
+                fieldToConceptIdMapping.state,
+                fieldToConceptIdMapping.zip,
+                fieldToConceptIdMapping.country,
+                fieldToConceptIdMapping.isPOBox,
+                fieldToConceptIdMapping.isIntlAddr,
+                fieldToConceptIdMapping.physicalAddress1,
+                fieldToConceptIdMapping.physicalAddress2,
+                fieldToConceptIdMapping.physicalAddress3,
+                fieldToConceptIdMapping.physicalCity,
+                fieldToConceptIdMapping.physicalState,
+                fieldToConceptIdMapping.physicalZip,
+                fieldToConceptIdMapping.physicalCountry,
+                fieldToConceptIdMapping.physicalAddrIntl,
+                fieldToConceptIdMapping.canWeVoicemailMobile,
+                fieldToConceptIdMapping.canWeVoicemailHome,
+                fieldToConceptIdMapping.canWeVoicemailOther,
+                fieldToConceptIdMapping.canWeText,
+                fieldToConceptIdMapping.prefContactMethod,
+                fieldToConceptIdMapping.haveYouEverBeenDiagnosedWithCancer,
+                fieldToConceptIdMapping.whatYearWereYouDiagnosed,
+                fieldToConceptIdMapping.whatTypeOfCancer,
+                fieldToConceptIdMapping.anyCommentsAboutYourCancerDiagnosis,
+                fieldToConceptIdMapping.derivedAge,
+                fieldToConceptIdMapping.dataDestruction.userProfileSubmittedFlag,
+                fieldToConceptIdMapping.autogeneratedProfileSubmittedTime,
+                fieldToConceptIdMapping.participantMap.consentFormSubmitted,
+                fieldToConceptIdMapping.verificationStatus,
+                fieldToConceptIdMapping.autogeneratedSignedInTime,
+                fieldToConceptIdMapping.autogeneratedVerificationStatusUpdatedTime,
                 // These are deprecated but left in to ensure data consistency
-                '983784715', 
-                '700668490',
-                '430184574',
-                '507120821',
-                '383945929'
+                983784715, 
+                700668490,
+                430184574,
+                507120821,
+                383945929
             ];
 
             let results;
@@ -2416,7 +2532,7 @@ describe('biospecimen', async () => {
             Object.keys(defaultFlags).forEach(key => {
                 
                 // Ignore any keys already checked
-                if(incentiveFlags[key] || withdrawalConcepts[key] || keysToPreserve.indexOf(key.toString()) > -1) {
+                if(incentiveFlags[key] || withdrawalConcepts[key] || keysToPreserve.indexOf(isNaN(+key) ? key : +key) > -1) {
                     return;
                 }
 
