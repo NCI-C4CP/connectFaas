@@ -1,0 +1,33 @@
+steps:
+
+# triggerPromisProcessing
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'functions', 
+    'deploy', 
+    'triggerPromisProcessing', 
+    '--trigger-http', 
+    '--runtime=${_RUNTIME}', 
+    '--memory=${_MEMORY}',
+    '--timeout=${_TIMEOUT}', 
+    '--source=${_SOURCE}', 
+    '--env-vars-file=${_VARIABLES}'
+  ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'functions', 
+    'add-iam-policy-binding', 
+    'triggerPromisProcessing', 
+    '--member=${_MEMBER}', 
+    '--role=${_ROLE}'
+  ]
+
+substitutions:
+  _MEMBER: allUsers
+  _MEMORY: 1024MB
+  _ROLE: roles/cloudfunctions.invoker
+  _RUNTIME: nodejs20
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-prod-6d04/repos/github_nci-c4cp_connectfaas
+  _TIMEOUT: 240s
+  _VARIABLES: config/prod/.env.yaml
