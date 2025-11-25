@@ -3402,7 +3402,7 @@ const assignKitToParticipant = async (data) => {
 
     let kitAssignmentResult;
     const { supplyKitId, kitStatus, uniqueKitID, supplyKitTrackingNum, returnKitTrackingNum,
-        assigned, shipped, received, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
+        assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2, 
         withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC,
         activityParticipantRefusal, allFutureSamples, baselineMouthwashSample, refusedAllFutureActivities, yes } = fieldMapping;
@@ -3475,16 +3475,6 @@ const assignKitToParticipant = async (data) => {
 
         const kitDoc = kitSnapshot.docs[0];
         data[uniqueKitID] = kitDoc.data()[uniqueKitID];
-
-        // @TODO: Add QC to check that Return Kit ID scanned during Assign Kits 
-        // matches a Return Kit ID of a kit still in Assembled status (and has not been previously assigned)
-        if([assigned, shipped, received].indexOf(kitDoc[kitStatus]) > -1) {
-            kitAssignmentResult = {
-                success: false,
-                message: `Kit ${data[supplyKitId]} has already been assigned, shipped or received `
-            };
-            return;
-        }
 
         // See if this kit has already been assigned to any other participants
         // Checks for initial and replacement kits
