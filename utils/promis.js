@@ -50,8 +50,6 @@ const processPromisResults = async (uid) => {
                         const tScore = parseInt(scores['T-Score']);
                         const sError = parseInt(scores['SError']);
                         
-                        console.log(`${form} - T-Score: ${tScore}, SError: ${sError}`);
-                        
                         // Only save values that are valid numbers (not NaN)
                         if (!isNaN(tScore)) {
                             scoresPayload[promisConfig[form].score] = tScore;
@@ -68,7 +66,6 @@ const processPromisResults = async (uid) => {
 
     Promise.all(scoresPromises).then(async () => {
         if (Object.keys(scoresPayload).length > 0) {
-            console.log('Saving PROMIS scores to Firestore:', scoresPayload);
             await updateSurvey(scoresPayload, collection, doc);
         }
     }).catch(error => {

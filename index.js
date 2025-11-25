@@ -93,4 +93,4 @@ exports.scheduledSyncDHQ3Status = onRequest(scheduledSyncDHQ3Status);
 exports.scheduledCountDHQ3Credentials = onRequest(scheduledCountDHQ3Credentials);
 
 // Temporary End-Point for PROMIS Processing
-exports.promis = triggerPromisProcessing;
+// exports.promis = triggerPromisProcessing;
