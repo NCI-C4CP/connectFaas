@@ -438,20 +438,11 @@ async function validateTableAccess (authObj, dataset, table) {
   return allowAccess;
 }
 
-function getQueryPartsForTable (dataset, table) {
-  if (dataset === 'NORC' && table === 'view_birthday_card') {
-    return {
-      "WITH": 'AddressInfo AS (SELECT  Connect_ID,  token,  CAST(d_564964481 AS INT64) AS birth_month,  d_996038075 AS last_name,  d_399159511 AS first_name,  d_521824358 AS address_line_1,  d_442166669 AS address_line_2,  d_703385619 AS city,  d_634434746 AS state,  d_892050548 AS zip_code,  d_821247024,   d_747006172,   d_987563196,   d_827220437 FROM `FlatConnect.participants_JP`)',
-      "SELECT": "Connect_ID AS CONNECT_ID,  Connect_ID AS PIN,  token,  LPAD(CAST(birth_month AS STRING), 2, '0') AS DOBM, first_name,  last_name,  address_line_1,  address_line_2,  city,  state,  zip_code",
-      "FROM": "AddressInfo",
-      "WHERE": "d_821247024 = '197316935' AND d_747006172 != '353358909' AND d_987563196 != '353358909'"
-    };
-  } else {
-    return {
-      "SELECT": "*",
-      "FROM": dataset+'.'+table
-    };
-  }
+function getQueryPartsForTable (dataset, table) {  
+  return {
+    "SELECT": "*",
+    "FROM": dataset+'.'+table
+  };
 }
 
 /**
