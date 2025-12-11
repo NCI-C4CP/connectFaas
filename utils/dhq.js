@@ -667,7 +667,7 @@ const scheduledCountDHQ3Credentials = async (req, res) => {
             to: emailTo, 
             from: {
                 name: process.env.SG_FROM_NAME || 'Connect for Cancer Prevention Study',
-                email: process.env.SG_FROM_EMAIL || 'donotreply@myconnect.cancer.gov'
+                email: process.env.SG_FROM_EMAIL || 'no-reply-myconnect@mail.nih.gov'
             },
             subject: `Low DHQ3 Credential Pool Warning: DHQ3 credentials are running low in ${developmentTier}.`,
             html: `<p>Dear Connect Team,</p>

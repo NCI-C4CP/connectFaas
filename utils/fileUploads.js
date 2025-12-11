@@ -1,8 +1,12 @@
-const { Storage } = require("@google-cloud/storage");
-const Busboy = require("busboy");
-const { savePathologyReportNamesToFirestore, getUploadedPathologyReportNamesFromFirestore } = require("./firestore");
+const Busboy = require("@fastify/busboy");
+const {
+  storage,
+  savePathologyReportNamesToFirestore,
+  getUploadedPathologyReportNamesFromFirestore,
+  getEhrDeliveries,
+  updateEhrDeliveries,
+} = require("./firestore");
 
-const storage = new Storage();
 const validTierStr = ["dev", "stg", "prod"];
 const tierStr = process.env.GCLOUD_PROJECT?.split("-")[4];
 const ehrProdBucketNames = {
@@ -64,7 +68,7 @@ const streamRequestFilesToBucket = async (httpRequest, bucketName, pathInBucket 
     throw new Error(`Failed to create or access bucket ${bucketName}: ${error.message}`);
   }
 
-  const busboy = Busboy({ headers: httpRequest.headers });
+  const busboy = new Busboy({ headers: httpRequest.headers });
   const uploadPromises = [];
   let failureFilenames = [];
   let successFilenames = [];
@@ -76,7 +80,7 @@ const streamRequestFilesToBucket = async (httpRequest, bucketName, pathInBucket 
       fields[fieldname] = val;
     });
 
-    busboy.on("file", (fieldname, file, { filename, mimetype }) => {
+    busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
       try {
         const filePath = pathInBucket ? `${pathInBucket}/${filename}` : filename;
         const stream = file.pipe(
@@ -218,18 +222,6 @@ const getUploadedPathologyReportNames = async (req, res) => {
   }
 };
 
-const getCurrentDate = () => {
-  const [mm, dd, yyyy] = new Date()
-    .toLocaleDateString("en-US", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    })
-    .split("/");
-  return `${yyyy}-${mm}-${dd}`;
-};
-
 const createSignedUploadUrl = (bucketName, filenameWithPath, contentType) => {
   return storage
     .bucket(bucketName)
@@ -237,7 +229,7 @@ const createSignedUploadUrl = (bucketName, filenameWithPath, contentType) => {
     .getSignedUrl({
       version: "v4",
       action: "write",
-      expires: Date.now() + 60 * 60 * 1000, // 1 hour
+      expires: Date.now() + 10000, // 10 seconds.
       contentType: contentType || "application/octet-stream",
     });
 };
@@ -269,10 +261,9 @@ const createEhrUploadUrls = async (req, res, acronym) => {
     return res.status(400).json({ message: `No bucket for ${acronym} in ${tierStr} tier.`, code: 400 });
   }
 
-  const currentDate = getCurrentDate();
-  const { fileInfoArray } = req.body;
-  if (!fileInfoArray || !Array.isArray(fileInfoArray) || fileInfoArray.length === 0) {
-    return res.status(400).json({ message: "No files provided in the request body", code: 400 });
+  const { fileInfoArray, name, uploadStartedAt } = req.body;
+  if (!fileInfoArray || !Array.isArray(fileInfoArray) || fileInfoArray.length === 0 || !name || !uploadStartedAt) {
+    return res.status(400).json({ message: "Invalid request body", code: 400 });
   }
   try {
     const urlPromises = [];
@@ -281,7 +272,7 @@ const createEhrUploadUrls = async (req, res, acronym) => {
       if (!filename || !contentType) {
         return res.status(400).json({ message: "Each file must have a filename and contentType", code: 400 });
       }
-      urlPromises.push(createSignedUploadUrl(bucketName, `${currentDate}/${filename}`, contentType));
+      urlPromises.push(createSignedUploadUrl(bucketName, `${name}/${filename}`, contentType));
     }
 
     const results = await Promise.all(urlPromises);
@@ -290,6 +281,7 @@ const createEhrUploadUrls = async (req, res, acronym) => {
       signedUrls[fileInfoArray[index].filename] = item[0];
     });
 
+    await updateEhrDeliveries(acronymLower, [{ name, uploadStartedAt }]);
     return res.status(200).json({ data: { signedUrls }, code: 200 });
   } catch (error) {
     return res.status(500).json({
@@ -311,22 +303,55 @@ const getUploadedEhrNames = async (req, res, acronym) => {
   const acronymLower = acronym.toLowerCase();
   const bucketName = ehrBucketNames[acronymLower];
   if (!bucketName) {
-    return res.status(400).json({ message: `No bucket for ${acronym} in ${tierStr} tier.`, code: 400 });
+    return res
+      .status(400)
+      .json({ message: `No bucket for ${acronym} exists in ${tierStr} tier.`, code: 400 });
   }
 
-  const currentDate = getCurrentDate();
+  let result = {
+    uploadedFileNames: [],
+    uploadStartedAt: "",
+    name: "",
+  };
+
   try {
     const [exists] = await storage.bucket(bucketName).exists();
     if (!exists) {
       return res.status(404).json({ message: `Bucket ${bucketName} does not exist.`, code: 404 });
     }
+
     const bucket = storage.bucket(bucketName);
-    const [files] = await bucket.getFiles({
-      prefix: `${currentDate}/`,
-      fields: "items(name)",
-    });
-    const allFilenames = files.map((f) => f.name.replace(`${currentDate}/`, ""));
-    return res.status(200).json({ code: 200, data: { allFilenames } });
+    const siteData = await getEhrDeliveries(acronymLower);
+    let recentDeliveries = siteData.recentDeliveries || [];
+    if (recentDeliveries.length === 0) {
+      return res.status(200).json({ code: 200, data: result });
+    }
+
+    const deliveryCount = recentDeliveries.length;
+    while (recentDeliveries.length > 0) {
+      const delivery = recentDeliveries[recentDeliveries.length - 1];
+      const deliveryName = delivery.name;
+      const [files] = await bucket.getFiles({
+        prefix: `${deliveryName}/`,
+        fields: "items(name)",
+      });
+
+      if (files.length === 0) {
+        recentDeliveries.pop();
+      } else {
+        result.uploadedFileNames = files.map((f) => f.name.replace(`${deliveryName}/`, ""));
+        result.uploadStartedAt = delivery.uploadStartedAt || "";
+        result.name = delivery.name || "";
+        break;
+      }
+    }
+
+    recentDeliveries = recentDeliveries.slice(-3); // Keep max of 3 recent deliveries
+    if (deliveryCount > recentDeliveries.length) {
+      await updateEhrDeliveries(acronymLower, recentDeliveries, true);
+    }
+
+    return res.status(200).json({ code: 200, data: result });
   } catch (error) {
     return res.status(500).json({
       message: "Error retrieving uploaded EHR names: " + error.message,

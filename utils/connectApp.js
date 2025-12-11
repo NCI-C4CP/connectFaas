@@ -284,6 +284,24 @@ const connectApp = async (req, res) => {
             console.error('Error', err);
             return res.status(500).json(getResponseJSON(err && err.message ? err.message : err, 500));
         }
+    } else if (api === 'getKitTrackingNumber') {
+      if(req.method !== 'GET') {
+          return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+      }
+      try {
+        const uniqueKitID = req.query?.uniqueKitID;
+        if(!uniqueKitID) {
+          return res.status(400).json(getResponseJSON('Error: unique kit ID is required'), 400);
+        }
+
+        const {getSupplyKitTrackingNumber} = require('./firestore');
+        const supplyKitTrackingNum = await getSupplyKitTrackingNumber(uniqueKitID, uid);
+        return res.status(200).json({data: {supplyKitTrackingNum}}, 200);
+
+      } catch(err) {
+        const code = err.code || 500;
+        return res.status(code).json(getResponseJSON('ERROR: ' + (err.message || err)), code);
+      }
     }
 
     else return res.status(400).json(getResponseJSON('Bad request!', 400));

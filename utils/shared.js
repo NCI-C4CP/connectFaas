@@ -1260,7 +1260,9 @@ const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBox
     const { collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         firstName, lastName, 
         isPOBox, address1, address2, 
-        physicalAddress1, physicalAddress2, city, state, zip, physicalCity, physicalState, physicalZip, 
+        physicalAddress1, physicalAddress2, city, state, zip, 
+        physicalCity, physicalState, physicalZip, 
+        isIntlAddr, physicalAddrIntl,
         yes, dateKitRequested, bloodOrUrineCollectedTimestamp } = fieldMapping;
 
     // If you need to read additional fields off of this record, make sure that the field is added to participantHomeCollectionKitFields
@@ -1275,9 +1277,9 @@ const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBox
     const physicalAddressLineOne = record[physicalAddress1];
     let addressObj = {};
 
-    // If there is a physical address, default to it unless it's a PO Box
+    // If there is a physical address, default to it unless it's a PO Box or international
     // (Behavior clarified in the notes on [1174](https://github.com/episphere/connect/issues/1174))
-    if(physicalAddressLineOne && !poBoxRegex.test(physicalAddressLineOne)) {
+    if(physicalAddressLineOne && !poBoxRegex.test(physicalAddressLineOne) && record?.[physicalAddrIntl] !== yes) {
         addressObj = {
             address_1: record[physicalAddress1],
             address_2: record[physicalAddress2] || '',
@@ -1287,8 +1289,8 @@ const processParticipantHomeMouthwashKitData = (record, printLabel, includePOBox
         };
     } else {
         const addressLineOne = record?.[address1];
-        const isPOBoxMatch = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes;
-        if(isPOBoxMatch && !includePOBoxes) {
+        const isPOBoxMatchOrIntl = poBoxRegex.test(addressLineOne) || record?.[isPOBox] === yes || record?.[isIntlAddr] === yes;
+        if(isPOBoxMatchOrIntl && !includePOBoxes) {
             return null;
         }
         addressObj = {

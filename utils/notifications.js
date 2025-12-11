@@ -219,7 +219,7 @@ const sendEmail = async (emailTo, messageSubject, html, cc) => {
         to: emailTo,
         from: {
             name: process.env.SG_FROM_NAME || 'Connect for Cancer Prevention Study',
-            email: process.env.SG_FROM_EMAIL || 'donotreply@myconnect.cancer.gov'
+            email: process.env.SG_FROM_EMAIL || 'no-reply-myconnect@mail.nih.gov'
         },
         subject: messageSubject,
         html: html,
@@ -505,7 +505,7 @@ async function handleNotificationSpec(notificationSpec) {
         const emailBatch = {
           from: {
             name: process.env.SG_FROM_NAME || "Connect for Cancer Prevention Study",
-            email: process.env.SG_FROM_EMAIL || "donotreply@myconnect.cancer.gov",
+            email: process.env.SG_FROM_EMAIL || "no-reply-myconnect@mail.nih.gov",
           },
           subject: emailInSpec[lang].subject,
           html: emailInSpec[lang].body,
@@ -956,7 +956,7 @@ const sendInstantNotification = async (requestData) => {
   const emailDataToSg = {
     from: {
       name: process.env.SG_FROM_NAME || "Connect for Cancer Prevention Study",
-      email: process.env.SG_FROM_EMAIL || "donotreply@myconnect.cancer.gov",
+      email: process.env.SG_FROM_EMAIL || "no-reply-myconnect@mail.nih.gov",
     },
     subject: emailOfPrefLang.subject,
     html: emailOfPrefLang.body,

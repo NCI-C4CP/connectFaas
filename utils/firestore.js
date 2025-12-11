@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
 admin.initializeApp();
+const storage = admin.storage();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
 const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort } = require('./shared');
@@ -351,15 +352,21 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             fieldMapping.additionalEmail3,
             fieldMapping.address1,
             fieldMapping.address2,
+            fieldMapping.address3,
             fieldMapping.city,
             fieldMapping.state,
             fieldMapping.zip,
+            fieldMapping.country,
             fieldMapping.isPOBox,
+            fieldMapping.isIntlAddr,
             fieldMapping.physicalAddress1,
             fieldMapping.physicalAddress2,
+            fieldMapping.physicalAddress3,
             fieldMapping.physicalCity,
             fieldMapping.physicalState,
             fieldMapping.physicalZip,
+            fieldMapping.physicalCountry,
+            fieldMapping.physicalAddrIntl,
             fieldMapping.canWeVoicemailMobile,
             fieldMapping.canWeVoicemailHome,
             fieldMapping.canWeVoicemailOther,
@@ -822,7 +829,6 @@ const deletePathologyReports = async (connectId) => {
       }
     }
 
-    const storage = admin.storage();
     const fileDeletePromises = [];
     const failedDeletionSet = new Set();
     for (const bucketName of bucketNameSet) {
@@ -1206,17 +1212,11 @@ const updateSurvey = async (data, collection, doc) => {
 
 
 const sanityCheckConnectID = async (ID) => {
-    try{
-        const snapshot = await db.collection('participants').where('Connect_ID', '==', ID).get();
-        printDocsCount(snapshot, "sanityCheckConnectID");
+    const snapshot = await db.collection('participants').where('Connect_ID', '==', ID).get();
+    printDocsCount(snapshot, "sanityCheckConnectID");
 
-        return snapshot.size === 0;
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
-}
+    return snapshot.size === 0;
+};
 
 const sanityCheckPIN = async (pin) => {
     try{
@@ -2658,7 +2658,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             withdrawConsent, participantMap: {destroyData}, participantDeceased, participantDeceasedNORC, 
             verificationStatus, verified, activityParticipantRefusal, baselineMouthwashSample, baselineMouthwashCollected,
             allFutureSamples, refusedAllFutureActivities,
-            physicalAddress1, address1, isPOBox
+            physicalAddress1, address1, isPOBox, isIntlAddr, physicalAddrIntl
 
         } = fieldMapping;
         // RegEx formatting for case insensitivity as specified here: https://stackoverflow.com/questions/42987537/google-bigquery-possible-to-do-case-insensitive-regexp-match
@@ -2674,8 +2674,8 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             `d_${activityParticipantRefusal}.d_${baselineMouthwashSample} != ${yes} OR d_${activityParticipantRefusal}.d_${baselineMouthwashSample} IS NULL`,  // Participant has not refused baseline mouthwash sample
             `d_${activityParticipantRefusal}.d_${allFutureSamples} != ${yes} OR d_${activityParticipantRefusal}.d_${allFutureSamples} IS NULL`, // Participant has not refused all future samples
             `d_${refusedAllFutureActivities} != ${yes} OR d_${refusedAllFutureActivities} IS NULL`, // Participant has not refused all future activities
-            `NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) OR NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex})`, // Participant address is not a P.O. Box
-            `d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL`, // PO Box is not checked
+            // Participant has a valid non-PO, non-international address to send kit to
+            `(NOT REGEXP_CONTAINS(d_${physicalAddress1}, ${poBoxRegex}) AND (d_${physicalAddrIntl} != ${yes} OR d_${physicalAddrIntl} IS NULL) AND (d_${isPOBox} != ${yes} OR d_${isPOBox} IS NULL)) OR (NOT REGEXP_CONTAINS(d_${address1}, ${poBoxRegex}) AND (d_${isIntlAddr} != ${yes} OR d_${isIntlAddr} IS NULL))`,
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`,
             `d_${baselineMouthwashCollected} != ${yes} OR d_${baselineMouthwashCollected} IS NULL`, // Participant does not already have a mouthwash sample collected
@@ -2835,9 +2835,9 @@ const getNotificationSpecsBySchedule = async (scheduleAt) => {
  * @returns 
  */
 const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
-  const eastTimezone = { timezone: "America/New_York" };
+  const eastTimeZone = { timeZone: "America/New_York" };
   const currTime = new Date();
-  const currDate = currTime.toLocaleDateString("en-US", eastTimezone);
+  const currDate = currTime.toLocaleDateString("en-US", eastTimeZone);
   const currTimeIsoStr = currTime.toISOString();
   const batch = db.batch();
   const snapshot = await db
@@ -2850,7 +2850,7 @@ const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
   for (const doc of snapshot.docs) {
     const docData = doc.data();
     const lastRunTime = docData.lastRunTime || "2020-01-01";
-    const lastRunDate = new Date(lastRunTime).toLocaleDateString("en-US", eastTimezone);
+    const lastRunDate = new Date(lastRunTime).toLocaleDateString("en-US", eastTimeZone);
     if (docData.id && currDate !== lastRunDate) {
       notificationSpecArray.push(docData);
       batch.update(doc.ref, { lastRunTime: currTimeIsoStr });
@@ -3266,7 +3266,7 @@ const requestHomeKit = async(connectId, userInitiated = false) => {
         }
         const data = participantSnapshot.docs[0].data();
 
-        if(userInitiated && data[fieldMapping.kitRequestEligible] !== fieldMapping.yes) {
+        if(userInitiated && data?.[fieldMapping.collectionDetails]?.[fieldMapping.baseline]?.[fieldMapping.bioKitMouthwash]?.[fieldMapping.kitRequestEligible] !== fieldMapping.yes) {
             // Verify that the user is marked as eligible to request a kit if
             // this is user-initiated (e.g. comes from connectApp)
             throw new Error('User is not eligible to request a home kit at this time.');
@@ -3288,6 +3288,38 @@ const requestHomeKit = async(connectId, userInitiated = false) => {
             throw err;
         }
     });
+}
+
+/**
+ * Gets the supply kit tracking information for a kit
+ * @param {string} uniqueKitID The ID of the kit being looked up
+ * @param {string} uid The UID of the user making the request
+ */
+const getSupplyKitTrackingNumber = async (uniqueKitID, uid) => {
+    const [kitInfo, userInfo] = await Promise.all([
+        db.collection("kitAssembly").where(`${fieldMapping.uniqueKitID}`, '==', `${uniqueKitID}`).get(),
+        db.collection('participants').where('state.uid', '==', uid).get()
+    ]);
+    if(!kitInfo.size) {
+        const err = new Error('No kit for this ID found.');
+        err.code = 404;
+        throw err;
+    }
+
+    if(!userInfo.size) {
+        const err = new Error('No valid user provided for this request.');
+        err.code = 401;
+        throw err;
+    }
+    const kitData = kitInfo.docs[0].data();
+    if(kitData['Connect_ID'] !== userInfo.docs[0].data()['Connect_ID']) {
+        const err = new Error('User does not have permission to view this information.');
+        err.code = 401;
+        throw err;
+    }
+
+    return kitData[fieldMapping.supplyKitTrackingNum];
+
 }
 
 const addKitStatusToParticipant = async (participantsCID) => {
@@ -3807,6 +3839,7 @@ const storeKitReceipt = async (pkg) => {
             biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
         let toReturn;
+
         await db.runTransaction(async (transaction) => {
             const kitSnapshot = await transaction.get(
                 db.collection("kitAssembly")
@@ -3904,7 +3937,7 @@ const storeKitReceipt = async (pkg) => {
                 'Connect_ID': Connect_ID,
                 'token': token,
                 'uid': uid
-            }
+            };
 
             // This should be a new document, but just in case
             let biospecimenDocRef;
@@ -3963,11 +3996,24 @@ const storeKitReceipt = async (pkg) => {
 }
 
 const processPackageConditions = (pkgConditions) => {
-    const keys = [950521660, 545319575, 938338155, 205954477, 289239334, 992420392, 541085383, 427719697, 100618603];
+    const keys = [
+        fieldMapping.pkgGoodCondition,
+        fieldMapping.pkgCrushed,
+        fieldMapping.pkgImproperPackaging,
+        fieldMapping.pkgCollectionCupDamaged,
+        fieldMapping.pkgCollectionCupLeakedPartialLoss,
+        fieldMapping.pkgCollectionCupLeakedTotalLoss,
+        fieldMapping.pkgEmptyCupReturned,
+        fieldMapping.pkgIncorrectMaterialType,
+        fieldMapping.pkgCollectionCupNotReturned,
+        fieldMapping.pkgOther
+    ];
     const result = {};
     
     for (const key of keys) {
-        result[key] = pkgConditions.includes(String(key)) ? 353358909 : 104430631;
+        result[key] = pkgConditions.includes(String(key)) 
+            ? fieldMapping.yes 
+            : fieldMapping.no;
     }
 
     return result;
@@ -5484,8 +5530,78 @@ const getUploadedPathologyReportNamesFromFirestore = async ({ bucketName, Connec
   return snapshot.docs.map((doc) => doc.data()[`${fieldMapping.pathologyReportFilename}`]);
 };
 
+/**
+ * Get EHR delivery data for a site
+ * @param {string} acronymLower - Site acronym in lowercase
+ * @returns {Promise<Object>} EHR delivery data for the site
+ */
+const getEhrDeliveries = async (acronymLower) => {
+  const snapshot = await db
+    .collection("appSettings")
+    .where("appName", "==", "backendEhrDeliveries")
+    .select(acronymLower)
+    .get();
+
+  if (snapshot.empty) return {};
+
+  const docData = snapshot.docs[0].data();
+  return docData[acronymLower] || {};
+};
+
+/**
+ * Update EHR delivery data for a site. The saved data are used in queries to quickly get recent deliveries for each site.
+ * @param {string} acronymLower - Site acronym in lowercase
+ * @param {Array<{name: string, uploadStartedAt: string}>} deliveryDataArray - Array of delivery data
+ * @param {boolean} [replace=false] - Whether to replace existing deliveries
+ * @returns {Promise<boolean>} Resolve to true if update is a success, false otherwise
+ */
+const updateEhrDeliveries = async (acronymLower, deliveryDataArray, replace = false) => {
+  try {
+    const snapshot = await db
+      .collection("appSettings")
+      .where("appName", "==", "backendEhrDeliveries")
+      .select(acronymLower)
+      .get();
+
+    if (snapshot.empty) {
+      throw new Error("No document found for updateEhrDeliveries()");
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    const docData = snapshot.docs[0].data();
+    if (replace) {
+      await docRef.update(`${acronymLower}.recentDeliveries`, deliveryDataArray);
+      return true;
+    }
+
+    const siteData = docData[acronymLower] || { recentDeliveries: [] };
+    const deliveryCount = siteData.recentDeliveries.length;
+    for (const deliveryData of deliveryDataArray) {
+      const deliveryName = deliveryData.name;
+      const isDeliveryStored = siteData.recentDeliveries.some(
+        (delivery) => delivery.name === deliveryName
+      );
+
+      if (!isDeliveryStored) {
+        siteData.recentDeliveries.push(deliveryData);
+      }
+    }
+
+    if (deliveryCount < siteData.recentDeliveries.length) {
+      await docRef.update(`${acronymLower}.recentDeliveries`, siteData.recentDeliveries);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error in updateEhrDeliveries(): ", error);
+    return false;
+  }
+};
+
 module.exports = {
     db,
+    storage,
     verifyToken,
     updateResponse,
     retrieveParticipants,
@@ -5613,6 +5729,7 @@ module.exports = {
     markParticipantAddressUndeliverable,
     eligibleParticipantsForKitAssignment,
     requestHomeKit,
+    getSupplyKitTrackingNumber,
     processSendGridEvent,
     processTwilioEvent,
     getSpecimenAndParticipant,
@@ -5632,4 +5749,6 @@ module.exports = {
     savePathologyReportNamesToFirestore,
     getUploadedPathologyReportNamesFromFirestore,
     deletePathologyReports,
+    getEhrDeliveries,
+    updateEhrDeliveries,
 };
