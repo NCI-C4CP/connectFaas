@@ -2,7 +2,8 @@ const { getResponseJSON, setHeadersDomainRestricted, getUserProfile, safeJSONPar
 const { submit, submitSocial, getUserSurveys, getUserCollections } = require('./submission');
 const { retrieveNotifications, sendEmailLink } = require('./notifications');
 const { retrievePhysicalActivityReport } = require('./reports');
-const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, addressValidation, validateToken } = require('./validation');
+const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, validateToken } = require('./validation');
+const { addressValidation } = require('./usps');
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
