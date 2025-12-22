@@ -41,7 +41,7 @@ const setupTwilio = async () => {
 };
 
 /**
- * Send Twilio SMS message in using API call.
+ * Send Twilio SMS message using API.
  * @param {Object} smsRecord SMS record object to be saved to Firestore
  * @returns {Promise<Object | null>}
  */
