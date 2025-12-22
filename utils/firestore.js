@@ -5027,8 +5027,8 @@ const processSendGridEvent = async (event) => {
 };
 
 const processTwilioEvent = async (event) => {
-    if (!["failed", "delivered", "undelivered"].includes(event.MessageStatus)) return 
-    const date = new Date().toISOString();
+    if (!["failed", "delivered", "undelivered"].includes(event.MessageStatus)) return;
+    const dateStr = new Date().toISOString();
 
     const snapshot = await db
         .collection("notifications")
@@ -5038,21 +5038,22 @@ const processTwilioEvent = async (event) => {
 
     if (snapshot.size > 0) {
         const doc = snapshot.docs[0];
+        const docData = doc.data();
         const eventRecord = {
             status: event.MessageStatus,
-            [`${event.MessageStatus}Date`]: date,
-            errorCode: event.ErrorCode || "",
-            errorMessage: event.ErrorMessage || twilioErrorMessages[event.ErrorCode] || "",
+            [`${event.MessageStatus}Date`]: dateStr,
+            errorCode: event.ErrorCode || docData.errorCode || "",
+            errorMessage: event.ErrorMessage || twilioErrorMessages[event.ErrorCode] || docData.errorMessage || "",
         };
 
-        await db.collection("notifications").doc(doc.id).update(eventRecord);
+        await doc.ref.update(eventRecord);
 
         if (event.ErrorCode === "21610") {
-            await updateSmsPermission(doc.data().phone, false);
+            await updateSmsPermission(docData.phone, false);
         }
 
     } else {
-        console.error(`Could not find messageSid ${event.MessageSid}. Status ${event.MessageStatus}`)
+        console.error(`Could not find messageSid ${event.MessageSid}. Status ${event.MessageStatus}`);
     }
 };
 
@@ -5328,25 +5329,6 @@ const getAppSettings = async (appName, selectedParamsArray) => {
         throw new Error("Error fetching app settings.", { cause: error });
     }
 }
-
-/**
- * Update Notify message delivery status to Firestore.
- * @param {Object} data 
- */
-const updateNotifySmsRecord = async (data) => {
-  const snapshot = await db
-    .collection("notifications")
-    .where("phone", "==", data.phone)
-    .where("twilioNotificationSid", "==", data.twilioNotificationSid)
-    .get();
-
-    if (snapshot.size === 1) {
-      await snapshot.docs[0].ref.update(data);
-      return true;
-    }
-
-    return false;
-};
 
 /**
  * 
@@ -5742,7 +5724,6 @@ module.exports = {
     resetParticipantSurvey,
     generateSignInWithEmailLink,
     getAppSettings,
-    updateNotifySmsRecord,
     updateSmsPermission,
     updateParticipantIncentiveEligibility,
     processPhysicalActivity,
