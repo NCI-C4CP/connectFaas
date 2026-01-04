@@ -51,8 +51,9 @@
     "sinon": "^19.0.2",
     "supertest": "^6.3.4"
   },
-  "overridesNote": "Temporary: pin form-data to 2.5.5. Keep until upgrade of @google-cloud/* packages. Once upgraded, remove this note and the overrides section.",
+  "overridesNote": "Temporary: pin form-data to 2.5.5. Keep until upgrade of @google-cloud/* packages. jws pinned to 4.0.1 for GHSA-869p-cjfg-cm3x fix.",
   "overrides": {
+    "jws": "4.0.1",
     "@google-cloud/bigquery": {
       "form-data": "2.5.5"
     },
