@@ -51,10 +51,16 @@
     "sinon": "^19.0.2",
     "supertest": "^6.3.4"
   },
-  "overridesNote": "Temporary overrides: form-data pinned to 2.5.5 until @google-cloud/* packages upgrade. qs pinned to 6.14.1 for CVE-2025-15284 fix. jws pinned to 4.0.1 for GHSA-869p-cjfg-cm3x fix.",
+  "overridesNote": {
+    "form-data": "Pinned to 2.5.5 until @google-cloud/* packages upgrade",
+    "qs": "6.14.1 for CVE-2025-15284",
+    "jws": "4.0.1 for GHSA-869p-cjfg-cm3x",
+    "js-yaml": "4.1.1 for GHSA-mh29-5h37-fv8m"
+  },
   "overrides": {
     "qs": "6.14.1",
     "jws": "4.0.1",
+    "js-yaml": "4.1.1",
     "@google-cloud/bigquery": {
       "form-data": "2.5.5"
     },
