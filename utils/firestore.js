@@ -3834,7 +3834,7 @@ const storeKitReceipt = async (pkg) => {
             collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, uniqueKitID,
             healthCareProvider, preferredName, firstName, mouthwashSurveyCompletionStatus,
             collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
-            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, received, shipped,
+            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, unexpectedCollectionDateConfirm, received, shipped,
             pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
             biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
@@ -3843,8 +3843,8 @@ const storeKitReceipt = async (pkg) => {
         await db.runTransaction(async (transaction) => {
             const kitSnapshot = await transaction.get(
                 db.collection("kitAssembly")
-                .where(`${returnKitTrackingNum}`, '==', pkg[returnKitTrackingNum])
-                .where(`${kitStatus}`, '==', shipped)
+                    .where(`${returnKitTrackingNum}`, '==', pkg[returnKitTrackingNum])
+                    .where(`${kitStatus}`, '==', shipped)
             );
             printDocsCount(kitSnapshot, "storeKitReceipt");
             if (kitSnapshot.size === 0) {
@@ -3916,9 +3916,11 @@ const storeKitReceipt = async (pkg) => {
             /**
              * Check that the collection date is not later than the date received or earlier than the date shipped.
              * If either is true, return an error.
-             * This check is completed once. If a second request with the same collection date is made, it will pass.
+             * This check is here as backend hardening
+             * but should no longer be the primary workflow, as the front end now
+             * sets the unexpectedCollectionDateConfirm flag
              */
-            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && !pkg["collectionDateChecked"]) {
+            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && pkg[unexpectedCollectionDateConfirm] !== yes) {
                 toReturn = { status: 'Check collection date, possible invalid entry' };
                 return;
             }
@@ -3938,6 +3940,7 @@ const storeKitReceipt = async (pkg) => {
                 'token': token,
                 'uid': uid
             };
+            
 
             // This should be a new document, but just in case
             let biospecimenDocRef;
@@ -3947,16 +3950,21 @@ const storeKitReceipt = async (pkg) => {
             } else {
                 biospecimenDocRef = db.collection('biospecimen').doc();
             }
-            
+
             transaction.set(biospecimenDocRef, biospecPkg);
 
-            transaction.update(kitDoc.ref, {
+            const kitDocUpdates = {
                 [collectionCardFlag]: pkg[collectionCardFlag] === true ? yes : no,
                 [kitStatus]: received,
                 [pkgReceiptConditions]: processPackageConditions(pkg[pkgReceiptConditions]),
                 [kitPkgComments]: pkg[kitPkgComments],
                 [receivedDateTime]: pkg[receivedDateTime]
-            });
+            };
+            if(pkg[unexpectedCollectionDateConfirm]) {
+                kitDocUpdates[unexpectedCollectionDateConfirm] = pkg[unexpectedCollectionDateConfirm];
+            }
+
+            transaction.update(kitDoc.ref, kitDocUpdates);
 
             transaction.update(participantDoc.ref, {
                 [baselineMouthwashCollected]: yes,
@@ -3993,6 +4001,36 @@ const storeKitReceipt = async (pkg) => {
         console.error(error);
         throw new Error(error);
     }
+}
+
+/**
+ * Check that the collection date is not later than the date received or earlier than the date shipped.
+* If either is true or the kit is not found, return an false.
+ * @param {object} query The query string
+ * @param {string} query.returnKitTrackingNum The return kit tracking number for the kit
+ * @param {string} query.collectionDateTimestamp The timestamp string when the sample was reported as collected
+ * @param {string} query.receivedDateTime The timestamp string when the sample was reported as received
+ * @returns 
+ */
+const validateKitReceiptCollectionDate = async (query) => {
+    const {collectionDateTimestamp, receivedDateTime, returnKitTrackingNum} = query;
+    const kitSnapshot = await db
+        .collection('kitAssembly')
+        .where(`${fieldMapping.returnKitTrackingNum}`, '==', returnKitTrackingNum)
+        .where(`${fieldMapping.kitStatus}`, '==', fieldMapping.shipped)
+        .get();
+
+    if (kitSnapshot.size === 0) {
+        return false;
+    }
+    const kitDoc = kitSnapshot.docs[0];
+    const kitData = kitDoc.data();
+
+    if ((collectionDateTimestamp > receivedDateTime || collectionDateTimestamp < kitData[fieldMapping.shippedDateTime])) {
+        return false;
+    }
+
+    return true;
 }
 
 const processPackageConditions = (pkgConditions) => {
@@ -5705,6 +5743,7 @@ module.exports = {
     processVerifyScannedCode,
     assignKitToParticipant,
     confirmShipmentKit,
+    validateKitReceiptCollectionDate,
     storeKitReceipt,
     addKitStatusToParticipant,
     addKitStatusToParticipantV2,
