@@ -14,22 +14,15 @@ const dashboard = async (req, res) => {
 
     const accessToken = req.headers.authorization.replace('Bearer ','').trim();
 
-    const { SSOValidation, decodingJWT } = require('./shared');
-    let dashboardType = 'siteManagerUser';
-    if (accessToken.includes('.')) {
-        const decodedJWT = decodingJWT(accessToken);
-        dashboardType = ['saml.connect-norc', 'saml.connect-norc-prod'].includes(decodedJWT.firebase.sign_in_provider) ? 'helpDeskUser' : 'siteManagerUser';
-    }
-    const SSOObject = await SSOValidation(dashboardType, accessToken);
+    const { SSOValidation, isParentEntity } = require('./shared');
+    const validationResult = await SSOValidation("dashboard", accessToken);
 
-    if (!SSOObject) {
+    if (!validationResult) {
         return res.status(401).json(getResponseJSON('Authorization failed!', 401));
     }
 
-    let userEmail = SSOObject.email;
-    let siteDetails = SSOObject.siteDetails;
-
-    const { isParentEntity } = require('./shared');
+    let userEmail = validationResult.email;
+    let siteDetails = validationResult.siteDetails;
     const authObj = await isParentEntity(siteDetails);
     if (userEmail) authObj['userEmail'] = userEmail;
     const isParent = authObj.isParent;
@@ -43,7 +36,17 @@ const dashboard = async (req, res) => {
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
         }
-        return res.status(200).json({message: 'Ok', code: 200, isParent, coordinatingCenter: isCoordinatingCenter, helpDesk: isHelpDesk});
+
+        const isSiteManager = validationResult.isSiteManagerUser;
+        const isEHRUploader = !isSiteManager && validationResult.isEHRUploadUser; // Coordinating Center doesn't have EHR uploader role
+        const returnedData = {
+          isParent,
+          coordinatingCenter: siteDetails.coordinatingCenter,
+          helpDesk: siteDetails.helpDesk,
+          isSiteManager,
+          isEHRUploader,
+        };
+        return res.status(200).json({ message: "Ok", code: 200, data: returnedData });
     } else if (api === 'getParticipants') {
         const { getParticipants } = require('./submission');
         return await getParticipants(req, res, authObj);
@@ -277,9 +280,9 @@ const dashboard = async (req, res) => {
     } else if (api === "getUploadedPathologyReportNames") {
         return await getUploadedPathologyReportNames(req, res);
     } else if (api === "createEhrUploadUrls") {
-        return await createEhrUploadUrls(req, res, SSOObject.siteDetails.acronym);
+        return await createEhrUploadUrls(req, res, validationResult.siteDetails.acronym);
     } else if (api === "getUploadedEhrNames") {
-        return await getUploadedEhrNames(req, res, SSOObject.siteDetails.acronym);
+        return await getUploadedEhrNames(req, res, validationResult.siteDetails.acronym);
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
