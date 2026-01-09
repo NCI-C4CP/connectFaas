@@ -1,4 +1,5 @@
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
+const { QuerySnapshot } = require('firebase-admin/firestore');
 const fieldMapping = require('./fieldToConceptIdMapping');
 
 const getResponseJSON = (message, code) => {
@@ -581,16 +582,19 @@ const SSOValidation = async (appName, idToken) => {
 
   const { validateMultiTenantIDToken, getSiteDetailsWithSignInProvider } = require("./firestore");
   const validatedGroupSet = new Set();
+  const decodedJWT = decodingJWT(idToken);
+  if (!decodedJWT || !decodedJWT.firebase || !decodedJWT.firebase.tenant) return false;
+
+  const tenant = decodedJWT.firebase.tenant;
   try {
-    const decodedJWT = decodingJWT(idToken);
-    const tenant = decodedJWT.firebase.tenant;
     const decodedToken = await validateMultiTenantIDToken(idToken, tenant);
     const email = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["email"]];
-    const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["group"]];
+    const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["group"]]?.toString();
     if (!allGroups) return false;
 
     for (const userGroup in userGroupsObj) {
-      if (allGroups.includes(SSOConfig[tenant][userGroup])) {
+      const adGroupId = SSOConfig[tenant][userGroup];
+      if (adGroupId && allGroups.includes(adGroupId)) {
         validatedGroupSet.add(userGroup);
       }
     }
@@ -600,7 +604,7 @@ const SSOValidation = async (appName, idToken) => {
     const kpTenants = ["KP-SSO-wulix", "KP-SSO-ssj7c", "KP-SSO-ii9sr"];
     if (kpTenants.includes(tenant)) {
       const kpMatches = allGroups.match(/CN=connect_kp(co|hi|nw|ga)_user/gi);
-      if (kpMatches.length > 1) return false;
+      if (!kpMatches || kpMatches.length > 1) return false;
       const site = kpMatches[0].match(/connect_(kpco|kphi|kpnw|kpga)_user/i)[1];
       acronym = SSOConfig[tenant][site].acronym;
     } else {

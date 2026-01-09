@@ -38,7 +38,7 @@ const dashboard = async (req, res) => {
         }
 
         const isSiteManager = validationResult.isSiteManagerUser;
-        const isEHRUploader = !isSiteManager && validationResult.isEHRUploadUser; // CCC doesn't have EHR uploader role
+        const isEHRUploader = !isSiteManager && validationResult.isEHRUploadUser; // Coordinating Center doesn't have EHR uploader role
         const returnedData = {
           isParent,
           coordinatingCenter: siteDetails.coordinatingCenter,

@@ -20,8 +20,8 @@ const biospecimenAPIs = async (req, res) => {
 
     const idToken = req.headers.authorization.replace('Bearer','').trim();
     const validationResult = await SSOValidation('biospecimen', idToken);
-    const isBPTLUser = validationResult.isBPTLUser;
-    const isBiospecimenUser = validationResult.isBiospecimenUser;
+    const isBPTLUser = validationResult?.isBPTLUser;
+    const isBiospecimenUser = validationResult?.isBiospecimenUser;
     if (!validationResult || (!isBPTLUser && !isBiospecimenUser)) {
         return res.status(401).json(getResponseJSON('Authorization failed!', 401));
     }
