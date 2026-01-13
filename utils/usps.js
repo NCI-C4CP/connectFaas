@@ -81,7 +81,7 @@ const validateAddressParams = (payload) => {
 
 /**
  * Build the query string URL with the parameters
- * @param {Object} params - The parameters
+ * @param {Object} params - The validated address parameters
  * @returns {string} - The query string URL with the parameters
  */
 const buildURLWithParams = (params) => {
@@ -171,7 +171,7 @@ const getCachedToken = async () => {
  */
 const persistToken = async (token, expiresInSeconds) => {
     if (!token || !expiresInSeconds) {
-        console.error("USPS token: Invalid token or expiresInSeconds", { token, expiresInSeconds });
+        console.error("USPS token: Invalid token or expiresInSeconds", { hasToken: !!token, expiresInSeconds });
     }
 
     const computedLifetimeMs =

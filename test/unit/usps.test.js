@@ -69,7 +69,14 @@ describe('USPS Unit Tests', () => {
         // Mock global fetch
         fetchStub = sinon.stub();
         global.fetch = fetchStub;
-        global.AbortController = class { abort() {} };
+        global.AbortController = class {
+            constructor() {
+                this.signal = { aborted: false };
+            }
+            abort() {
+                this.signal.aborted = true;
+            }
+        };
 
         // Setup secrets resolution
         process.env.USPS_CLIENT_ID = 'usps-client-id';
