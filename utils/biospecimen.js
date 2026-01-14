@@ -73,54 +73,7 @@ const biospecimenAPIs = async (req, res) => {
         }
         return res.status(200).json({data: obj, code:200});
     }
-    // ToDo: Remove `biospecimenUsers` collection in Firestore (dev), and related code in ConnectFaas and Biospecimen repos
-    // else if(api === 'users' && (role === 'admin' || role === 'manager')) {
-    //     if(req.method !== 'GET') {
-    //         return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    //     }
-    //     const { biospecimenUserList } = require('./firestore');
-    //     const usersList = role === 'admin' ? await biospecimenUserList(siteCode) : await biospecimenUserList(siteCode, email);
-    //     return res.status(200).json({data: {users: usersList}, code: 200})
-    // }
-    // else if(api === 'addUsers' && (role === 'admin' || role === 'manager')) {
-    //     if(req.method !== 'POST') {
-    //         return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
-    //     }
-    //     const requestData = req.body;
-    //     console.log(requestData);
-    //     if(requestData.length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
-    //     for(let person of requestData) {
-    //         if(person.name && person.email && person.role){
-    //             if(role === 'admin' && ( person.role === 'manager' || person.role === 'user')){
-    //                 const response = await addNewUser(person, email, siteCode);
-    //                 if(response instanceof Error){
-    //                     return res.status(400).json(getResponseJSON(response.message, 400));
-    //                 }
-    //             }
-    //             if(role === 'manager' && person.role === 'user'){
-    //                 const response = await addNewUser(person, email, siteCode);
-    //                 if(response instanceof Error){
-    //                     return res.status(400).json(getResponseJSON(response.message, 400));
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     return res.status(200).json({message: 'Success!', code: 200})
-    // }
-    // else if (api === 'removeUser'  && (role === 'admin' || role === 'manager')) {
-    //     if(req.method !== 'GET') {
-    //         return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-    //     }
-    //     const emailId = req.query.email;
-    //     if(!emailId) return res.status(400).json(getResponseJSON('Query parameter email is missing.', 400));
-    //     if(emailId === email) return res.status(400).json(getResponseJSON('Can not remove yourself.', 400));
-    //     const { removeUser } = require('./firestore');
-    //     let response = '';
-    //     if(role === 'admin') response = await removeUser(emailId, siteCode, email);
-    //     else if(role === 'manager') response = await removeUser(emailId, siteCode, email, true);
-    //     if(!response) return res.status(404).json(getResponseJSON('User not found.', 404));
-    //     return res.status(200).json({message: 'Success!', code:200})
-    // }
+    
     else if (api === 'addSpecimen') {
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -1141,19 +1094,6 @@ const biospecimenAPIs = async (req, res) => {
     else return res.status(400).json(getResponseJSON('Bad request!', 400));
 };
 
-// const addNewUser = async (person, email, siteCode) => {
-//     const { biospecimenUserExists } = require('./firestore');
-//     const exists = await biospecimenUserExists(person.email);
-//     if(exists === false) {
-//         person['addedBy'] = email;
-//         person['addedAt'] = new Date().toISOString();
-//         person['siteCode'] = siteCode;
-//         const { addNewBiospecimenUser } = require('./firestore');
-//         await addNewBiospecimenUser(person);
-//     }
-//     else return new Error('User with this email already exists');
-// }
-
 module.exports = {
     biospecimenAPIs
-}
+};

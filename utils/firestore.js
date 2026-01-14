@@ -1494,83 +1494,6 @@ const filterDB = async (queries, siteCode, isParent) => {
     }
 };
 
-// ToDo: Remove `biospecimenUsers` collection in Firestore (dev) and related code in ConnectFaas and Biospecimen repos
-// const validateBiospecimenUser = async (email) => {
-//     try {
-//         const snapshot = await db.collection('biospecimenUsers').where('email', '==', email).get();
-//         printDocsCount(snapshot, "validateBiospecimenUser");
-//         if(snapshot.size === 1) {
-//             const role = snapshot.docs[0].data().role;
-//             const siteCode = snapshot.docs[0].data().siteCode;
-//             const response = await db.collection('siteDetails').where('siteCode', '==', siteCode).get();
-//             const siteAcronym = response.docs[0].data().acronym;
-//             return { role, siteCode, siteAcronym };
-//         }
-//         else return false;
-//     } catch (error) {
-//         console.error(error);
-//         return new Error(error);
-//     }
-// }
-
-// const biospecimenUserList = async (siteCode, email) => {
-//     try {
-//         let query = db.collection('biospecimenUsers').where('siteCode', '==', siteCode)
-//         if(email) query = query.where('addedBy', '==', email)
-//         const snapshot = await query.orderBy('role').orderBy('email').get();
-//         printDocsCount(snapshot, "biospecimenUserList");
-//         if(snapshot.size !== 0){
-//             return snapshot.docs.map(document => document.data());
-//         }
-//         else{
-//             return [];
-//         }
-//     } catch (error) {
-//         console.error(error);
-//         return new Error(error);
-//     }
-// }
-
-// const biospecimenUserExists = async (email) => {
-//     try {
-//         const snapshot = await db.collection('biospecimenUsers').where('email', '==', email).get();
-//         printDocsCount(snapshot, "biospecimenUserExists");
-//         if(snapshot.size === 0) return false;
-//         else return true;
-//     } catch (error) {
-//         console.error(error);
-//         return new Error(error);
-//     }
-// }
-
-// const addNewBiospecimenUser = async (data) => {
-//     try {
-//         await db.collection('biospecimenUsers').add(data);
-//     } catch (error) {
-//         console.error(error);
-//         return new Error(error);
-//     }
-// }
-
-// const removeUser = async (userEmail, siteCode, email, manager) => {
-//     try {
-//         let query = db.collection('biospecimenUsers').where('email', '==', userEmail).where('siteCode', '==', siteCode);
-//         if(manager) query = query.where('addedBy', '==', email);
-//         const snapshot = await query.get();
-//         printDocsCount(snapshot, "removeUser");
-//         if(snapshot.size === 1) {
-//             console.log('Removing', userEmail);
-//             const docId = snapshot.docs[0].id;
-//             await db.collection('biospecimenUsers').doc(docId).delete();
-//             return true;
-//         }
-//         else return false;
-//     } catch (error) {
-//         console.error(error);
-//         return new Error(error);
-//     }
-// }
-
 const storeSpecimen = async (data) => {
     await db.collection('biospecimen').add(data);
 }
@@ -5608,11 +5531,6 @@ module.exports = {
     notificationTokenExists,
     retrieveUserNotifications,
     filterDB,
-    // validateBiospecimenUser,
-    // biospecimenUserList,
-    // biospecimenUserExists,
-    // addNewBiospecimenUser,
-    // removeUser,
     storeSpecimen,
     submitSpecimen,
     updateSpecimen,
