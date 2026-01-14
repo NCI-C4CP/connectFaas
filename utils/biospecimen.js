@@ -30,7 +30,7 @@ const biospecimenAPIs = async (req, res) => {
     console.log("Accessed By: " + email);
     const role = "user";
     const siteAcronym = validationResult.siteDetails.acronym;
-    const siteCode = validationResult.siteDetails.siteCode || 13;
+    const siteCode = validationResult.siteDetails.siteCode || 13; // Fallback to NCI site code (13)
     const obj = { role, siteAcronym, isBPTLUser, isBiospecimenUser, email, siteCode };
 
     if(api === 'getFilteredParticipants') {
