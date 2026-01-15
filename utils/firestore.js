@@ -3943,7 +3943,9 @@ const validateKitReceiptCollectionDate = async (query) => {
     const kitDoc = kitSnapshot.docs[0];
     const kitData = kitDoc.data();
 
-    if ((collectionDateTimestamp > receivedDateTime || collectionDateTimestamp < kitData[fieldMapping.shippedDateTime])) {
+
+    // If collected after it is received or if collected after it shipped
+    if ((collectionDateTimestamp > receivedDateTime || collectionDateTimestamp > kitData[fieldMapping.shippedDateTime])) {
         return false;
     }
 
