@@ -740,8 +740,6 @@ const sendEmailLink = async (req, res) => {
 
         const cleanMagicLink = cleanContinueUrl(magicLink);
 
-        console.log(`Generated magic link: ${cleanMagicLink}`);
-
         const params = new URLSearchParams();
         params.append("grant_type", "client_credentials");
         params.append("scope", "https://graph.microsoft.com/.default");

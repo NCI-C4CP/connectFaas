@@ -427,7 +427,8 @@ describe('USPS Unit Tests', () => {
             await uspsModule.addressValidation(req, res);
 
             expect(fetchStub.callCount).to.equal(2); 
-            expect(res.status.calledWith(502)).to.be.true;
+            expect(res.status.calledWith(400)).to.be.true;
+            expect(res.json.firstCall.args[0].message).to.include('Invalid Address');
         });
     });
 });

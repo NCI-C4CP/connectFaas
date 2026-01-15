@@ -20,6 +20,26 @@ const EARLY_EXPIRY_MS = 60_000;                     // Refresh 1 minute before e
 let uspsTokenCache = { token: null, expiresAt: 0 }; // In-memory cache
 let appSettingsDocRef = null;                       // Cached Firestore doc ref
 
+const summarizeAddressForLog = (payload) => {
+    if (!payload || typeof payload !== "object") {
+        return { hasBody: !!payload, type: typeof payload };
+    }
+
+    const streetAddress = payload.streetAddress?.toString()?.trim() || "";
+    const city = payload.city?.toString()?.trim() || "";
+    const state = payload.state?.toString()?.trim()?.toUpperCase() || "";
+    const zip = payload.zipCode?.toString()?.trim() || "";
+
+    return {
+        hasStreetAddress: !!streetAddress,
+        streetAddressLength: streetAddress.length,
+        hasSecondaryAddress: !!payload.secondaryAddress?.toString()?.trim(),
+        cityLength: city.length,
+        state: state || null,
+        zipMasked: zip ? `${zip.slice(0, 2)}***` : null,
+    };
+};
+
 /**
  * Pre-process the request body
  * @param {Object} payload - The request body
@@ -193,6 +213,7 @@ const persistToken = async (token, expiresInSeconds) => {
             await appSettingsDocRef.set({ 
                 usps: { token, expiresAt } 
             }, { merge: true });
+
         } catch (err) {
             console.warn("USPS token: Firestore write failed", err);
         }
@@ -263,11 +284,11 @@ const fetchUSPSToken = async (forceRefresh = false) => {
 
     } catch (err) {
         throw new Error(`USPS auth network error: ${err.message}`);
+
     } finally {
         clearTimeout(timeout);
     }
 };
-
 
 /**
  * Validate an address using the USPS API.
@@ -282,12 +303,14 @@ const addressValidation = async (req, res) => {
     }
 
     if (!req.body) {
+        console.error("USPS address validation: missing request body.");
         return res.status(400).json(getResponseJSON("Bad Request", 400));
     }
 
     const { params, errors } = validateAddressParams(req.body);
 
     if (errors.length) {
+        console.error("USPS address validation: invalid fields.", { errors });
         return res.status(400).json(getResponseJSON(`Invalid or missing fields: ${errors.join(", ")}`, 400));
     }
 
@@ -330,11 +353,11 @@ const addressValidation = async (req, res) => {
                 return res.status(200).json(responseBody || {});
             }
 
-            // 401 Unauthorized: Token expired/revoked. Refresh and retry.
+            // 401 Unauthorized: token expired/revoked; refresh and retry.
             if (uspsResponse.status === 401) {
                 if (attempt < maxAttempts - 1) {
                     console.warn(`USPS address call unauthorized (attempt ${attempt + 1}). Refreshing token and retrying...`);
-                    // Force refresh logic
+                    // Force refresh token
                     try {
                         token = await fetchUSPSToken(true);
                     } catch (authErr) {
@@ -346,19 +369,26 @@ const addressValidation = async (req, res) => {
                 }
             }
 
-            // Retry on throttling (429) or Server Errors (500+)
+            // 429 Too Many Requests: USPS throttling;
+            // 500+ Server Errors: USPS service issues;
+            // retry with backoff if not the final attempt.
             if ((uspsResponse.status === 429 || uspsResponse.status >= 500) && attempt < maxAttempts - 1) {
                 console.warn(`USPS address call ${uspsResponse.status} (attempt ${attempt + 1}); retrying...`);
                 await delay(backoffMs(attempt));
                 continue;
             }
 
-            // Non-retryable error
+            // Non-retryable error (USPS 4xx input issues) or USPS error code 10005 (Address Not Found - invalid/unknown address).
+            const errorMessage =
+                responseBody?.error?.message ||
+                responseBody?.message ||
+                responseBody?.error ||
+                "Address validation failed. Non-retryable error.";
             console.error("USPS address call failed (non-retryable):", {
                 status: uspsResponse.status,
                 error: responseBody?.error || responseBody?.message || "Unknown error"
             });
-            return res.status(502).json(getResponseJSON("Address validation failed. Non-retryable error.", 502));
+            return res.status(400).json(getResponseJSON(errorMessage, 400));
         }
 
         return res.status(502).json(getResponseJSON("Address validation temporarily unavailable. Exhausted retries.", 502));
