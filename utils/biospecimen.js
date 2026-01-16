@@ -687,6 +687,7 @@ const biospecimenAPIs = async (req, res) => {
     }
 
     else if (api === 'validateKitReceiptCollectionDate') {
+
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
         }
@@ -694,11 +695,11 @@ const biospecimenAPIs = async (req, res) => {
         try {
 
             const { validateKitReceiptCollectionDate } = require('./firestore');
-            const response = await validateKitReceiptCollectionDate(req.query);
-            return res.status(200).json({response, code: 200});
+            const data = await validateKitReceiptCollectionDate(req.query);
+            return res.status(200).json({data, code: 200});
         } catch(error) {
             console.error(error);
-            return res.status(500).json({response: error.message, code: 500});
+            return res.status(500).json({message: error.message, code: 500});
         }
     }
 
