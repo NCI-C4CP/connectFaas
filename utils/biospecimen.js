@@ -19,44 +19,19 @@ const biospecimenAPIs = async (req, res) => {
     console.log("API Accessed: Biospecimen - " + api);
 
     const idToken = req.headers.authorization.replace('Bearer','').trim();
-    const { validateIDToken } = require('./firestore');
-    let decodedToken = await SSOValidation('biospecimenUser', idToken) || await validateIDToken(idToken);
-
-    if(decodedToken instanceof Error){
-        return res.status(401).json(getResponseJSON(decodedToken.message, 401));
-    }
-    
-    if(!decodedToken){
+    const validationResult = await SSOValidation('biospecimen', idToken);
+    const isBPTLUser = validationResult?.isBPTLUser;
+    const isBiospecimenUser = validationResult?.isBiospecimenUser;
+    if (!validationResult || (!isBPTLUser && !isBiospecimenUser)) {
         return res.status(401).json(getResponseJSON('Authorization failed!', 401));
     }
     
-    const email = decodedToken.email;
+    const email = validationResult.email;
     console.log("Accessed By: " + email);
-
-    const isBPTLUser = decodedToken.isBPTLUser !== undefined ? decodedToken.isBPTLUser : false;
-    const isBiospecimenUser = decodedToken.isBiospecimenUser !== undefined ? decodedToken.isBiospecimenUser : false;
-
-    let obj = {};
-    let role = "";
-    let siteAcronym = "";
-    let siteCode = undefined;
-
-    if(!isBPTLUser && !isBiospecimenUser) {
-        const { validateBiospecimenUser } = require('./firestore');
-        const isValidUser = await validateBiospecimenUser(email);
-        if(!isValidUser) return res.status(401).json(getResponseJSON('Authorization failed!', 401));
-        role = isValidUser.role;
-        siteCode = isValidUser.siteCode;
-        siteAcronym = isValidUser.siteAcronym;
-        obj = { role, siteCode,siteAcronym, isBPTLUser, isBiospecimenUser, email };
-    }
-    else {
-        role = 'user';
-        siteCode = decodedToken.siteDetails.siteCode ? decodedToken.siteDetails.siteCode : 13;
-        siteAcronym = decodedToken.siteDetails.acronym;
-        obj = { role, siteAcronym, isBPTLUser, isBiospecimenUser, email };
-        if(siteCode !== 0) obj['siteCode'] = siteCode;
-    }
+    const role = "user";
+    const siteAcronym = validationResult.siteDetails.acronym;
+    const siteCode = validationResult.siteDetails.siteCode || 13; // Fallback to NCI site code (13)
+    const obj = { role, siteAcronym, isBPTLUser, isBiospecimenUser, email, siteCode };
 
     if(api === 'getFilteredParticipants') {
         if(req.method !== 'GET') {
@@ -98,53 +73,7 @@ const biospecimenAPIs = async (req, res) => {
         }
         return res.status(200).json({data: obj, code:200});
     }
-    else if(api === 'users' && (role === 'admin' || role === 'manager')) {
-        if(req.method !== 'GET') {
-            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-        }
-        const { biospecimenUserList } = require('./firestore');
-        const usersList = role === 'admin' ? await biospecimenUserList(siteCode) : await biospecimenUserList(siteCode, email);
-        return res.status(200).json({data: {users: usersList}, code: 200})
-    }
-    else if(api === 'addUsers' && (role === 'admin' || role === 'manager')) {
-        if(req.method !== 'POST') {
-            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
-        }
-        const requestData = req.body;
-        console.log(requestData);
-        if(requestData.length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
-        for(let person of requestData) {
-            if(person.name && person.email && person.role){
-                if(role === 'admin' && ( person.role === 'manager' || person.role === 'user')){
-                    const response = await addNewUser(person, email, siteCode);
-                    if(response instanceof Error){
-                        return res.status(400).json(getResponseJSON(response.message, 400));
-                    }
-                }
-                if(role === 'manager' && person.role === 'user'){
-                    const response = await addNewUser(person, email, siteCode);
-                    if(response instanceof Error){
-                        return res.status(400).json(getResponseJSON(response.message, 400));
-                    }
-                }
-            }
-        }
-        return res.status(200).json({message: 'Success!', code: 200})
-    }
-    else if (api === 'removeUser'  && (role === 'admin' || role === 'manager')) {
-        if(req.method !== 'GET') {
-            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
-        }
-        const emailId = req.query.email;
-        if(!emailId) return res.status(400).json(getResponseJSON('Query parameter email is missing.', 400));
-        if(emailId === email) return res.status(400).json(getResponseJSON('Can not remove yourself.', 400));
-        const { removeUser } = require('./firestore');
-        let response = '';
-        if(role === 'admin') response = await removeUser(emailId, siteCode, email);
-        else if(role === 'manager') response = await removeUser(emailId, siteCode, email, true);
-        if(!response) return res.status(404).json(getResponseJSON('User not found.', 404));
-        return res.status(200).json({message: 'Success!', code:200})
-    }
+    
     else if (api === 'addSpecimen') {
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -1182,19 +1111,6 @@ const biospecimenAPIs = async (req, res) => {
     else return res.status(400).json(getResponseJSON('Bad request!', 400));
 };
 
-const addNewUser = async (person, email, siteCode) => {
-    const { biospecimenUserExists } = require('./firestore');
-    const exists = await biospecimenUserExists(person.email);
-    if(exists === false) {
-        person['addedBy'] = email;
-        person['addedAt'] = new Date().toISOString();
-        person['siteCode'] = siteCode;
-        const { addNewBiospecimenUser } = require('./firestore');
-        await addNewBiospecimenUser(person);
-    }
-    else return new Error('User with this email already exists');
-}
-
 module.exports = {
     biospecimenAPIs
-}
+};
