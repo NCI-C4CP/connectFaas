@@ -2370,12 +2370,24 @@ const safeJSONParse = (str) => {
     }
 }
 
+const parseResponseJson = async (response) => {
+    try {
+        const text = await response.text();
+        if (!text) return null;
+        return safeJSONParse(text);
+    } catch (err) {
+        console.warn("Response parse failed", err);
+        return null;
+    }
+};
+
 /**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
  * @returns {Promise<void>}
  */
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
+const backoffMs = (attempt) => 200 * Math.pow(2, attempt); // 200ms, 400ms, 800ms
 
 const uspsUrl = {
     auth : 'https://apis.usps.com/oauth2/v3/token',
@@ -2480,9 +2492,11 @@ module.exports = {
     unsubscribeTextObj,
     getFiveDaysAgoDateISO,
     delay,
+    backoffMs,
     getAdjustedTime,
     handleNorcBirthdayCard,
     safeJSONParse,
+    parseResponseJson,
     uspsUrl,
     sanitizeObject,
     developmentTier
