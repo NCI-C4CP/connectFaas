@@ -3,14 +3,14 @@ const sgMail = require("@sendgrid/mail");
 const showdown = require("showdown");
 const twilio = require("twilio");
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
-const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, createChunkArray, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
-const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateNotifySmsRecord, updateSmsPermission} = require("./firestore");
+const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
+const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateSmsPermission} = require("./firestore");
 const {getParticipantsForNotificationsBQ} = require("./bigquery");
 const conceptIds = require("./fieldToConceptIdMapping");
 
 const converter = new showdown.Converter();
 const langArray = ["english", "spanish"];
-let twilioClient, messagingServiceSid, twilioNotifyServiceSid;
+let twilioClient, messagingServiceSid;
 let isSendGridSetup = false;
 let isTwilioSetup = false;
 let isSendingNotifications = false; // A more robust soluttion is needed when using multiple servers 
@@ -26,8 +26,7 @@ const setupTwilio = async () => {
   const secretsToFetch = {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,
-    messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-    twilioNotifyServiceSid: process.env.TWILIO_NOTIFY_SERVICE_SID,
+    messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID
   };
   const client = new SecretManagerServiceClient();
   let fetchedSecrets = {};
@@ -38,109 +37,31 @@ const setupTwilio = async () => {
 
   twilioClient = twilio(fetchedSecrets.accountSid, fetchedSecrets.authToken);
   messagingServiceSid = fetchedSecrets.messagingServiceSid;
-  twilioNotifyServiceSid = fetchedSecrets.twilioNotifyServiceSid;
   isTwilioSetup = true;
 };
 
 /**
- * Get detailed data of a message from Twilio, and update to Firestore.
- * @param {string} msgSid 
- * @param {string} notificationSid 
- * @returns {Promise<boolean>}
+ * Send Twilio SMS message using API.
+ * @param {Object} smsRecord SMS record object to be saved to Firestore
+ * @returns {Promise<Object | null>}
  */
-const handleNotifySmsCallback = async (msgSid, notificationSid) => {
+const sendTwilioMessage = async (smsRecord) => {
   if (!isTwilioSetup) {
     await setupTwilio();
   }
 
   try {
-    const msg = await twilioClient.messages(msgSid).fetch();
+    const result = await twilioClient.messages.create({
+      body: smsRecord.notification.body,
+      to: smsRecord.phone,
+      messagingServiceSid,
+    });
 
-    //  If error code is 21610 ("Attempt to send to unsubscribed recipient"), set SMS permission to false
-    if (msg.errorCode === "21610") {
-      await updateSmsPermission(msg.to, false);
-    }
-
-    let data = {
-      twilioNotificationSid: notificationSid,
-      messageSid: msg.sid,
-      phone: msg.to,
-      status: msg.status,
-      updatedDate: msg.dateUpdated?.toISOString() || new Date().toISOString(),
-    };
-    msg.errorMessage && (data.errorMessage = msg.errorMessage);
-    msg.errorCode && (data.errorCode = msg.errorCode);
-
-    return await updateNotifySmsRecord(data);
+    return { ...smsRecord, messageSid: result.sid || "" };
   } catch (error) {
-    console.error("Error occured running handleNotifySmsCallback().", error);
-    return false;
+    console.error(`Error sending SMS (participant token: ${smsRecord.token}).`, error);
+    return null;
   }
-};
-
-/**
- * Send multiple (up to 10,000) messages in one API call. Good for generic messages.
- * @param {string[]} phoneNumberArray An array of phone numbers
- * @param {string} messageString SMS message to send
- */
-const sendBulkSms = async (phoneNumberArray, messageString) => {
-  if (!isTwilioSetup) {
-    await setupTwilio();
-  }
-
-  try {
-    return await twilioClient.notify.v1
-      .services(twilioNotifyServiceSid)
-      .notifications.create({
-        toBinding: phoneNumberArray.map((recipient) => JSON.stringify({ binding_type: "sms", address: recipient })),
-        body: messageString,
-        deliveryCallbackUrl: `https://us-central1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/webhook?api=twilio-notify-callback`,
-      });
-  } catch (error) {
-    throw new Error("sendBulkSms() error.", { cause: error });
-  }
-};
-
-/**
- * Send one message in one API call. Good for personalized messages.
- * @param {Object[]} smsRecordArray 
- * @returns {Promise<Object[]>}
- */
-const sendPersonalizedSms = async (smsRecordArray) => {
-  if (!isTwilioSetup) {
-    await setupTwilio();
-  }
-
-  let adjustedSmsRecordArray = [];
-  const chunkArray = createChunkArray(smsRecordArray, 1000);
-  for (const chunk of chunkArray) {
-    const messageArray = await Promise.all(
-      chunk.map((smsData) =>
-        twilioClient.messages
-          .create({
-            body: smsData.notification.body,
-            to: smsData.phone,
-            messagingServiceSid,
-          })
-          .catch((error) => {
-            console.error(`Error sending sms to ${smsData.phone} (token: ${smsData.token}).`, error);
-            return { errorOccurred: true };
-          })
-      )
-    );
-
-    for (let i = 0; i < chunk.length; i++) {
-      if (!messageArray[i].errorOccurred) {
-        chunk[i].messageSid = messageArray[i].sid || "";
-        chunk[i].errorCode = messageArray[i].error_code || "";
-        chunk[i].errorMessage = messageArray[i].error_message || "";
-        chunk[i].status = messageArray[i].status || "";
-        adjustedSmsRecordArray.push(chunk[i]);
-      }
-    }
-  }
-
-  return adjustedSmsRecordArray;
 };
 
 const subscribeToNotification = async (req, res) => {
@@ -252,7 +173,6 @@ async function sendScheduledNotifications(req, res) {
     return res.status(400).json(getResponseJSON("Field scheduleAt is missing in request body.", 400));
   }
 
-  await setupSendGrid();
   isSendingNotifications = true;
   try {
     const notificationSpecArray = await getNotificationSpecsByScheduleOncePerDay(req.body.scheduleAt);
@@ -261,6 +181,8 @@ async function sendScheduledNotifications(req, res) {
       return res.status(208).json(getResponseJSON("Function has run earlier today.", 208));
     }
 
+    await setupSendGrid();
+    await setupTwilio();
     const notificationPromises = [];
     for (const notificationSpec of notificationSpecArray) {
       notificationPromises.push(handleNotificationSpec(notificationSpec));
@@ -390,7 +312,6 @@ async function handleNotificationSpec(notificationSpec) {
         emailRecordArray: [],
         emailPersonalizationArray: [],
         smsRecordArray: [],
-        phoneNumberSet: new Set(),
       };
     }
 
@@ -483,7 +404,6 @@ async function handleNotificationSpec(notificationSpec) {
         const phoneNumber = fetchedData[phoneField].replace(/\D/g, "");
         if (phoneNumber.length >= 10) {
           const smsTo = `+1${phoneNumber.slice(-10)}`;
-          notificationData[prefLang].phoneNumberSet.add(smsTo);
           notificationData[prefLang].smsRecordArray.push({
             ...recordCommonData,
             id: smsId,
@@ -500,7 +420,7 @@ async function handleNotificationSpec(notificationSpec) {
     }
     
     for (const lang of langArray) {
-      let { emailRecordArray, emailPersonalizationArray, smsRecordArray, phoneNumberSet } = notificationData[lang];
+      let { emailRecordArray, emailPersonalizationArray, smsRecordArray } = notificationData[lang];
       if (emailPersonalizationArray.length > 0) {
         const emailBatch = {
           from: {
@@ -535,18 +455,15 @@ async function handleNotificationSpec(notificationSpec) {
   
       if (smsRecordArray.length > 0) {
         try {
-          const smsNotification = await sendBulkSms(Array.from(phoneNumberSet), smsInSpec[lang].body);
-          for (const smsRecord of smsRecordArray) {
-            smsRecord.twilioNotificationSid = smsNotification.sid;
-          }
-
-          await saveNotificationBatch(smsRecordArray);
-          smsCount[lang] += smsRecordArray.length;
+          const results = await Promise.all(smsRecordArray.map(sendTwilioMessage));
+          const successfulSmsRecords = results.filter((res) => res !== null);
+          await saveNotificationBatch(successfulSmsRecords);
+          smsCount[lang] += successfulSmsRecords.length;
         } catch (error) {
           if (error.message.startsWith("saveNotificationBatch")) {
             console.error(`Error saving message records for ${notificationSpec.id}(${readableSpecString}).`, error);
           } else {
-            console.error(`Error sending bulk messages for ${notificationSpec.id}(${readableSpecString}).`, error);
+            console.error(`Error sending SMS messages for ${notificationSpec.id}(${readableSpecString}).`, error);
           }
 
           break;
@@ -571,7 +488,7 @@ async function handleNotificationSpec(notificationSpec) {
   }
 
   if (smsCount.total === 0) {
-    messageArray.push("No sms sent");
+    messageArray.push("No SMS sent");
   } else {
     for (const lang of langArray) {
       messageArray.push(`SMS (${lang}) sent: ${smsCount[lang]}`);
@@ -1041,6 +958,5 @@ module.exports = {
   dryRunNotificationSchema,
   sendInstantNotification,
   handleDryRun,
-  handleNotifySmsCallback,
   handleIncomingSms,
 };

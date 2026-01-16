@@ -8,7 +8,6 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
-const { submit } = require('./submission');
 
 const nciCode = 13;
 const nciConceptId = `517700004`;
@@ -115,15 +114,9 @@ const validateIDToken = async (idToken) => {
 }
 
 const validateMultiTenantIDToken = async (idToken, tenant) => {
-    try{
-        const decodedToken = await admin.auth().tenantManager().authForTenant(tenant).verifyIdToken(idToken, true);
-        return decodedToken;
-    }
-    catch(error){
-        console.error(error);
-        return new Error(error);
-    }
-}
+  const decodedToken = await admin.auth().tenantManager().authForTenant(tenant).verifyIdToken(idToken, true);
+  return decodedToken;
+};
 
 const linkParticipantWithFirebaseUID = async (docID, firstSignInTimestamp, uid) => {
     try {
@@ -1500,82 +1493,6 @@ const filterDB = async (queries, siteCode, isParent) => {
       return new Error(error);
     }
 };
-
-const validateBiospecimenUser = async (email) => {
-    try {
-        const snapshot = await db.collection('biospecimenUsers').where('email', '==', email).get();
-        printDocsCount(snapshot, "validateBiospecimenUser");
-        if(snapshot.size === 1) {
-            const role = snapshot.docs[0].data().role;
-            const siteCode = snapshot.docs[0].data().siteCode;
-            const response = await db.collection('siteDetails').where('siteCode', '==', siteCode).get();
-            const siteAcronym = response.docs[0].data().acronym;
-            return { role, siteCode, siteAcronym };
-        }
-        else return false;
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
-    }
-}
-
-const biospecimenUserList = async (siteCode, email) => {
-    try {
-        let query = db.collection('biospecimenUsers').where('siteCode', '==', siteCode)
-        if(email) query = query.where('addedBy', '==', email)
-        const snapshot = await query.orderBy('role').orderBy('email').get();
-        printDocsCount(snapshot, "biospecimenUserList");
-        if(snapshot.size !== 0){
-            return snapshot.docs.map(document => document.data());
-        }
-        else{
-            return [];
-        }
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
-    }
-}
-
-const biospecimenUserExists = async (email) => {
-    try {
-        const snapshot = await db.collection('biospecimenUsers').where('email', '==', email).get();
-        printDocsCount(snapshot, "biospecimenUserExists");
-        if(snapshot.size === 0) return false;
-        else return true;
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
-    }
-}
-
-const addNewBiospecimenUser = async (data) => {
-    try {
-        await db.collection('biospecimenUsers').add(data);
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
-    }
-}
-
-const removeUser = async (userEmail, siteCode, email, manager) => {
-    try {
-        let query = db.collection('biospecimenUsers').where('email', '==', userEmail).where('siteCode', '==', siteCode);
-        if(manager) query = query.where('addedBy', '==', email);
-        const snapshot = await query.get();
-        printDocsCount(snapshot, "removeUser");
-        if(snapshot.size === 1) {
-            console.log('Removing', userEmail);
-            const docId = snapshot.docs[0].id;
-            await db.collection('biospecimenUsers').doc(docId).delete();
-            return true;
-        }
-        else return false;
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
-    }
-}
 
 const storeSpecimen = async (data) => {
     await db.collection('biospecimen').add(data);
@@ -3834,7 +3751,7 @@ const storeKitReceipt = async (pkg) => {
             collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, uniqueKitID,
             healthCareProvider, preferredName, firstName, mouthwashSurveyCompletionStatus,
             collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
-            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, received, shipped,
+            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, unexpectedCollectionDateConfirm, received, shipped,
             pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
             biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
@@ -3843,8 +3760,8 @@ const storeKitReceipt = async (pkg) => {
         await db.runTransaction(async (transaction) => {
             const kitSnapshot = await transaction.get(
                 db.collection("kitAssembly")
-                .where(`${returnKitTrackingNum}`, '==', pkg[returnKitTrackingNum])
-                .where(`${kitStatus}`, '==', shipped)
+                    .where(`${returnKitTrackingNum}`, '==', pkg[returnKitTrackingNum])
+                    .where(`${kitStatus}`, '==', shipped)
             );
             printDocsCount(kitSnapshot, "storeKitReceipt");
             if (kitSnapshot.size === 0) {
@@ -3916,9 +3833,11 @@ const storeKitReceipt = async (pkg) => {
             /**
              * Check that the collection date is not later than the date received or earlier than the date shipped.
              * If either is true, return an error.
-             * This check is completed once. If a second request with the same collection date is made, it will pass.
+             * This check is here as backend hardening
+             * but should no longer be the primary workflow, as the front end now
+             * sets the unexpectedCollectionDateConfirm flag
              */
-            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && !pkg["collectionDateChecked"]) {
+            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && pkg[unexpectedCollectionDateConfirm] !== yes) {
                 toReturn = { status: 'Check collection date, possible invalid entry' };
                 return;
             }
@@ -3938,6 +3857,7 @@ const storeKitReceipt = async (pkg) => {
                 'token': token,
                 'uid': uid
             };
+            
 
             // This should be a new document, but just in case
             let biospecimenDocRef;
@@ -3947,16 +3867,21 @@ const storeKitReceipt = async (pkg) => {
             } else {
                 biospecimenDocRef = db.collection('biospecimen').doc();
             }
-            
+
             transaction.set(biospecimenDocRef, biospecPkg);
 
-            transaction.update(kitDoc.ref, {
+            const kitDocUpdates = {
                 [collectionCardFlag]: pkg[collectionCardFlag] === true ? yes : no,
                 [kitStatus]: received,
                 [pkgReceiptConditions]: processPackageConditions(pkg[pkgReceiptConditions]),
                 [kitPkgComments]: pkg[kitPkgComments],
                 [receivedDateTime]: pkg[receivedDateTime]
-            });
+            };
+            if(pkg[unexpectedCollectionDateConfirm]) {
+                kitDocUpdates[unexpectedCollectionDateConfirm] = pkg[unexpectedCollectionDateConfirm];
+            }
+
+            transaction.update(kitDoc.ref, kitDocUpdates);
 
             transaction.update(participantDoc.ref, {
                 [baselineMouthwashCollected]: yes,
@@ -3993,6 +3918,38 @@ const storeKitReceipt = async (pkg) => {
         console.error(error);
         throw new Error(error);
     }
+}
+
+/**
+ * Check that the collection date is not later than the date received or earlier than the date shipped.
+* If either is true or the kit is not found, return an false.
+ * @param {object} query The query string
+ * @param {string} query.returnKitTrackingNum The return kit tracking number for the kit
+ * @param {string} query.collectionDateTimestamp The timestamp string when the sample was reported as collected
+ * @param {string} query.receivedDateTime The timestamp string when the sample was reported as received
+ * @returns 
+ */
+const validateKitReceiptCollectionDate = async (query) => {
+    const {collectionDateTimestamp, receivedDateTime, returnKitTrackingNum} = query;
+    const kitSnapshot = await db
+        .collection('kitAssembly')
+        .where(`${fieldMapping.returnKitTrackingNum}`, '==', returnKitTrackingNum)
+        .where(`${fieldMapping.kitStatus}`, '==', fieldMapping.shipped)
+        .get();
+
+    if (kitSnapshot.size === 0) {
+        return false;
+    }
+    const kitDoc = kitSnapshot.docs[0];
+    const kitData = kitDoc.data();
+
+
+    // If collected after it is received or if collected after it shipped
+    if ((collectionDateTimestamp > receivedDateTime || collectionDateTimestamp > kitData[fieldMapping.shippedDateTime])) {
+        return false;
+    }
+
+    return true;
 }
 
 const processPackageConditions = (pkgConditions) => {
@@ -5027,8 +4984,8 @@ const processSendGridEvent = async (event) => {
 };
 
 const processTwilioEvent = async (event) => {
-    if (!["failed", "delivered", "undelivered"].includes(event.MessageStatus)) return 
-    const date = new Date().toISOString();
+    if (!["failed", "delivered", "undelivered"].includes(event.MessageStatus)) return;
+    const dateStr = new Date().toISOString();
 
     const snapshot = await db
         .collection("notifications")
@@ -5038,21 +4995,22 @@ const processTwilioEvent = async (event) => {
 
     if (snapshot.size > 0) {
         const doc = snapshot.docs[0];
+        const docData = doc.data();
         const eventRecord = {
             status: event.MessageStatus,
-            [`${event.MessageStatus}Date`]: date,
-            errorCode: event.ErrorCode || "",
-            errorMessage: event.ErrorMessage || twilioErrorMessages[event.ErrorCode] || "",
+            [`${event.MessageStatus}Date`]: dateStr,
+            errorCode: event.ErrorCode || docData.errorCode || "",
+            errorMessage: event.ErrorMessage || twilioErrorMessages[event.ErrorCode] || docData.errorMessage || "",
         };
 
-        await db.collection("notifications").doc(doc.id).update(eventRecord);
+        await doc.ref.update(eventRecord);
 
         if (event.ErrorCode === "21610") {
-            await updateSmsPermission(doc.data().phone, false);
+            await updateSmsPermission(docData.phone, false);
         }
 
     } else {
-        console.error(`Could not find messageSid ${event.MessageSid}. Status ${event.MessageStatus}`)
+        console.error(`Could not find messageSid ${event.MessageSid}. Status ${event.MessageStatus}`);
     }
 };
 
@@ -5328,25 +5286,6 @@ const getAppSettings = async (appName, selectedParamsArray) => {
         throw new Error("Error fetching app settings.", { cause: error });
     }
 }
-
-/**
- * Update Notify message delivery status to Firestore.
- * @param {Object} data 
- */
-const updateNotifySmsRecord = async (data) => {
-  const snapshot = await db
-    .collection("notifications")
-    .where("phone", "==", data.phone)
-    .where("twilioNotificationSid", "==", data.twilioNotificationSid)
-    .get();
-
-    if (snapshot.size === 1) {
-      await snapshot.docs[0].ref.update(data);
-      return true;
-    }
-
-    return false;
-};
 
 /**
  * 
@@ -5632,11 +5571,6 @@ module.exports = {
     notificationTokenExists,
     retrieveUserNotifications,
     filterDB,
-    validateBiospecimenUser,
-    biospecimenUserList,
-    biospecimenUserExists,
-    addNewBiospecimenUser,
-    removeUser,
     storeSpecimen,
     submitSpecimen,
     updateSpecimen,
@@ -5723,6 +5657,7 @@ module.exports = {
     processVerifyScannedCode,
     assignKitToParticipant,
     confirmShipmentKit,
+    validateKitReceiptCollectionDate,
     storeKitReceipt,
     addKitStatusToParticipant,
     addKitStatusToParticipantV2,
@@ -5742,7 +5677,6 @@ module.exports = {
     resetParticipantSurvey,
     generateSignInWithEmailLink,
     getAppSettings,
-    updateNotifySmsRecord,
     updateSmsPermission,
     updateParticipantIncentiveEligibility,
     processPhysicalActivity,

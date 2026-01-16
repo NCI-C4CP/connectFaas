@@ -242,6 +242,7 @@ module.exports = {
     collectionDateTimeStamp: 678166505,
     collectionCardFlag: 137401245,
     collectionAddtnlNotes: 260133861,
+    unexpectedCollectionDateConfirm: 858101893,
     collectionDetails: 173836415,
     collectionSelectedVisit: 331584571,
     collectionSetting: 650516960,
@@ -549,8 +550,8 @@ module.exports = {
         physicalActivity: 686238347,
         flagForReportUnreadViewedDeclined: 446235715,
         dateRoiPaReportFirstViewed: 749055145,
-        preference2025SurveyStatus: 278023676,
-        preference2025SurveyCompletionTime: 543379310
+        preference2026SurveyStatus: 278023676,
+        preference2026SurveyCompletionTime: 543379310
     },
 
     norcBirthdayCard: 359309143,
