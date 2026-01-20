@@ -583,13 +583,17 @@ const SSOValidation = async (appName, idToken) => {
   const { validateMultiTenantIDToken, getSiteDetailsWithSignInProvider } = require("./firestore");
   const validatedGroupSet = new Set();
   const decodedJWT = decodingJWT(idToken);
-  if (!decodedJWT || !decodedJWT.firebase || !decodedJWT.firebase.tenant) return false;
+  if (!decodedJWT || !decodedJWT.firebase || !decodedJWT.firebase.tenant) {
+    console.error("SSOValidation - Invalid decoded JWT");
+    return false;
+  }
 
   const tenant = decodedJWT.firebase.tenant;
   try {
     const decodedToken = await validateMultiTenantIDToken(idToken, tenant);
     const email = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["email"]];
     const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["group"]]?.toString();
+    console.log("SSOValidation - email:", email, "tenant:", tenant, "groups:", allGroups); // Debug log
     if (!allGroups) return false;
 
     for (const userGroup in userGroupsObj) {
@@ -618,6 +622,7 @@ const SSOValidation = async (appName, idToken) => {
       validatedRoles[userGroupsObj[group]] = validatedGroupSet.has(group);
     });
 
+    console.log("SSOValidation - validatedRoles:", JSON.stringify(validatedRoles)); // Debug log
     return { siteDetails, email, ...validatedRoles };
   } catch (error) {
     console.error("Error in SSOValidation(): ", error);
