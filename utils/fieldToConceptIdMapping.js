@@ -242,6 +242,7 @@ module.exports = {
     collectionDateTimeStamp: 678166505,
     collectionCardFlag: 137401245,
     collectionAddtnlNotes: 260133861,
+    unexpectedCollectionDateConfirm: 858101893,
     collectionDetails: 173836415,
     collectionSelectedVisit: 331584571,
     collectionSetting: 650516960,
