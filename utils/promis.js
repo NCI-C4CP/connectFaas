@@ -47,8 +47,17 @@ const processPromisResults = async (uid) => {
             scoresPromises.push(
                 getScoringData(promisConfig[form].id, scoringData, token).then(scores => {
                     if (scores) {
-                        scoresPayload[promisConfig[form].score] = parseInt(scores['T-Score']);
-                        scoresPayload[promisConfig[form].error] = parseInt(scores['SError']);
+                        const tScore = parseInt(scores['T-Score']);
+                        const sError = parseInt(scores['SError']);
+                        
+                        // Only save values that are valid numbers (not NaN)
+                        if (!isNaN(tScore)) {
+                            scoresPayload[promisConfig[form].score] = tScore;
+                        }
+                        
+                        if (!isNaN(sError)) {
+                            scoresPayload[promisConfig[form].error] = sError;
+                        }
                     }
                 })
             );

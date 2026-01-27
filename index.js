@@ -13,6 +13,7 @@ const { webhook } = require('./utils/webhook');
 const { heartbeat } = require('./utils/heartbeat');
 const { physicalActivity } = require('./utils/reports');
 const { generateDHQReports, processDHQReports, scheduledCountDHQ3Credentials, scheduledSyncDHQ3Status } = require('./utils/dhq');
+const { triggerPromisProcessing } = require('./utils/promisHelper');
 
 // API End-Points for Sites
 
@@ -90,3 +91,6 @@ exports.generateDHQReports = onRequest(generateDHQReports);
 exports.processDHQReports = onRequest(processDHQReports);
 exports.scheduledSyncDHQ3Status = onRequest(scheduledSyncDHQ3Status);
 exports.scheduledCountDHQ3Credentials = onRequest(scheduledCountDHQ3Credentials);
+
+// Temporary End-Point for PROMIS Processing
+exports.promis = triggerPromisProcessing;
