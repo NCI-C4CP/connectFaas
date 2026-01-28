@@ -229,7 +229,7 @@ const createSignedUploadUrl = (bucketName, filenameWithPath, contentType) => {
     .getSignedUrl({
       version: "v4",
       action: "write",
-      expires: Date.now() + 10000, // 10 seconds.
+      expires: Date.now() + 60 * 60 * 1000, // 1 hour
       contentType: contentType || "application/octet-stream",
     });
 };
