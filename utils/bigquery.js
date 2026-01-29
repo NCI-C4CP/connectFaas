@@ -404,38 +404,92 @@ async function validateFields (dataset, table, fieldsToCheck) {
 }
 
 /**
- * validateTableAccess - validates access to a table or view
+ * validateTableAccess - validates access to a table or view by checking BigQuery IAM permissions
  * 
- * @param {Object} authObj 
- * @param {string} dataset 
- * @param {string} table 
- * @return {boolean}
+ * First verifies the dataset and table exist, then checks if the service account email
+ * has been granted BigQuery Data Viewer access on the table.
+ * 
+ * @param {Object} authObj - Authorization object containing saEmail from siteDetails
+ * @param {string} dataset - The BigQuery dataset name
+ * @param {string} table - The BigQuery table or view name
+ * @return {Promise<boolean>} - True if access is granted, false otherwise
  */
 async function validateTableAccess (authObj, dataset, table) {
-  /**
-   * TODO: Implement this via IAM.  It needs to be determined if the IAM can grant access to certain tables and columns or if
-   * the granularity is too broad and we need to only allow access to views to limit the field access.  
-   * 
-   * This function is currently async because it is anticpated that it will need to lookup data from IAM and the signature 
-   * for the function shouldn't change
-   */
-  let allowAccess = false;
-  switch (dataset) {
-    case "NORC":
-      switch (table) {
-        case "view_birthday_card":
-          if (["NIH", "NORC"].includes(authObj.acronym)) {
-            allowAccess = true;
-          }
-          break;
-        case "view_phone_prompting_details":
-          if (["NIH", "NORC"].includes(authObj.acronym)) {
-            allowAccess = true;
-          }
-          break;
-      }
+  if (!authObj?.saEmail) {
+    console.error("validateTableAccess: No service account email provided");
+    return false;
   }
-  return allowAccess;
+
+  const saEmail = authObj.saEmail;
+
+  try {
+    // Step 1: Verify the dataset exists
+    const datasetRef = bigquery.dataset(dataset);
+    const [datasetExists] = await datasetRef.exists();
+    if (!datasetExists) {
+      console.error(`validateTableAccess: Dataset '${dataset}' does not exist`);
+      return false;
+    }
+
+    // Step 2: Verify the table exists
+    const tableRef = datasetRef.table(table);
+    const [tableExists] = await tableRef.exists();
+    if (!tableExists) {
+      console.error(`validateTableAccess: Table '${dataset}.${table}' does not exist`);
+      return false;
+    }
+
+    // Step 3: Check table-level IAM policy for viewer access
+    const [tablePolicy] = await tableRef.getIamPolicy();
+    if (hasViewerAccess(tablePolicy, saEmail)) {
+      return true;
+    }
+
+    console.log(`validateTableAccess: ${saEmail} does not have viewer access to ${dataset}.${table}`);
+    return false;
+
+  } catch (error) {
+    console.error(`validateTableAccess: Error checking access for ${saEmail} on ${dataset}.${table}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Helper function to check if a service account email has BigQuery viewer access in an IAM policy
+ * 
+ * @param {Object} policy - IAM policy object with bindings array
+ * @param {string} saEmail - Service account email to check
+ * @return {boolean} - True if the email has viewer (or higher) access
+ */
+function hasViewerAccess(policy, saEmail) {
+  if (!policy?.bindings || !Array.isArray(policy.bindings)) {
+    console.log('hasViewerAccess: No bindings found in policy or bindings is not an array');
+    return false;
+  }
+
+  const viewerRoles = [
+    'roles/bigquery.dataViewer',
+  ];
+
+  const memberFormats = [
+    `serviceAccount:${saEmail.toLowerCase()}`,
+  ];
+
+  for (const binding of policy.bindings) {
+    if (!viewerRoles.includes(binding.role)) {
+      continue;
+    }
+    
+    if (binding.members && Array.isArray(binding.members)) {
+      for (const member of binding.members) {
+        if (memberFormats.includes(member)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 function getQueryPartsForTable (dataset, table) {  

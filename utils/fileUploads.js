@@ -229,7 +229,7 @@ const createSignedUploadUrl = (bucketName, filenameWithPath, contentType) => {
     .getSignedUrl({
       version: "v4",
       action: "write",
-      expires: Date.now() + 10000, // 10 seconds.
+      expires: Date.now() + 60 * 60 * 1000, // 1 hour
       contentType: contentType || "application/octet-stream",
     });
 };
@@ -331,11 +331,12 @@ const getUploadedEhrNames = async (req, res, acronym) => {
     while (recentDeliveries.length > 0) {
       const delivery = recentDeliveries[recentDeliveries.length - 1];
       const deliveryName = delivery.name;
-      const [files] = await bucket.getFiles({
+      const [allFiles] = await bucket.getFiles({
         prefix: `${deliveryName}/`,
         fields: "items(name)",
       });
 
+      const files = allFiles.filter((f) => !f.name.startsWith(`${deliveryName}/artifacts/`));
       if (files.length === 0) {
         recentDeliveries.pop();
       } else {

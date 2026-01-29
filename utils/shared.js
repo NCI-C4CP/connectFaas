@@ -378,7 +378,7 @@ const nihSSOConfig = {
     helpDeskUser: 'CN=connect-help-desk-user',
     siteCode: 111111111,
     acronym: 'NIH'
-}
+};
 
 const nihSSODevConfig = {
     group: 'https://federation.nih.gov/person/DLGroups',
@@ -391,25 +391,37 @@ const nihSSODevConfig = {
     helpDeskUser: 'CN=connect-help-desk-user',
     siteCode: 111111111,
     acronym: 'NIH'
-}
+};
 
 const hpSSOConfig = {
     group: 'AD_groups',
     email: 'email',
     siteManagerUser: 'CN=connect-dshbrd-user',
     biospecimenUser: 'connect-biodshbrd-user',
+    ehrUploadUser: 'HP Connect OMOP-EHR Upload Group',
     siteCode: 531629870,
     acronym: 'HP'
-}
+};
 
 const sfhSSOConfig = {
     group: 'UserRole',
     email: 'UserEmail',
     siteManagerUser: 'Connect-Study-Manager-User',
     biospecimenUser: 'Connect-Study-Manager-User',
+    ehrUploadUser: 'SMDB_EHR_uploader_prod',
     siteCode: 657167265,
     acronym: 'SFH'
-}
+};
+
+const sfhSSODevConfig = {
+    group: 'UserRole',
+    email: 'UserEmail',
+    siteManagerUser: 'Connect-Study-Manager-User',
+    biospecimenUser: 'Connect-Study-Manager-User',
+    ehrUploadUser: 'SMDB_EHR_uploader',
+    siteCode: 657167265,
+    acronym: 'SFH'
+};
 
 const hfhsSSOConfig = {
     group: 'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups',
@@ -420,7 +432,7 @@ const hfhsSSOConfig = {
     acronym: 'HFHS',
     siteManagerUser: 'study-manager-user',
     biospecimenUser: 'biospecimen-user'
-}
+};
 
 const kpSSOConfig = {
     group: 'memberOf',
@@ -448,7 +460,7 @@ const kpSSOConfig = {
         siteCode: 327912200,
         acronym: 'KPGA'
     }
-}
+};
 
 const norcSSOConfig = {
     group: 'http://schemas.microsoft.com/ws/2008/06/identity/claims/groups',
@@ -467,7 +479,7 @@ const mfcSSOConfig = {
     group: 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role',
     siteManagerUser: 'connect-study-manager-user',
     biospecimenUser: 'connect-biospecimen-user'
-}
+};
 
 const ucmSSOConfig = {
     group: '1.3.6.1.4.1.9902.2.1.41',
@@ -477,7 +489,7 @@ const ucmSSOConfig = {
     biospecimenUser: 'uc:org:bsd:applications:connect:connect-biospecimen-user:authorized',
     siteCode: 809703864,
     acronym: 'UCM'
-}
+};
 
 const bswhSSOConfig = {
     siteCode: 472940358,
@@ -488,7 +500,7 @@ const bswhSSOConfig = {
     group: 'Groups',
     siteManagerUser: 'Research_Connect_FC',
     biospecimenUser: 'Research_Connect_FC'
-}
+};
 
 const SSOConfig = {
     'NIH-SSO-qfszp': nihSSODevConfig,
@@ -499,8 +511,8 @@ const SSOConfig = {
     'HP-SSO-1elez': hpSSOConfig,
     'HP-SSO-252sf': hpSSOConfig,
 
-    'SFH-SSO-cgzpj': sfhSSOConfig,
-    'SFH-SSO-uetfo': sfhSSOConfig,
+    'SFH-SSO-cgzpj': sfhSSODevConfig,
+    'SFH-SSO-uetfo': sfhSSODevConfig,
     'SFH-SSO-pb390': sfhSSOConfig,
 
     'HFHS-SSO-ay0iz': hfhsSSOConfig,
@@ -526,7 +538,7 @@ const SSOConfig = {
     'BSWH-SSO-y2jj3': bswhSSOConfig,
     'BSWH-SSO-k4cat': bswhSSOConfig,
     'BSWH-SSO-dcoos': bswhSSOConfig,
-}
+};
 
 // https://www.twilio.com/docs/messaging/guides/debugging-tools#error-codes
 const twilioErrorMessages = {
@@ -551,63 +563,72 @@ const decodingJWT = (token) => {
     return null;
 };
 
-const SSOValidation = async (dashboardType, idToken) => {
-    try {
-        const decodedJWT = decodingJWT(idToken);
-        const tenant = decodedJWT.firebase.tenant;
-        const { validateMultiTenantIDToken } = require('./firestore');
-        const decodedToken = await validateMultiTenantIDToken(idToken, tenant);
+/**
+ * @param {"biospecimen" | "dashboard"} appName
+ * @param {string} idToken idToken from SSO
+ * @returns Promise<false | object> Returns false if validation fails, otherwise returns an object with siteDetails, email, and role boolean values
+ */
+const SSOValidation = async (appName, idToken) => {
+  const appUserGroupsObj = {
+    biospecimen: { biospecimenUser: "isBiospecimenUser", bptlUser: "isBPTLUser" },
+    dashboard: {
+      siteManagerUser: "isSiteManagerUser",
+      helpDeskUser: "isHelpDeskUser",
+      ehrUploadUser: "isEHRUploadUser",
+    },
+  };
+  const userGroupsObj = appUserGroupsObj[appName];
+  if (!userGroupsObj || !idToken || idToken.trim() === "") return false;
 
-        console.log("Decoded Token:", decodedToken);
+  const { validateMultiTenantIDToken, getSiteDetailsWithSignInProvider } = require("./firestore");
+  const validatedGroupSet = new Set();
+  const decodedJWT = decodingJWT(idToken);
+  if (!decodedJWT || !decodedJWT.firebase || !decodedJWT.firebase.tenant) {
+    console.error("SSOValidation - Invalid decoded JWT");
+    return false;
+  }
 
-        if(decodedToken instanceof Error) {
-            return false;
-        }
+  const tenant = decodedJWT.firebase.tenant;
+  try {
+    const decodedToken = await validateMultiTenantIDToken(idToken, tenant);
+    const email = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["email"]];
+    const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["group"]]?.toString();
+    console.log("SSOValidation - email:", email, "tenant:", tenant, "groups:", allGroups); // Debug log
+    if (!allGroups) return false;
 
-        const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]['group']];
-
-        console.log("All Groups:", allGroups);
-
-        if(!allGroups) return;
-        const email = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]['email']];
-
-        console.log("Email:", email);
-
-        console.log("Attributes:", decodedToken.firebase.sign_in_attributes);
-
-        if(!SSOConfig[tenant][dashboardType]) return false;
-        let requiredGroups = new RegExp(SSOConfig[tenant][dashboardType], 'g').test(allGroups.toString());
-        let isBiospecimenUser = false;
-        if(requiredGroups) isBiospecimenUser = true;
-        let isBPTLUser = false;
-        if(SSOConfig[tenant].acronym === 'NIH') {
-            isBPTLUser = new RegExp(SSOConfig[tenant]['bptlUser'], 'g').test(allGroups.toString())
-            requiredGroups = requiredGroups || isBPTLUser;
-        }
-        if(!requiredGroups) return false;
-        let acronym = SSOConfig[tenant].acronym;
-        if(tenant === 'KP-SSO-wulix' || tenant === 'KP-SSO-ssj7c' || tenant === 'KP-SSO-ii9sr') {
-            const moreThanOneRegion = allGroups.toString().match(/CN=connect_kp(co|hi|nw|ga)_user/ig);
-            if(moreThanOneRegion.length > 1) return false;
-            if(new RegExp(SSOConfig[tenant]['kpco']['name'], 'g').test(allGroups.toString())) acronym = SSOConfig[tenant]['kpco']['acronym'];
-            if(new RegExp(SSOConfig[tenant]['kpga']['name'], 'g').test(allGroups.toString())) acronym = SSOConfig[tenant]['kpga']['acronym'];
-            if(new RegExp(SSOConfig[tenant]['kphi']['name'], 'g').test(allGroups.toString())) acronym = SSOConfig[tenant]['kphi']['acronym'];
-            if(new RegExp(SSOConfig[tenant]['kpnw']['name'], 'g').test(allGroups.toString())) acronym = SSOConfig[tenant]['kpnw']['acronym'];
-            if(!acronym) return false;
-        }
-
-        const { getSiteDetailsWithSignInProvider } = require('./firestore');
-        const siteDetails = await getSiteDetailsWithSignInProvider(acronym);
-
-        console.log("Results in SSOValidation():");
-        console.log("Email: " + email);
-        console.log("BPTL User: " + isBPTLUser);
-        console.log("BSD User: " + isBiospecimenUser);
-        return {siteDetails, email, isBPTLUser, isBiospecimenUser};
-    } catch (error) {
-        return false;
+    for (const userGroup in userGroupsObj) {
+      const adGroupId = SSOConfig[tenant][userGroup];
+      if (adGroupId && allGroups.includes(adGroupId)) {
+        validatedGroupSet.add(userGroup);
+      }
     }
-}
+    if (validatedGroupSet.size === 0) return false;
+
+    let acronym = null;
+    const kpTenants = ["KP-SSO-wulix", "KP-SSO-ssj7c", "KP-SSO-ii9sr"];
+    if (kpTenants.includes(tenant)) {
+      const kpMatches = allGroups.match(/CN=connect_kp(co|hi|nw|ga)_user/gi);
+      if (!kpMatches || kpMatches.length > 1) return false;
+      const site = kpMatches[0].match(/connect_(kpco|kphi|kpnw|kpga)_user/i)[1];
+      acronym = SSOConfig[tenant][site].acronym;
+    } else {
+      acronym = SSOConfig[tenant].acronym;
+    }
+
+    if (!acronym) return false;
+    const siteDetails = await getSiteDetailsWithSignInProvider(acronym);
+    const validatedRoles = {};
+    Object.keys(userGroupsObj).forEach((group) => {
+      validatedRoles[userGroupsObj[group]] = validatedGroupSet.has(group);
+    });
+
+    console.log("SSOValidation - validatedRoles:", JSON.stringify(validatedRoles)); // Debug log
+    return { siteDetails, email, ...validatedRoles };
+  } catch (error) {
+    console.error("Error in SSOValidation(): ", error);
+    return false;
+  }
+};
 
 const APIAuthorization = async (req) => {
     
@@ -2354,12 +2375,24 @@ const safeJSONParse = (str) => {
     }
 }
 
+const parseResponseJson = async (response) => {
+    try {
+        const text = await response.text();
+        if (!text) return null;
+        return safeJSONParse(text);
+    } catch (err) {
+        console.warn("Response parse failed", err);
+        return null;
+    }
+};
+
 /**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
  * @returns {Promise<void>}
  */
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
+const backoffMs = (attempt) => 200 * Math.pow(2, attempt); // 200ms, 400ms, 800ms
 
 const uspsUrl = {
     auth : 'https://apis.usps.com/oauth2/v3/token',
@@ -2464,9 +2497,11 @@ module.exports = {
     unsubscribeTextObj,
     getFiveDaysAgoDateISO,
     delay,
+    backoffMs,
     getAdjustedTime,
     handleNorcBirthdayCard,
     safeJSONParse,
+    parseResponseJson,
     uspsUrl,
     sanitizeObject,
     developmentTier
