@@ -5006,7 +5006,7 @@ const processTwilioEvent = async (event) => {
 
         await doc.ref.update(eventRecord);
 
-        if (["21610", "30004", "30006"].includes(event.ErrorCode)) {
+        if (event.ErrorCode === "21610") {
             await updateSmsPermission(docData.phone, false);
         }
 
