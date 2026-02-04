@@ -95,9 +95,6 @@ const dashboard = async (req, res) => {
             console.error('Error in getFilteredParticipants.', error);
             return res.status(500).json(getResponseJSON('An error occurred while searching for this participant. Please try again later.', 500));
         }
-    } else if (api === 'identifyParticipant' && isParent === false) {
-        const { identifyParticipant } = require('./submission');
-        return await identifyParticipant(req, res, siteCodes);
     } else if (api === 'submitParticipantsData') {
         const { submitParticipantsData } = require('./sites');
         return await submitParticipantsData(req, res, siteCodes);
