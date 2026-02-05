@@ -88,7 +88,7 @@ const sendAndSaveTwilioMessageBatch = async (smsRecordArray) => {
   let successCount = 0;
 
   while (currSmsQueue.length > 0 && tryCount <= 5) {
-    console.log(`Spec ID: ${currSmsQueue[0].notificationSpecificationsID}; attempt ${tryCount}; messages to send: ${currSmsQueue.length}. Sending SMS batch...`);
+    console.log(`Spec ID: ${currSmsQueue[0].notificationSpecificationsID}; attempt ${tryCount}; messages to send: ${currSmsQueue.length}.`);
     for (let i = 0; i < currSmsQueue.length; i += batchSize) {
       const elapsedTime = Date.now() - prevBatchTime;
       if (elapsedTime < delayTimeMs) {
@@ -105,7 +105,7 @@ const sendAndSaveTwilioMessageBatch = async (smsRecordArray) => {
           successCount += successRecords.length;
         } catch (error) {
           console.error(
-            `saveNotificationBatch error for SMS batch (spec ID: ${batchRecords[0].notificationSpecificationsID}).`,
+            `Error running saveNotificationBatch (spec ID: ${batchRecords[0].notificationSpecificationsID}).`,
             error,
           );
         }
@@ -251,7 +251,7 @@ async function sendScheduledNotifications(req, res) {
     for (const notificationSpec of notificationSpecArray) {
       await handleNotificationSpec(notificationSpec);
     }
-
+    console.log("Finished sending out notifications.");
     return res.status(200).json(getResponseJSON("Finished sending out notifications", 200));
   } catch (error) {
     console.error("Error occurred running function sendScheduledNotifications.", error);
