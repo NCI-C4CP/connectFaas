@@ -3,7 +3,7 @@ const sgMail = require("@sendgrid/mail");
 const showdown = require("showdown");
 const twilio = require("twilio");
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
-const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
+const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime, delay} = require("./shared");
 const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateSmsPermission} = require("./firestore");
 const {getParticipantsForNotificationsBQ} = require("./bigquery");
 const conceptIds = require("./fieldToConceptIdMapping");
@@ -43,25 +43,90 @@ const setupTwilio = async () => {
 /**
  * Send Twilio SMS message using API.
  * @param {Object} smsRecord SMS record object to be saved to Firestore
- * @returns {Promise<Object | null>}
+ * @returns {Promise<Object>}
  */
 const sendTwilioMessage = async (smsRecord) => {
-  if (!isTwilioSetup) {
-    await setupTwilio();
-  }
-
   try {
     const result = await twilioClient.messages.create({
       body: smsRecord.notification.body,
       to: smsRecord.phone,
       messagingServiceSid,
     });
-
-    return { ...smsRecord, messageSid: result.sid || "" };
+    const updatedSmsRecord = { ...smsRecord, messageSid: result.sid || "" };
+    return { smsRecord: updatedSmsRecord, isSuccess: true, isRateLimit: false };
   } catch (error) {
-    console.error(`Error sending SMS (participant token: ${smsRecord.token}).`, error);
-    return null;
+    const errorCode = error.code?.toString() ?? "";
+    const statusCode = (error.status ?? error.statusCode)?.toString() ?? "";
+    if (errorCode === "20429" || statusCode === "429") {
+      return { smsRecord, isSuccess: false, isRateLimit: true };
+    }
+
+    console.error(
+      `Error sending SMS (participant token: ${smsRecord.token}; spec ID: ${smsRecord.notificationSpecificationsID}).`,
+      error,
+    );
+    return { smsRecord, isSuccess: false, isRateLimit: false };
   }
+};
+
+/**
+ * 
+ * @param {Object[]} smsRecordArray Array of SMS record objects to be sent and saved
+ * @returns {Promise<number>} Number of successfully sent SMS messages
+ */
+const sendAndSaveTwilioMessageBatch = async (smsRecordArray) => {
+  if (!Array.isArray(smsRecordArray) || smsRecordArray.length === 0) {
+    return 0;
+  }
+
+  const delayTimeMs = 1000;
+  const batchSize = 150;
+  let prevBatchTime = 0;
+  let currSmsQueue = smsRecordArray;
+  let nextSmsQueue = [];
+  let tryCount = 1;
+  let successCount = 0;
+
+  while (currSmsQueue.length > 0 && tryCount <= 5) {
+    console.log(`Spec ID: ${currSmsQueue[0].notificationSpecificationsID}; attempt ${tryCount}; messages to send: ${currSmsQueue.length}. Sending SMS batch...`);
+    for (let i = 0; i < currSmsQueue.length; i += batchSize) {
+      const elapsedTime = Date.now() - prevBatchTime;
+      if (elapsedTime < delayTimeMs) {
+        await delay(delayTimeMs - elapsedTime);
+      }
+
+      const batchRecords = currSmsQueue.slice(i, i + batchSize);
+      const results = await Promise.all(batchRecords.map(sendTwilioMessage));
+      prevBatchTime = Date.now();
+      const successRecords = results.filter((res) => res.isSuccess).map((res) => res.smsRecord);
+      if (successRecords.length > 0) {
+        try {
+          await saveNotificationBatch(successRecords);
+          successCount += successRecords.length;
+        } catch (error) {
+          console.error(
+            `saveNotificationBatch error for SMS batch (spec ID: ${batchRecords[0].notificationSpecificationsID}).`,
+            error,
+          );
+        }
+      }
+
+      const rateLimitRecords = results.filter((res) => !res.isSuccess && res.isRateLimit).map((res) => res.smsRecord);
+      if (rateLimitRecords.length > 0) {
+        nextSmsQueue.push(...rateLimitRecords);
+      }
+    }
+
+    tryCount += 1;
+    currSmsQueue = nextSmsQueue;
+    nextSmsQueue = [];
+  }
+
+  if (currSmsQueue.length > 0) {
+    console.error(`Failed to send ${currSmsQueue.length} SMS messages (spec ID ${currSmsQueue[0].notificationSpecificationsID}) after multiple retries.`);
+  }
+
+  return successCount;
 };
 
 const subscribeToNotification = async (req, res) => {
@@ -183,12 +248,10 @@ async function sendScheduledNotifications(req, res) {
 
     await setupSendGrid();
     await setupTwilio();
-    const notificationPromises = [];
     for (const notificationSpec of notificationSpecArray) {
-      notificationPromises.push(handleNotificationSpec(notificationSpec));
+      await handleNotificationSpec(notificationSpec);
     }
 
-    await Promise.allSettled(notificationPromises);
     return res.status(200).json(getResponseJSON("Finished sending out notifications", 200));
   } catch (error) {
     console.error("Error occurred running function sendScheduledNotifications.", error);
@@ -455,10 +518,8 @@ async function handleNotificationSpec(notificationSpec) {
   
       if (smsRecordArray.length > 0) {
         try {
-          const results = await Promise.all(smsRecordArray.map(sendTwilioMessage));
-          const successfulSmsRecords = results.filter((res) => res !== null);
-          await saveNotificationBatch(successfulSmsRecords);
-          smsCount[lang] += successfulSmsRecords.length;
+          const successCount = await sendAndSaveTwilioMessageBatch(smsRecordArray);
+          smsCount[lang] += successCount;
         } catch (error) {
           if (error.message.startsWith("saveNotificationBatch")) {
             console.error(`Error saving message records for ${notificationSpec.id}(${readableSpecString}).`, error);
