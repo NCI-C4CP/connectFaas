@@ -31,7 +31,7 @@
     "@google-cloud/kms": "^4.0.1",
     "@google-cloud/pubsub": "^4.1.0",
     "@google-cloud/secret-manager": "^5.0.1",
-    "@google-cloud/storage": "^7.7.0",
+    "@google-cloud/storage": "^7.19.0",
     "@sendgrid/eventwebhook": "^8.0.0",
     "@sendgrid/mail": "^8.1.6",
     "crypto-js": "^4.2.0",
