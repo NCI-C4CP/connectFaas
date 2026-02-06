@@ -4986,7 +4986,6 @@ const processSendGridEvent = async (event) => {
 
 const processTwilioEvent = async (event) => {
     if (!["failed", "delivered", "undelivered"].includes(event.MessageStatus)) return;
-    await delay(500); // Ensure Firestore write has completed
     const dateStr = new Date().toISOString();
 
     const snapshot = await db
