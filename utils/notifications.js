@@ -3,7 +3,7 @@ const sgMail = require("@sendgrid/mail");
 const showdown = require("showdown");
 const twilio = require("twilio");
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
-const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
+const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime, delay} = require("./shared");
 const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateSmsPermission} = require("./firestore");
 const {getParticipantsForNotificationsBQ} = require("./bigquery");
 const conceptIds = require("./fieldToConceptIdMapping");
@@ -42,27 +42,186 @@ const setupTwilio = async () => {
 
 /**
  * Send Twilio SMS message using API.
+ * Set up Twilio client and messaging service SID before calling this function.
  * @param {Object} smsRecord SMS record object to be saved to Firestore
- * @returns {Promise<Object | null>}
+ * @returns {Promise<Object>}
  */
 const sendTwilioMessage = async (smsRecord) => {
-  if (!isTwilioSetup) {
-    await setupTwilio();
-  }
-
   try {
     const result = await twilioClient.messages.create({
       body: smsRecord.notification.body,
       to: smsRecord.phone,
       messagingServiceSid,
     });
-
-    return { ...smsRecord, messageSid: result.sid || "" };
+    const updatedSmsRecord = { ...smsRecord, messageSid: result.sid || "" };
+    return { smsRecord: updatedSmsRecord, isSuccess: true, isRateLimit: false };
   } catch (error) {
-    console.error(`Error sending SMS (participant token: ${smsRecord.token}).`, error);
-    return null;
+    const errorCode = error.code?.toString() ?? "";
+    const statusCode = (error.status ?? error.statusCode)?.toString() ?? "";
+    if (errorCode === "20429" || statusCode === "429") {
+      return { smsRecord, isSuccess: false, isRateLimit: true };
+    }
+
+    console.error(
+      `Error sending SMS (participant token: ${smsRecord.token}; spec ID: ${smsRecord.notificationSpecificationsID}).`,
+      error,
+    );
+    return { smsRecord, isSuccess: false, isRateLimit: false };
   }
 };
+
+/**
+ * Handles rate-limited batch sending of Twilio SMS messages with retry logic.
+ * Possible improvements: When having more than 1 phone number sending out messages, create a  separate queue for each phone number to increase overall throughput.
+ */
+class SmsBatchSender {
+  #queue = [];
+  #isProcessing = false;
+  #sentCounts = {}; // { [specId]: { english: 0, spanish: 0 } }
+  #failedCounts = {}; // { [specId]: { english: 0, spanish: 0 } }
+  #finishedSpecSet = new Set();
+  #batchSize;
+  #prevBatchFinishTime = 0;
+
+  constructor(batchSize = 150) {
+    this.#batchSize = batchSize;
+  }
+
+  /**
+   * Add multiple SMS records to the queue and trigger processing.
+   * Each record must have notificationSpecificationsID and language properties.
+   * @param {Object[]} smsRecords - Array of SMS record objects
+   */
+  addToQueue(smsRecords) {
+    this.#queue.push(...smsRecords);
+    this.#processQueue();
+  }
+
+  /**
+   * Get counts of successfully sent SMS messages for a specific spec ID.
+   * @param {string} specId - Notification specification ID
+   * @returns {Object} Counts object: { english: number, spanish: number }
+   */
+  getSentCounts(specId) {
+    return this.#sentCounts[specId] ? { ...this.#sentCounts[specId] } : { english: 0, spanish: 0 };
+  }
+
+  /**
+   * Get counts of failed SMS messages for a specific spec ID.
+   * @param {string} specId - Notification specification ID
+   * @returns {Object} Counts object: { english: number, spanish: number }
+   */
+  getFailedCounts(specId) {
+    return this.#failedCounts[specId] ? { ...this.#failedCounts[specId] } : { english: 0, spanish: 0 };
+  }
+
+  /**
+   * Mark that all SMS messages for a spec have been added to the queue.
+   * Call this after adding all messages for a spec to signal completion.
+   * @param {string} specId - Notification specification ID
+   */
+  markSpecEnd(specId) {
+    this.#queue.push({ specId, isEndMarker: true });
+    this.#processQueue();
+  }
+
+  /**
+   * Check if all SMS messages for a spec have been processed (sent or failed).
+   * @param {string} specId - Notification specification ID
+   * @returns {boolean} True if the spec's end marker has been processed
+   */
+  isSpecFinished(specId) {
+    return this.#finishedSpecSet.has(specId);
+  }
+
+  /**
+   * Wait for all SMS messages for a spec to be processed.
+   * @param {string} specId - Notification specification ID
+   * @param {number} [checkIntervalMs=1000] - Interval between checks in milliseconds
+   * @returns {Promise<{sentCounts: {english: number, spanish: number}, failedCounts: {english: number, spanish: number}}>}
+   */
+  async waitForSpec(specId, checkIntervalMs = 1000) {
+    while (!this.isSpecFinished(specId)) {
+      await delay(checkIntervalMs);
+    }
+    return {
+      sentCounts: this.getSentCounts(specId),
+      failedCounts: this.getFailedCounts(specId),
+    };
+  }
+
+  #incrementCount(countsObj, specId, language) {
+    if (!countsObj[specId]) {
+      countsObj[specId] = { english: 0, spanish: 0 };
+    }
+    countsObj[specId][language]++;
+  }
+
+  async #processQueue() {
+    if (this.#isProcessing) return;
+    this.#isProcessing = true;
+    const delayTimeMs = 1000;
+
+    while (this.#queue.length > 0) {
+      const elapsedTime = Date.now() - this.#prevBatchFinishTime;
+      if (elapsedTime < delayTimeMs) {
+        await delay(delayTimeMs - elapsedTime);
+      }
+
+      const batchItems = this.#queue.splice(0, this.#batchSize);
+      const endMarkerSpecIdSet = new Set(batchItems.filter((item) => item.isEndMarker).map((marker) => marker.specId));
+      const batchSmsRecords = batchItems.filter((item) => !item.isEndMarker);
+
+      // Process SMS items
+      if (batchSmsRecords.length > 0) {
+        const results = await Promise.all(batchSmsRecords.map(sendTwilioMessage));
+        this.#prevBatchFinishTime = Date.now();
+
+        const successIndices = results.map((res, idx) => (res.isSuccess ? idx : -1)).filter((idx) => idx !== -1);
+        const successRecords = successIndices.map((idx) => results[idx].smsRecord);
+
+        if (successRecords.length > 0) {
+          try {
+            await saveNotificationBatch(successRecords);
+            for (const idx of successIndices) {
+              this.#incrementCount(this.#sentCounts, batchSmsRecords[idx].notificationSpecificationsID, batchSmsRecords[idx].language);
+            }
+          } catch (error) {
+            console.error("Error running saveNotificationBatch.", error);
+          }
+        }
+
+        const rateLimitIndices = results
+          .map((res, idx) => (!res.isSuccess && res.isRateLimit ? idx : -1))
+          .filter((idx) => idx !== -1).reverse();
+        if (rateLimitIndices.length > 0) {
+          for (const idx of rateLimitIndices) {
+            const record = batchSmsRecords[idx];
+            if (endMarkerSpecIdSet.has(record.notificationSpecificationsID)) {
+              endMarkerSpecIdSet.delete(record.notificationSpecificationsID);
+              this.#queue.unshift({ specId: record.notificationSpecificationsID, isEndMarker: true });
+            }
+            this.#queue.unshift(record);
+          }
+        }
+
+        const failedIndices = results
+          .map((res, idx) => (!res.isSuccess && !res.isRateLimit ? idx : -1))
+          .filter((idx) => idx !== -1);
+        for (const idx of failedIndices) {
+          this.#incrementCount(this.#failedCounts, batchSmsRecords[idx].notificationSpecificationsID, batchSmsRecords[idx].language);
+        }
+      }
+
+      for (const specId of endMarkerSpecIdSet) {
+        this.#finishedSpecSet.add(specId);
+      }
+    }
+    this.#isProcessing = false;
+  }
+}
+
+const smsBatchSender = new SmsBatchSender();
 
 const subscribeToNotification = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -183,12 +342,8 @@ async function sendScheduledNotifications(req, res) {
 
     await setupSendGrid();
     await setupTwilio();
-    const notificationPromises = [];
-    for (const notificationSpec of notificationSpecArray) {
-      notificationPromises.push(handleNotificationSpec(notificationSpec));
-    }
-
-    await Promise.allSettled(notificationPromises);
+    await Promise.all(notificationSpecArray.map(handleNotificationSpec));
+    console.log("Finished sending out notifications.");
     return res.status(200).json(getResponseJSON("Finished sending out notifications", 200));
   } catch (error) {
     console.error("Error occurred running function sendScheduledNotifications.", error);
@@ -454,28 +609,21 @@ async function handleNotificationSpec(notificationSpec) {
       }
   
       if (smsRecordArray.length > 0) {
-        try {
-          const results = await Promise.all(smsRecordArray.map(sendTwilioMessage));
-          const successfulSmsRecords = results.filter((res) => res !== null);
-          await saveNotificationBatch(successfulSmsRecords);
-          smsCount[lang] += successfulSmsRecords.length;
-        } catch (error) {
-          if (error.message.startsWith("saveNotificationBatch")) {
-            console.error(`Error saving message records for ${notificationSpec.id}(${readableSpecString}).`, error);
-          } else {
-            console.error(`Error sending SMS messages for ${notificationSpec.id}(${readableSpecString}).`, error);
-          }
-
-          break;
-        }
+        smsBatchSender.addToQueue(smsRecordArray);
       }
     }
 
   }
-  
+
+  smsBatchSender.markSpecEnd(notificationSpec.id);
+  const { sentCounts, failedCounts } = await smsBatchSender.waitForSpec(notificationSpec.id);
+
+  let totalFailed = 0;
   for (const lang of langArray) {
+    smsCount[lang] = sentCounts[lang] || 0;
     emailCount.total += emailCount[lang];
     smsCount.total += smsCount[lang];
+    totalFailed += failedCounts[lang] || 0;
   }
 
   let messageArray = [`Finished notification spec: ${notificationSpec.id}(${readableSpecString})`];
@@ -492,6 +640,9 @@ async function handleNotificationSpec(notificationSpec) {
   } else {
     for (const lang of langArray) {
       messageArray.push(`SMS (${lang}) sent: ${smsCount[lang]}`);
+    }
+    if (totalFailed > 0) {
+      messageArray.push(`SMS failed: ${totalFailed}`);
     }
   }
 
