@@ -169,47 +169,57 @@ class SmsBatchSender {
       }
 
       const batchItems = this.#queue.splice(0, this.#batchSize);
-      const endMarkerSpecIdSet = new Set(batchItems.filter((item) => item.isEndMarker).map((marker) => marker.specId));
+      const endMarkerSpecIdSet = new Set(batchItems.filter((item) => item.isEndMarker).map((item) => item.specId));
       const batchSmsRecords = batchItems.filter((item) => !item.isEndMarker);
 
-      // Process SMS items
       if (batchSmsRecords.length > 0) {
-        const results = await Promise.all(batchSmsRecords.map(sendTwilioMessage));
+        const batchSendResults = await Promise.all(batchSmsRecords.map(sendTwilioMessage));
         this.#prevBatchFinishTime = Date.now();
 
-        const successIndices = results.map((res, idx) => (res.isSuccess ? idx : -1)).filter((idx) => idx !== -1);
-        const successRecords = successIndices.map((idx) => results[idx].smsRecord);
+        const successIndices = batchSendResults
+          .map((res, idx) => (res.isSuccess ? idx : -1))
+          .filter((idx) => idx !== -1);
+        const successRecords = successIndices.map((idx) => batchSendResults[idx].smsRecord);
 
         if (successRecords.length > 0) {
           try {
             await saveNotificationBatch(successRecords);
             for (const idx of successIndices) {
-              this.#incrementCount(this.#sentCounts, batchSmsRecords[idx].notificationSpecificationsID, batchSmsRecords[idx].language);
+              this.#incrementCount(
+                this.#sentCounts,
+                batchSmsRecords[idx].notificationSpecificationsID,
+                batchSmsRecords[idx].language,
+              );
             }
           } catch (error) {
             console.error("Error running saveNotificationBatch.", error);
           }
         }
 
-        const rateLimitIndices = results
+        const rateLimitIndices = batchSendResults
           .map((res, idx) => (!res.isSuccess && res.isRateLimit ? idx : -1))
-          .filter((idx) => idx !== -1).reverse();
-        if (rateLimitIndices.length > 0) {
-          for (const idx of rateLimitIndices) {
-            const record = batchSmsRecords[idx];
-            if (endMarkerSpecIdSet.has(record.notificationSpecificationsID)) {
-              endMarkerSpecIdSet.delete(record.notificationSpecificationsID);
-              this.#queue.unshift({ specId: record.notificationSpecificationsID, isEndMarker: true });
-            }
-            this.#queue.unshift(record);
+          .filter((idx) => idx !== -1)
+          .reverse();
+        for (const idx of rateLimitIndices) {
+          const record = batchSmsRecords[idx];
+          const specId = record.notificationSpecificationsID;
+          const currItems = [record];
+          if (endMarkerSpecIdSet.has(specId)) {
+            endMarkerSpecIdSet.delete(specId);
+            currItems.push({ specId, isEndMarker: true });
           }
+          this.#queue.unshift(...currItems);
         }
 
-        const failedIndices = results
+        const failedIndices = batchSendResults
           .map((res, idx) => (!res.isSuccess && !res.isRateLimit ? idx : -1))
           .filter((idx) => idx !== -1);
         for (const idx of failedIndices) {
-          this.#incrementCount(this.#failedCounts, batchSmsRecords[idx].notificationSpecificationsID, batchSmsRecords[idx].language);
+          this.#incrementCount(
+            this.#failedCounts,
+            batchSmsRecords[idx].notificationSpecificationsID,
+            batchSmsRecords[idx].language,
+          );
         }
       }
 
