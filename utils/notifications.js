@@ -79,12 +79,28 @@ class SmsBatchSender {
   #isProcessing = false;
   #sentCounts = {}; // { [specId]: { english: 0, spanish: 0 } }
   #failedCounts = {}; // { [specId]: { english: 0, spanish: 0 } }
+  #retryCounts = {}; // { [specId]: { [recordId]: number } }
   #finishedSpecSet = new Set();
   #batchSize;
+  #maxRetries;
   #prevBatchFinishTime = 0;
+  #prevProgressLogTime = Date.now();
+  #sendFn;
+  #saveFn;
+  #delayFn;
 
-  constructor(batchSize = 150) {
+  constructor({
+    batchSize = 150,
+    maxRetries = 3,
+    sendFn = sendTwilioMessage,
+    saveFn = saveNotificationBatch,
+    delayFn = delay,
+  } = {}) {
     this.#batchSize = batchSize;
+    this.#maxRetries = maxRetries;
+    this.#sendFn = sendFn;
+    this.#saveFn = saveFn;
+    this.#delayFn = delayFn;
   }
 
   /**
@@ -142,7 +158,7 @@ class SmsBatchSender {
    */
   async waitForSpec(specId, checkIntervalMs = 1000) {
     while (!this.isSpecFinished(specId)) {
-      await delay(checkIntervalMs);
+      await this.#delayFn(checkIntervalMs);
     }
     return {
       sentCounts: this.getSentCounts(specId),
@@ -157,6 +173,23 @@ class SmsBatchSender {
     countsObj[specId][language]++;
   }
 
+  #logProgress() {
+    const now = Date.now();
+    if (now - this.#prevProgressLogTime < 30_000) return; // Log progress at most every 30 seconds
+    this.#prevProgressLogTime = now;
+
+    const specIds = new Set([...Object.keys(this.#sentCounts), ...Object.keys(this.#failedCounts)]);
+    for (const specId of specIds) {
+      if (this.#finishedSpecSet.has(specId)) continue;
+      const sent = this.#sentCounts[specId] ?? { english: 0, spanish: 0 };
+      const failed = this.#failedCounts[specId] ?? { english: 0, spanish: 0 };
+      console.log(
+        `SMS in progress (spec ID ${specId}): sent ${sent.english + sent.spanish} (en: ${sent.english}, es: ${sent.spanish}), ` +
+          `failed ${failed.english + failed.spanish} (en: ${failed.english}, es: ${failed.spanish}).`,
+      );
+    }
+  }
+
   async #processQueue() {
     if (this.#isProcessing) return;
     this.#isProcessing = true;
@@ -165,7 +198,7 @@ class SmsBatchSender {
     while (this.#queue.length > 0) {
       const elapsedTime = Date.now() - this.#prevBatchFinishTime;
       if (elapsedTime < delayTimeMs) {
-        await delay(delayTimeMs - elapsedTime);
+        await this.#delayFn(delayTimeMs - elapsedTime);
       }
 
       const batchItems = this.#queue.splice(0, this.#batchSize);
@@ -173,7 +206,7 @@ class SmsBatchSender {
       const batchSmsRecords = batchItems.filter((item) => !item.isEndMarker);
 
       if (batchSmsRecords.length > 0) {
-        const batchSendResults = await Promise.all(batchSmsRecords.map(sendTwilioMessage));
+        const batchSendResults = await Promise.all(batchSmsRecords.map((r) => this.#sendFn(r)));
         this.#prevBatchFinishTime = Date.now();
 
         const successIndices = batchSendResults
@@ -183,7 +216,7 @@ class SmsBatchSender {
 
         if (successRecords.length > 0) {
           try {
-            await saveNotificationBatch(successRecords);
+            await this.#saveFn(successRecords);
             for (const idx of successIndices) {
               this.#incrementCount(
                 this.#sentCounts,
@@ -203,6 +236,17 @@ class SmsBatchSender {
         for (const idx of rateLimitIndices) {
           const record = batchSmsRecords[idx];
           const specId = record.notificationSpecificationsID;
+          if (!this.#retryCounts[specId]) this.#retryCounts[specId] = {};
+          this.#retryCounts[specId][record.id] = (this.#retryCounts[specId][record.id] || 0) + 1;
+
+          if (this.#retryCounts[specId][record.id] > this.#maxRetries) {
+            console.error(
+              `SMS rate limit retries exhausted (token: ${record.token}; spec ID: ${record.notificationSpecificationsID}).`,
+            );
+            this.#incrementCount(this.#failedCounts, record.notificationSpecificationsID, record.language);
+            continue;
+          }
+
           const currItems = [record];
           if (endMarkerSpecIdSet.has(specId)) {
             endMarkerSpecIdSet.delete(specId);
@@ -225,13 +269,16 @@ class SmsBatchSender {
 
       for (const specId of endMarkerSpecIdSet) {
         this.#finishedSpecSet.add(specId);
+        delete this.#retryCounts[specId];
       }
+
+      this.#logProgress();
     }
     this.#isProcessing = false;
   }
 }
 
-const smsBatchSender = new SmsBatchSender();
+const smsBatchSender = new SmsBatchSender({});
 
 const subscribeToNotification = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -1120,4 +1167,5 @@ module.exports = {
   sendInstantNotification,
   handleDryRun,
   handleIncomingSms,
+  SmsBatchSender,
 };
