@@ -77,8 +77,8 @@ const sendTwilioMessage = async (smsRecord) => {
 class SmsBatchSender {
   #queue = [];
   #isProcessing = false;
-  #sentCounts = {}; // { [specId]: { english: 0, spanish: 0 } }
-  #failedCounts = {}; // { [specId]: { english: 0, spanish: 0 } }
+  #sentCounts = {}; // { [specId]: { english: number, spanish: number } }
+  #failedCounts = {}; // { [specId]: { english: number, spanish: number } }
   #retryCounts = {}; // { [specId]: { [recordId]: number } }
   #finishedSpecSet = new Set();
   #batchSize;
@@ -91,7 +91,7 @@ class SmsBatchSender {
 
   constructor({
     batchSize = 150,
-    maxRetries = 3,
+    maxRetries = 5,
     sendFn = sendTwilioMessage,
     saveFn = saveNotificationBatch,
     delayFn = delay,
@@ -166,6 +166,12 @@ class SmsBatchSender {
     };
   }
 
+  /**
+   * Increment the sent or failed count for a given spec ID and language.
+   * @param {Object} countsObj - The counts object to update (this.#sentCounts or this.#failedCounts)
+   * @param {string} specId - Notification specification ID
+   * @param {string} language - Language key ("english" or "spanish")
+   */
   #incrementCount(countsObj, specId, language) {
     if (!countsObj[specId]) {
       countsObj[specId] = { english: 0, spanish: 0 };
@@ -173,9 +179,12 @@ class SmsBatchSender {
     countsObj[specId][language]++;
   }
 
+  /**
+   * Log sent and failed counts for all in-progress specs. Throttled to at most once every 30 seconds.
+   */
   #logProgress() {
     const now = Date.now();
-    if (now - this.#prevProgressLogTime < 30_000) return; // Log progress at most every 30 seconds
+    if (now - this.#prevProgressLogTime < 30_000) return;
     this.#prevProgressLogTime = now;
 
     const specIds = new Set([...Object.keys(this.#sentCounts), ...Object.keys(this.#failedCounts)]);
@@ -190,6 +199,13 @@ class SmsBatchSender {
     }
   }
 
+  /**
+   * Process the SMS queue in batches with rate-limit handling.
+   * Sends batches of SMS messages, retries rate-limited messages (up to maxRetries),
+   * saves successful records to Firestore, and marks specs as finished when their end markers are reached.
+   * Only one instance runs at a time; subsequent calls are no-ops while processing is active.
+   * @returns {Promise<void>}
+   */
   async #processQueue() {
     if (this.#isProcessing) return;
     this.#isProcessing = true;
