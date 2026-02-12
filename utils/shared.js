@@ -2389,6 +2389,19 @@ const parseResponseJson = async (response) => {
 };
 
 /**
+ * Normalizes an HTTP request body to an object.
+ *
+ * @param {unknown} body - Incoming request body from an HTTP handler.
+ * @returns {Object} Parsed body object or an empty object.
+ */
+const parseRequestBody = (body) => {
+    if (!body) return {};
+    if (typeof body === "string") return safeJSONParse(body) || {};
+    if (typeof body === "object") return body;
+    return {};
+};
+
+/**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
  * @returns {Promise<void>}
@@ -2504,6 +2517,7 @@ module.exports = {
     handleNorcBirthdayCard,
     safeJSONParse,
     parseResponseJson,
+    parseRequestBody,
     uspsUrl,
     sanitizeObject,
     developmentTier

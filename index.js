@@ -2,7 +2,7 @@ const {onRequest} = require("firebase-functions/v2/https");
 const { getToken, validateUsersEmailPhone } = require('./utils/validation');
 const { getFilteredParticipants, getParticipants, identifyParticipant } = require('./utils/submission');
 const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('./utils/sites');
-const { getParticipantNotification, sendScheduledNotifications } = require('./utils/notifications');
+const { getParticipantNotification, sendScheduledNotifications, lookupEmailDeliveryStatus } = require('./utils/notifications');
 const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
 const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive');
@@ -58,7 +58,6 @@ exports.biospecimen = biospecimenAPIs;
 
 exports.sendScheduledNotificationsGen2 = onRequest(sendScheduledNotifications);
 
-
 // End-Points for Exporting Firestore to Big Query
 
 exports.importToBigQuery = importToBigQuery; 
@@ -90,3 +89,7 @@ exports.generateDHQReports = onRequest(generateDHQReports);
 exports.processDHQReports = onRequest(processDHQReports);
 exports.scheduledSyncDHQ3Status = onRequest(scheduledSyncDHQ3Status);
 exports.scheduledCountDHQ3Credentials = onRequest(scheduledCountDHQ3Credentials);
+
+// End-Point for Email Delivery Status Lookup
+
+exports.lookupEmailDeliveryStatus = onRequest(lookupEmailDeliveryStatus);

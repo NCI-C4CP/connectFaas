@@ -658,11 +658,11 @@ const updateParticipantFirebaseAuthentication = async (req, res) => {
     if (flag === `updateEmail` || flag === `updatePhone`) status = await updateUsersCurrentLogin(data, uid);
 
     if (status === true) return res.status(200).json({code: 200});
-    else if (status === `auth/phone-number-already-exists`) return res.status(409).json(getResponseJSON('The user with provided phone number already exists.', 409));
-    else if (status === `auth/email-already-exists`) return res.status(409).json(getResponseJSON('The user with the provided email already exists.', 409));
-    else if (status === `auth/invalid-phone-number`) return res.status(403).json(getResponseJSON('Invalid Phone number', 403));
-    else if (status === `auth/invalid-email`) return res.status(403).json(getResponseJSON('Invalid Email', 403));
-    else return res.status(400).json(getResponseJSON('Operation Unsuccessful', 400));
+    else if (status === `auth/phone-number-already-exists`) return res.status(409).json({ message: 'The user with provided phone number already exists.', code: 409, errorCode:'auth/credential-already-in-use' });
+    else if (status === `auth/email-already-exists`) return res.status(409).json({ message: 'The user with the provided email already exists.', code: 409, errorCode: 'auth/email-already-in-use' });
+    else if (status === `auth/invalid-phone-number`) return res.status(403).json({ message: 'Invalid Phone number', code: 403, errorCode: 'auth/invalid-phone-number' });
+    else if (status === `auth/invalid-email`) return res.status(403).json({ message: 'Invalid Email', code: 403, errorCode: 'auth/invalid-email' });
+    else return res.status(400).json({ message: 'Operation Unsuccessful', code: 400, errorCode: status });
 }
 
 const isIsoDate = (str) => {

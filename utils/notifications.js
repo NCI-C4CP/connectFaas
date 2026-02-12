@@ -3,7 +3,7 @@ const sgMail = require("@sendgrid/mail");
 const showdown = require("showdown");
 const twilio = require("twilio");
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
-const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime} = require("./shared");
+const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime, parseResponseJson, parseRequestBody} = require("./shared");
 const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, saveNotificationBatch, generateSignInWithEmailLink, storeNotification, checkIsNotificationSent, updateSmsPermission} = require("./firestore");
 const {getParticipantsForNotificationsBQ} = require("./bigquery");
 const conceptIds = require("./fieldToConceptIdMapping");
@@ -638,44 +638,156 @@ const getSiteNotification = async (req, res, authObj) => {
     return res.status(200).json({data, code: 200})
 }
 
+const resolveAuthErrorDetails = ({ status, errorCode, providerErrorCode = "" } = {}) => {
+    const normalizedProviderErrorCode = String(providerErrorCode || "").toLowerCase();
+    const hasNumericStatus = Number.isFinite(status);
+    const graphMappedErrorCode = (() => {
+        if (!hasNumericStatus) return null;
+        if (status === 429) return "auth/too-many-requests";
+        if (status === 400 && normalizedProviderErrorCode.includes("invalid")) return "auth/invalid-email";
+        if (status === 401 || status === 403) return "auth/operation-not-allowed";
+        if (status >= 500) return "auth/network-request-failed";
+        return "auth/operation-not-allowed";
+    })();
+
+    const resolvedErrorCode = errorCode || graphMappedErrorCode || "auth/network-request-failed";
+    const resolvedStatus = hasNumericStatus ? status : (() => {
+        if (resolvedErrorCode === "auth/too-many-requests") return 429;
+        if (
+            [
+                "auth/invalid-email",
+                "auth/missing-email",
+                "auth/missing-continue-uri",
+                "auth/unauthorized-continue-uri",
+                "auth/invalid-continue-uri",
+            ].includes(resolvedErrorCode)
+        ) {
+            return 400;
+        }
+        return 500;
+    })();
+
+    return {
+        status: resolvedStatus,
+        errorCode: resolvedErrorCode,
+    };
+};
+
+const getGraphAccessToken = async () => {
+    const [clientId, clientSecret, tenantId] = await Promise.all(
+        [
+            getSecret(process.env.APP_REGISTRATION_CLIENT_ID),
+            getSecret(process.env.APP_REGISTRATION_CLIENT_SECRET),
+            getSecret(process.env.APP_REGISTRATION_TENANT_ID),
+        ]
+    );
+
+    const params = new URLSearchParams();
+    params.append("grant_type", "client_credentials");
+    params.append("scope", "https://graph.microsoft.com/.default");
+    params.append("client_id", clientId);
+    params.append("client_secret", clientSecret);
+
+    const resAuthorize = await fetch(
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body: params,
+        }
+    );
+
+    const authJson = await parseResponseJson(resAuthorize);
+    const accessToken = authJson?.access_token;
+
+    if (!resAuthorize.ok || !accessToken) {
+        const error = new Error("Failed to obtain Microsoft Graph access token.");
+        error.status = 502;
+        error.errorCode = "auth/operation-not-allowed";
+        error.upstreamStatus = resAuthorize.status;
+        error.upstream = authJson;
+        throw error;
+    }
+
+    return accessToken;
+};
+
+/**
+ * Escapes a value for safe insertion into OData single-quoted string literals.
+ * OData uses single quotes to delimit string values; embedded single quotes must be doubled.
+ * Example: O'Connor -> O''Connor.
+ *
+ * @param {string} [value=""] - Raw string value to include in an OData filter.
+ * @returns {string} Value escaped per OData string-literal rules (`'` -> `''`).
+ */
+const escapeODataString = (value = "") => String(value).replace(/'/g, "''");
+
+/**
+ * Sends Firebase magic-link authentication email through Microsoft Graph.
+ *
+ * @param {Object} req - HTTP request body.
+ * @param {Object} res - HTTP response body.
+ * @returns {Promise<void>} Resolves after response is sent.
+ */
 const sendEmailLink = async (req, res) => {
     if (req.method !== "POST") {
-        return res
-            .status(405)
-            .json(getResponseJSON("Only POST requests are accepted!", 405));
+        return res.status(405).json(getResponseJSON("Only POST requests are accepted!", 405));
     }
+
+    const requestBody = parseRequestBody(req.body);
+    const {
+        email,
+        continueUrl,
+        preferredLanguage,
+        authFlowId,
+        authAttemptId,
+        clientSendTs,
+    } = requestBody;
+    const resolvedAuthFlowId = authFlowId || `auth_flow_${uuid()}`;
+    const resolvedAuthAttemptId = authAttemptId || `auth_attempt_${uuid()}`;
+
     try {
-        const { email, continueUrl, preferredLanguage } = req.body;
-        const [clientId, clientSecret, tenantId, magicLink] = await Promise.all(
-            [
-                getSecret(process.env.APP_REGISTRATION_CLIENT_ID),
-                getSecret(process.env.APP_REGISTRATION_CLIENT_SECRET),
-                getSecret(process.env.APP_REGISTRATION_TENANT_ID),
-                generateSignInWithEmailLink(email, continueUrl),
-            ]
-        );
+        if (!email) {
+            return res.status(400).json({
+                data: [],
+                message: "Missing required field: email.",
+                status: 400,
+                code: 400,
+                errorCode: "auth/missing-email",
+                authFlowId: resolvedAuthFlowId,
+                authAttemptId: resolvedAuthAttemptId,
+            });
+        }
+
+        if (!continueUrl) {
+            return res.status(400).json({
+                data: [],
+                message: "Missing required field: continueUrl.",
+                status: 400,
+                code: 400,
+                errorCode: "auth/missing-continue-uri",
+                authFlowId: resolvedAuthFlowId,
+                authAttemptId: resolvedAuthAttemptId,
+            });
+        }
+
+        if (!validEmailFormat.test(email)) {
+            return res.status(400).json({
+                data: [],
+                message: "Invalid email format.",
+                status: 400,
+                code: 400,
+                errorCode: "auth/invalid-email",
+                authFlowId: resolvedAuthFlowId,
+                authAttemptId: resolvedAuthAttemptId,
+            });
+        }
+
+        const magicLink = await generateSignInWithEmailLink(email, continueUrl);
 
         const cleanMagicLink = cleanContinueUrl(magicLink);
+        const accessToken = await getGraphAccessToken();
 
-        const params = new URLSearchParams();
-        params.append("grant_type", "client_credentials");
-        params.append("scope", "https://graph.microsoft.com/.default");
-        params.append("client_id", clientId);
-        params.append("client_secret", clientSecret);
-
-        const resAuthorize = await fetch(
-            `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type":
-                        "application/x-www-form-urlencoded;charset=UTF-8",
-                },
-                body: params,
-            }
-        );
-
-        const { access_token } = await resAuthorize.json();
         const body = {
             message: {
                 subject:
@@ -699,29 +811,227 @@ const sendEmailLink = async (req, res) => {
                 ],
             },
         };
-        const response = await fetch(
+        const graphClientRequestId = uuid();
+
+        const graphResponse = await fetch(
             `https://graph.microsoft.com/v1.0/users/${nihMailbox}/sendMail`,
             {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${access_token}`,
+                    Authorization: `Bearer ${accessToken}`,
+                    "client-request-id": graphClientRequestId,
+                    "return-client-request-id": "true",
                 },
                 body: JSON.stringify(body),
             }
         );
-        const { status, statusText: code } = response;
-        return res.status(202).json({ status, code });
+
+        const graphJson = await parseResponseJson(graphResponse);
+        const graphRequestId = graphResponse.headers.get("request-id") || null;
+        const graphClientRequestIdEcho = graphResponse.headers.get("client-request-id") || graphClientRequestId;
+
+        if (!graphResponse.ok) {
+            const providerErrorCode = graphJson?.error?.code || "";
+            const resolvedError = resolveAuthErrorDetails({
+                status: graphResponse.status,
+                providerErrorCode,
+            });
+            return res.status(graphResponse.status).json({
+                data: [],
+                message: graphJson?.error?.message || "Failed to send email via Microsoft Graph.",
+                status: graphResponse.status,
+                code: graphResponse.status,
+                errorCode: resolvedError.errorCode,
+                provider: "microsoft_graph",
+                providerStatus: "failed",
+                providerErrorCode: providerErrorCode || null,
+                graphRequestId,
+                graphClientRequestId: graphClientRequestIdEcho,
+                authFlowId: resolvedAuthFlowId,
+                authAttemptId: resolvedAuthAttemptId,
+                clientSendTs: clientSendTs || null,
+                serverSendTs: new Date().toISOString(),
+            });
+        }
+
+        return res.status(202).json({
+            status: 202,
+            code: 202,
+            errorCode: null,
+            message: "Email accepted for delivery.",
+            provider: "microsoft_graph",
+            providerStatus: "accepted",
+            messageId: graphJson?.id || null,
+            graphRequestId,
+            graphClientRequestId: graphClientRequestIdEcho,
+            authFlowId: resolvedAuthFlowId,
+            authAttemptId: resolvedAuthAttemptId,
+            clientSendTs: clientSendTs || null,
+            serverSendTs: new Date().toISOString(),
+        });
         
     } catch (err) {
         console.error(`Error in sendEmailLink(). ${err.message}`);
-        return res
-            .status(500)
-            .json({
+        const resolvedError = resolveAuthErrorDetails({
+            status: err.status,
+            errorCode: err.errorCode || err.code,
+        });
+        return res.status(resolvedError.status).json({
+            data: [],
+            message: `Error in sendEmailLink(). ${err.message}`,
+            status: resolvedError.status,
+            code: resolvedError.status,
+            errorCode: resolvedError.errorCode,
+            provider: "microsoft_graph",
+            providerStatus: "failed",
+            upstreamStatus: err.upstreamStatus || null,
+            upstream: err.upstream || null,
+            authFlowId: resolvedAuthFlowId,
+            authAttemptId: resolvedAuthAttemptId,
+            clientSendTs: clientSendTs || null,
+            serverSendTs: new Date().toISOString(),
+        });
+    }
+};
+
+/**
+ * Looks up Exchange message trace events for authentication emails.
+ *
+ * @param {Object} req - HTTP request body.
+ * @param {Object} res - HTTP response body.
+ * @returns {Promise<void>} Resolves after response is sent.
+ */
+const lookupEmailDeliveryStatus = async (req, res) => {
+    if (req.method !== "POST") {
+        return res.status(405).json(getResponseJSON("Only POST requests are accepted!", 405));
+    }
+
+    try {
+        const requestBody = parseRequestBody(req.body);
+        const {
+            recipient,
+            senderAddress,
+            startDateTime,
+            endDateTime,
+            status,
+            subjectContains,
+            top,
+            authAttemptId,
+        } = requestBody;
+
+        if (!recipient || !validEmailFormat.test(recipient)) {
+            return res.status(400).json({
                 data: [],
-                message: `Error in sendEmailLink(). ${err.message}`,
-                code: 500,
+                status: 400,
+                code: 400,
+                errorCode: "invalid_recipient",
+                message: "A valid recipient email is required.",
             });
+        }
+
+        const now = new Date();
+        const end = endDateTime ? new Date(endDateTime) : now;
+        const start = startDateTime
+            ? new Date(startDateTime)
+            : new Date(end.getTime() - (24 * 60 * 60 * 1000));
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return res.status(400).json({
+                data: [],
+                status: 400,
+                code: 400,
+                errorCode: "invalid_datetime",
+                message: "Invalid startDateTime or endDateTime.",
+            });
+        }
+
+        const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+        const rangeMs = end.getTime() - start.getTime();
+        if (end > now || rangeMs < 0 || rangeMs > tenDaysMs || (now.getTime() - start.getTime()) > ninetyDaysMs) {
+            return res.status(400).json({
+                data: [],
+                status: 400,
+                code: 400,
+                errorCode: "invalid_trace_window",
+                message: "Window must be <= 10 days, start within last 90 days, and end not in the future.",
+            });
+        }
+
+        const accessToken = await getGraphAccessToken();
+        const traceClientRequestId = uuid();
+        const resultLimit = Math.max(1, Math.min(Number(top) || 200, 5000));
+        const filters = [
+            `receivedDateTime ge ${start.toISOString()}`,
+            `receivedDateTime le ${end.toISOString()}`,
+            `recipientAddress eq '${escapeODataString(recipient.toLowerCase())}'`,
+        ];
+        if (senderAddress) {
+            filters.push(`senderAddress eq '${escapeODataString(String(senderAddress).toLowerCase())}'`);
+        }
+        if (status) {
+            filters.push(`status eq '${escapeODataString(String(status).toLowerCase())}'`);
+        }
+        if (subjectContains) {
+            filters.push(`contains(subject, '${escapeODataString(subjectContains)}')`);
+        }
+
+        const traceUrl = new URL("https://graph.microsoft.com/beta/admin/exchange/tracing/messageTraces");
+        traceUrl.searchParams.set("$filter", filters.join(" and "));
+        traceUrl.searchParams.set("$top", String(resultLimit));
+
+        const traceResponse = await fetch(traceUrl.toString(), {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "client-request-id": traceClientRequestId,
+                "return-client-request-id": "true",
+            },
+        });
+
+        const traceJson = await parseResponseJson(traceResponse);
+        const graphRequestId = traceResponse.headers.get("request-id") || null;
+        const graphClientRequestId = traceResponse.headers.get("client-request-id") || traceClientRequestId;
+
+        if (!traceResponse.ok) {
+            return res.status(traceResponse.status).json({
+                data: [],
+                status: traceResponse.status,
+                code: traceResponse.status,
+                errorCode: "message_trace_lookup_failed",
+                message: traceJson?.error?.message || "Microsoft Graph message trace lookup failed.",
+                provider: "microsoft_graph_message_trace",
+                providerErrorCode: traceJson?.error?.code || null,
+                graphRequestId,
+                graphClientRequestId,
+            });
+        }
+
+        const traces = Array.isArray(traceJson?.value) ? traceJson.value : [];
+        return res.status(200).json({
+            data: traces,
+            status: 200,
+            code: 200,
+            errorCode: null,
+            provider: "microsoft_graph_message_trace",
+            graphRequestId,
+            graphClientRequestId,
+            authAttemptId: authAttemptId || null,
+            count: traces.length,
+            nextLink: traceJson?.["@odata.nextLink"] || null,
+            serverLookupTs: new Date().toISOString(),
+        });
+    } catch (err) {
+        console.error(`Error in lookupEmailDeliveryStatus(). ${err.message}`);
+        const status = err.status || 500;
+        return res.status(status).json({
+            data: [],
+            status,
+            code: status,
+            errorCode: err.errorCode || "message_trace_lookup_failed",
+            message: `Error in lookupEmailDeliveryStatus(). ${err.message}`,
+        });
     }
 };
 
@@ -955,6 +1265,7 @@ module.exports = {
   sendEmail,
   getSiteNotification,
   sendEmailLink,
+  lookupEmailDeliveryStatus,
   dryRunNotificationSchema,
   sendInstantNotification,
   handleDryRun,
