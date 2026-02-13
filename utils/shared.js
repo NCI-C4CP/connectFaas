@@ -2396,9 +2396,9 @@ const parseResponseJson = async (response) => {
  */
 const parseRequestBody = (body) => {
     if (!body) return {};
-    if (typeof body === "string") return safeJSONParse(body) || {};
-    if (typeof body === "object") return body;
-    return {};
+    const parsed = typeof body === "string" ? safeJSONParse(body) : body;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
 };
 
 /**
