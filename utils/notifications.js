@@ -72,7 +72,8 @@ const sendTwilioMessage = async (smsRecord) => {
 
 /**
  * Handles rate-limited batch sending of Twilio SMS messages with retry logic.
- * Possible improvements: When having more than 1 phone number sending out messages, create a  separate queue for each phone number to increase overall throughput.
+ * 
+ * Note: Currently there's one phone number in sender pool. It can handle 160K messages in one hour. For higher throughput in prod, add one or more phone numbers to sender pool.
  */
 class SmsBatchSender {
   #queue = [];
