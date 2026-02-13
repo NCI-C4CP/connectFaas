@@ -4,7 +4,7 @@ admin.initializeApp();
 const storage = admin.storage();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort, delay } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
@@ -4954,60 +4954,114 @@ const getSpecimensByCollectionIds = async (collectionIdsArray, siteCode, isBPTL 
     }
 }
 
+/**
+ * Processes SendGrid email status webhook events and updates the corresponding notification record in Firestore with retry logic to handle potential delays in record availability.
+ * For "bounce" and "dropped" events, records the reason in the notification.
+ * @param {object} event - SendGrid event webhook payload
+ * @returns {Promise<void>}
+ */
 const processSendGridEvent = async (event) => {
-    if (!event.notification_id || event.gcloud_project !== process.env.GCLOUD_PROJECT) return;
+  if (!event.notification_id || event.gcloud_project !== process.env.GCLOUD_PROJECT) return;
 
-    const date = new Date(event.timestamp * 1000).toISOString();
-    const snapshot = await db
-        .collection("notifications")
-        .where("id", "==", event.notification_id)
-        .get();
-    printDocsCount(snapshot, "processSendGridEvent");
+  const maxAttempts = 4;
+  let isRecordFound = false;
+  for (let attempt = 1; attempt <= maxAttempts && !isRecordFound; attempt++) {
+    let snapshot;
+    try {
+      snapshot = await db.collection("notifications").where("id", "==", event.notification_id).get();
+    } catch (error) {
+      if (attempt < maxAttempts) {
+        await delay(attempt * 500);
+        continue;
+      } else {
+        console.error(`Error fetching notification for id ${event.notification_id} on attempt ${attempt}:`, error);
+        break;
+      }
+    }
 
     if (snapshot.size > 0) {
-        const doc = snapshot.docs[0];
-        const eventRecord = {
-            [`${event.event}Status`]: true,
-            [`${event.event}Date`]: date,
-        };
-        if (["bounce", "dropped"].includes(event.event)) {
-            eventRecord[`${event.event}Reason`] = event.reason;
-        }
-        await db.collection("notifications").doc(doc.id).update(eventRecord);
-    } else {
-        console.error(`Could not find notifications ${event.notification_id}. Status ${event.event}`)
+      isRecordFound = true;
+      const doc = snapshot.docs[0];
+      const eventRecord = {
+        status: event.event,
+        [`${event.event}Date`]: new Date().toISOString(),
+      };
+      if (["bounce", "dropped"].includes(event.event)) {
+        eventRecord[`${event.event}Reason`] = event.reason;
+      }
+      await doc.ref.update(eventRecord);
     }
+
+    if (!isRecordFound && attempt < maxAttempts) {
+      await delay(attempt * 500);
+    }
+  }
+
+  if (!isRecordFound) {
+    console.error(`Could not find notifications with id ${event.notification_id}. Event ${event.event}.`);
+  }
 };
 
-const processTwilioEvent = async (event) => {
-    if (!["failed", "delivered", "undelivered"].includes(event.MessageStatus)) return;
-    const dateStr = new Date().toISOString();
+const disableSmsErrorCodes = ["21610", "30004", "30006"];
 
-    const snapshot = await db
-        .collection("notifications")
-        .where("messageSid", "==", event.MessageSid)
-        .get();
-    printDocsCount(snapshot, "processTwilioEvent");
+/**
+ * Processes Twilio SMS status webhook requests and updates the corresponding notification record in Firestore, with retry logic to handle potential delays in record availability. 
+ * For specific error codes (21610, 30004, 30006), revokes SMS permission for the phone number.
+ * @param {object} reqBody - Twilio SMS webhook request body
+ * @param {string} reqBody.MessageSid - Unique identifier for the SMS message
+ * @param {string} reqBody.MessageStatus - Status of the message (e.g., "delivered", "failed", "undelivered")
+ * @param {string} [reqBody.ErrorCode] - Twilio error code if the message failed
+ * @param {string} [reqBody.ErrorMessage] - Twilio error message if the message failed
+ * @returns {Promise<void>}
+ */
+const processTwilioEvent = async (reqBody) => {
+  if (!["failed", "delivered", "undelivered"].includes(reqBody.MessageStatus) || !reqBody.MessageSid) return;
+
+  const maxAttempts = 4;
+  let isRecordFound = false;
+  for (let attempt = 1; attempt <= maxAttempts && !isRecordFound; attempt++) {
+    let snapshot;
+    try {
+      snapshot = await db.collection("notifications").where("messageSid", "==", reqBody.MessageSid).get();
+    } catch (error) {
+      if (attempt < maxAttempts) {
+        await delay(attempt * 500);
+        continue;
+      } else {
+        console.error(`Error fetching notification for MessageSid ${reqBody.MessageSid} on attempt ${attempt}:`, error);
+        break;
+      }
+    }
 
     if (snapshot.size > 0) {
-        const doc = snapshot.docs[0];
-        const docData = doc.data();
-        const eventRecord = {
-            status: event.MessageStatus,
-            [`${event.MessageStatus}Date`]: dateStr,
-            errorCode: event.ErrorCode || docData.errorCode || "",
-            errorMessage: event.ErrorMessage || twilioErrorMessages[event.ErrorCode] || docData.errorMessage || "",
-        };
+      isRecordFound = true;
+      const doc = snapshot.docs[0];
+      const docData = doc.data();
+      const eventErrorCode = reqBody.ErrorCode?.toString() ?? "";
+      const errorCode = eventErrorCode || docData.errorCode?.toString();
+      const errorMessage = reqBody.ErrorMessage || twilioErrorMessages[errorCode] || docData.errorMessage?.toString();
+      const eventRecord = {
+        status: reqBody.MessageStatus,
+        [`${reqBody.MessageStatus}Date`]: new Date().toISOString(),
+        ...(errorCode && { errorCode }),
+        ...(errorMessage && { errorMessage }),
+      };
+      
+      await doc.ref.update(eventRecord);
 
-        await doc.ref.update(eventRecord);
-
-        if (["21610", "30004", "30006"].includes(event.ErrorCode)) {
-            await updateSmsPermission(docData.phone, false);
-        }
-
-    } else {
-        console.error(`Could not find messageSid ${event.MessageSid}. Status ${event.MessageStatus}`);
+      if (disableSmsErrorCodes.includes(eventErrorCode)) {
+        await updateSmsPermission(docData.phone, false);
+      }
     }
+
+    if (!isRecordFound && attempt < maxAttempts) {
+      await delay(attempt * 500);
+    }
+  }
+
+  if (!isRecordFound) {
+    console.error(`Could not find notification record with messageSid ${reqBody.MessageSid}. Message status ${reqBody.MessageStatus}.`);
+  }
 };
 
 const getParticipantCancerOccurrences = async (participantToken) => {

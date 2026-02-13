@@ -2,10 +2,14 @@ const { SecretManagerServiceClient } = require("@google-cloud/secret-manager");
 const { EventWebhook, EventWebhookHeader } = require("@sendgrid/eventwebhook");
 const { getResponseJSON } = require("./shared");
 const { processTwilioEvent, processSendGridEvent } = require("./firestore");
-const { handleIncomingSms } = require("./notifications");
+const { handleIncomingSms, validateTwilioRequest } = require("./notifications");
 
 /* This function will process the webhook data from Twilio */
 const handleReceivedTwilioEvent = async (req, res) => {
+    const isRequestValid = await validateTwilioRequest(req);
+    if (!isRequestValid) {
+        return res.status(403).json(getResponseJSON("Invalid Twilio signature.", 403));
+    }
     try {
         await processTwilioEvent(req.body);
 
