@@ -13,6 +13,7 @@ const langArray = ["english", "spanish"];
 let twilioClient, messagingServiceSid;
 let isSendGridSetup = false;
 let isTwilioSetup = false;
+let twilioAuthToken = "";
 let isSendingNotifications = false; // A more robust soluttion is needed when using multiple servers 
 
 const setupSendGrid = async () => {
@@ -38,6 +39,7 @@ const setupTwilio = async () => {
   twilioClient = twilio(fetchedSecrets.accountSid, fetchedSecrets.authToken);
   messagingServiceSid = fetchedSecrets.messagingServiceSid;
   isTwilioSetup = true;
+  twilioAuthToken = fetchedSecrets.authToken;
 };
 
 /**
@@ -923,13 +925,24 @@ const sendInstantNotification = async (requestData) => {
   }
 };
 
-const handleIncomingSms = async (req, res) => {
+const validateTwilioRequest = async (req) => {
   if (!isTwilioSetup) {
     await setupTwilio();
   }
+  const twilioSignature = req.headers["x-twilio-signature"];
+  const requestUrl = `${req.protocol}://${req.get("host")}/webhook${req.originalUrl.slice(1)}`;
+  if (!twilio.validateRequest(twilioAuthToken, twilioSignature, requestUrl, req.body)) {
+    console.warn(`Twilio request validation failed. twilioSignature: ${twilioSignature}, requestUrl: ${requestUrl}`);
+    return false;
+  }
 
-  if (!req.body || req.body.MessagingServiceSid !== messagingServiceSid) {
-    return res.status(400).json(getResponseJSON("Bad request!", 400));
+  return true;
+};
+
+const handleIncomingSms = async (req, res) => {
+  const isRequestValid = await validateTwilioRequest(req);
+  if (!isRequestValid) {
+    return res.status(403).json(getResponseJSON("Invalid Twilio signature.", 403));
   }
 
   const { OptOutType: optinOptoutType } = req.body;
@@ -938,10 +951,11 @@ const handleIncomingSms = async (req, res) => {
     try {
       await updateSmsPermission(req.body.From, isSmsPermitted);
     } catch (error) {
-      console.error("Error updating sms permission to 'participants' collection.", error);
+      console.error("Error updating SMS permission to 'participants' collection.", error);
+      return res.status(500).json(getResponseJSON("Internal server error", 500));
     }
   }
-  
+
   return res.sendStatus(204);
 };
 
@@ -959,4 +973,5 @@ module.exports = {
   sendInstantNotification,
   handleDryRun,
   handleIncomingSms,
+  validateTwilioRequest,
 };
