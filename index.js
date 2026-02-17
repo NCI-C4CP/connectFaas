@@ -58,7 +58,6 @@ exports.biospecimen = biospecimenAPIs;
 
 exports.sendScheduledNotificationsGen2 = onRequest(sendScheduledNotifications);
 
-
 // End-Points for Exporting Firestore to Big Query
 
 exports.importToBigQuery = importToBigQuery; 
