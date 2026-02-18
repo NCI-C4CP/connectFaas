@@ -4983,8 +4983,8 @@ const processSendGridEvent = async (event) => {
       isRecordFound = true;
       const doc = snapshot.docs[0];
       const eventRecord = {
-        status: event.event,
-        [`${event.event}Date`]: new Date().toISOString(),
+        [`${event.event}Status`]: true,
+        [`${event.event}Date`]: new Date(event.timestamp * 1000).toISOString(),
       };
       if (["bounce", "dropped"].includes(event.event)) {
         eventRecord[`${event.event}Reason`] = event.reason;
