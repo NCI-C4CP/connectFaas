@@ -3042,8 +3042,15 @@ const queryReplacementHomeCollectionAddressesToPrint = async (limit) => {
 }
 
 const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
+    // Find the start and end date of the received date window and find dates within that window
+    let endDateObject = new Date(receivedDateTimestamp);
+    endDateObject.setUTCDate(endDateObject.getUTCDate() + 1);
+    const endDateTimestamp = endDateObject.toISOString();
     // No try/catch; this is already handled in the endpoint which uses this
-    const biospecSnapshot = await db.collection('biospecimen').where(`${fieldMapping.tubesBagsCids.mouthwashTube1}.${fieldMapping.receivedDateTime}`, '==', receivedDateTimestamp).get();
+    const biospecSnapshot = await db.collection('biospecimen')
+        .where(`${fieldMapping.tubesBagsCids.mouthwashTube1}.${fieldMapping.receivedDateTime}`, '>=', receivedDateTimestamp)
+        .where(`${fieldMapping.tubesBagsCids.mouthwashTube1}.${fieldMapping.receivedDateTime}`, '<', endDateTimestamp)
+        .get();
     // Because kitLevel is needed by this report and is stored only on the kitAssembly and not the biospecimen record
     // we must look up the corresponding kitAssembly records and match them up
     const kitIds = [];
@@ -3752,6 +3759,9 @@ const storeKitReceipt = async (pkg) => {
         } = fieldMapping;
         let toReturn;
 
+        // Automatically save package received date time as the time this processes
+        pkg[receivedDateTime] = new Date().toISOString();
+
         await db.runTransaction(async (transaction) => {
             const kitSnapshot = await transaction.get(
                 db.collection("kitAssembly")
@@ -3925,7 +3935,10 @@ const storeKitReceipt = async (pkg) => {
  * @returns 
  */
 const validateKitReceiptCollectionDate = async (query) => {
-    const {collectionDateTimestamp, receivedDateTime, returnKitTrackingNum} = query;
+    // This will end up being a few seconds off of the actual receivedDateTime that is saved, but that is all right
+    // This functionality is being phased out in the near future as well
+    const receivedDateTime = new Date().toISOString();
+    const {collectionDateTimestamp, returnKitTrackingNum} = query;
     const kitSnapshot = await db
         .collection('kitAssembly')
         .where(`${fieldMapping.returnKitTrackingNum}`, '==', returnKitTrackingNum)
@@ -4888,11 +4901,13 @@ const getSpecimensByReceivedDate = async (receivedTimestamp) => {
     try {
         const boxes = await getBoxesByReceivedDate(receivedTimestamp);
         const collectionIdArray = extractCollectionIdsFromBoxes(boxes);
+
         if (collectionIdArray.length === 0) {
             return [];
         }
 
         const specimenCollections = await getSpecimensByCollectionIds(collectionIdArray, null, true);
+
         const specimenData = processSpecimenCollections(specimenCollections, receivedTimestamp);
 
         return specimenData;
@@ -4907,7 +4922,15 @@ const getSpecimensByReceivedDate = async (receivedTimestamp) => {
  * @returns list of boxes received on the given date.
  */
 const getBoxesByReceivedDate = async (receivedTimestamp) => {
-    const snapshot = await db.collection('boxes').where('926457119', '==', receivedTimestamp).get();
+    const { shipmentReceivedTimestamp } = fieldMapping;
+    // Check that this is the same day as the received timestamp
+    let endDateObject = new Date(receivedTimestamp);
+    endDateObject.setUTCDate(endDateObject.getUTCDate() + 1);
+    const endDateTimestamp = endDateObject.toISOString()
+    const snapshot = await db.collection('boxes')
+        .where(`${shipmentReceivedTimestamp}`, '>=', receivedTimestamp)
+        .where(`${shipmentReceivedTimestamp}`, '<', endDateTimestamp)
+        .get();
     printDocsCount(snapshot, "getBoxesByReceivedDate");
     return snapshot.docs.map(doc => doc.data());
 }

@@ -1504,14 +1504,25 @@ const extractCollectionIdsFromBoxes = (boxesList) => {
  * @returns {array} - modified specimen collection data array
  */
 const processSpecimenCollections = (specimenCollections, receivedTimestamp) => {
+    const { 
+        shipmentReceivedTimestamp, collectionId, collectionDateTimeStamp,
+        healthCareProvider, collectionLocation, collectionScannedTime, collectionSetting
+     } = fieldMapping;
     const specimenDataArray = [];
 
+    let endDateObject = new Date(receivedTimestamp);
+    endDateObject.setUTCDate(endDateObject.getUTCDate() + 1);
+    const endDateTimestamp = endDateObject.toISOString();
+
     for (const specimenCollection of specimenCollections) {
+        const specimentReceivedTimestamp = specimenCollection['data'][shipmentReceivedTimestamp];
         let hasSpecimens = false;
         const filteredSpecimens = tubeConceptIds.reduce((acc, key) => {
             const tube = specimenCollection['data'][key];
 
-            if (tube && tube['926457119'] === receivedTimestamp) {
+
+            // Check that the tubes are received on the same day
+            if (tube && tube[shipmentReceivedTimestamp] >= receivedTimestamp && tube[shipmentReceivedTimestamp] < endDateTimestamp) {
                 acc[key] = tube;
                 hasSpecimens = true;
             }
@@ -1521,13 +1532,13 @@ const processSpecimenCollections = (specimenCollections, receivedTimestamp) => {
         if (hasSpecimens) {
             specimenDataArray.push({
                 'specimens': filteredSpecimens,
-                '820476880': specimenCollection['data']['820476880'],
-                '926457119': receivedTimestamp, // Tube-level (not specimen-level) data required for this field. They can be different values.
-                '678166505': specimenCollection['data']['678166505'],
-                '827220437': specimenCollection['data']['827220437'],
-                '951355211': specimenCollection['data']['951355211'],
-                '915838974': specimenCollection['data']['915838974'],
-                '650516960': specimenCollection['data']['650516960'],
+                [collectionId]: specimenCollection['data'][collectionId],
+                [shipmentReceivedTimestamp]: specimentReceivedTimestamp, // Tube-level (not specimen-level) data required for this field. They can be different values.
+                [collectionDateTimeStamp]: specimenCollection['data'][collectionDateTimeStamp],
+                [healthCareProvider]: specimenCollection['data'][healthCareProvider],
+                [collectionLocation]: specimenCollection['data'][collectionLocation],
+                [collectionScannedTime]: specimenCollection['data'][collectionScannedTime],
+                [collectionSetting]: specimenCollection['data'][collectionSetting],
                 'Connect_ID': specimenCollection['data']['Connect_ID'],
             });
         }
