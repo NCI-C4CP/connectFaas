@@ -92,11 +92,7 @@ const validatePin = async (res, body, uid) => {
         } else if (noLongerEnrolling) {
             return res.status(286).json(getResponseJSON(healthCareProvider, 286));
         } else if (isValid) {
-            const linkAccountResponse = await linkInvitationRecordWithParticipantUID(docId, pin, firstSignInTimestamp, uid);
-            if (linkAccountResponse instanceof Error) {
-                console.error('Error in validatePin:', linkAccountResponse);
-                return res.status(500).json(getResponseJSON(linkAccountResponse.message, 500));
-            }
+            await linkInvitationRecordWithParticipantUID(docId, pin, firstSignInTimestamp, uid);
             return res.status(200).json(getResponseJSON('Ok', 200));
         }
 
