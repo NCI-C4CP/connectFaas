@@ -211,17 +211,19 @@ const defaultFlags = {
     828729648: 104430631,
     699625233: 104430631,
     912301837: 208325815,
-    253883960: 972455046,
-    547363263: 972455046,
-    949302066: 972455046,
-    536735468: 972455046,
-    976570371: 972455046,
-    663265240: 972455046,
-    265193023: 972455046,
-    220186468: 972455046,
-    320303124: 972455046,
-    459098666: 972455046,
-    126331570: 972455046,
+    949302066: 972455046, // Module 1
+    536735468: 972455046, // Module 2
+    976570371: 972455046, // Module 3
+    663265240: 972455046, // Module 4
+    126331570: 972455046, // Module SSN 
+    220186468: 972455046, // Module COVID-19
+    265193023: 972455046, // Module biospecimen
+    459098666: 972455046, // Module menstrual
+    253883960: 972455046, // Module clinical biospecimen
+    547363263: 972455046, // Module mouthwash
+    320303124: 972455046, // Module PROMIS
+    176068627: 972455046, // Module cancer screening history
+    692560814: 972455046, // Module DHQ3
     311580100: 104430631,
     914639140: 104430631,
     878865966: 104430631,
@@ -1502,14 +1504,25 @@ const extractCollectionIdsFromBoxes = (boxesList) => {
  * @returns {array} - modified specimen collection data array
  */
 const processSpecimenCollections = (specimenCollections, receivedTimestamp) => {
+    const { 
+        shipmentReceivedTimestamp, collectionId, collectionDateTimeStamp,
+        healthCareProvider, collectionLocation, collectionScannedTime, collectionSetting
+     } = fieldMapping;
     const specimenDataArray = [];
 
+    let endDateObject = new Date(receivedTimestamp);
+    endDateObject.setUTCDate(endDateObject.getUTCDate() + 1);
+    const endDateTimestamp = endDateObject.toISOString();
+
     for (const specimenCollection of specimenCollections) {
+        const specimentReceivedTimestamp = specimenCollection['data'][shipmentReceivedTimestamp];
         let hasSpecimens = false;
         const filteredSpecimens = tubeConceptIds.reduce((acc, key) => {
             const tube = specimenCollection['data'][key];
 
-            if (tube && tube['926457119'] === receivedTimestamp) {
+
+            // Check that the tubes are received on the same day
+            if (tube && tube[shipmentReceivedTimestamp] >= receivedTimestamp && tube[shipmentReceivedTimestamp] < endDateTimestamp) {
                 acc[key] = tube;
                 hasSpecimens = true;
             }
@@ -1519,13 +1532,13 @@ const processSpecimenCollections = (specimenCollections, receivedTimestamp) => {
         if (hasSpecimens) {
             specimenDataArray.push({
                 'specimens': filteredSpecimens,
-                '820476880': specimenCollection['data']['820476880'],
-                '926457119': receivedTimestamp, // Tube-level (not specimen-level) data required for this field. They can be different values.
-                '678166505': specimenCollection['data']['678166505'],
-                '827220437': specimenCollection['data']['827220437'],
-                '951355211': specimenCollection['data']['951355211'],
-                '915838974': specimenCollection['data']['915838974'],
-                '650516960': specimenCollection['data']['650516960'],
+                [collectionId]: specimenCollection['data'][collectionId],
+                [shipmentReceivedTimestamp]: specimentReceivedTimestamp, // Tube-level (not specimen-level) data required for this field. They can be different values.
+                [collectionDateTimeStamp]: specimenCollection['data'][collectionDateTimeStamp],
+                [healthCareProvider]: specimenCollection['data'][healthCareProvider],
+                [collectionLocation]: specimenCollection['data'][collectionLocation],
+                [collectionScannedTime]: specimenCollection['data'][collectionScannedTime],
+                [collectionSetting]: specimenCollection['data'][collectionSetting],
                 'Connect_ID': specimenCollection['data']['Connect_ID'],
             });
         }
@@ -2387,6 +2400,19 @@ const parseResponseJson = async (response) => {
 };
 
 /**
+ * Normalizes an HTTP request body to an object.
+ *
+ * @param {unknown} body - Incoming request body from an HTTP handler.
+ * @returns {Object} Parsed body object or an empty object.
+ */
+const parseRequestBody = (body) => {
+    if (!body) return {};
+    const parsed = typeof body === "string" ? safeJSONParse(body) : body;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+};
+
+/**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
  * @returns {Promise<void>}
@@ -2502,6 +2528,7 @@ module.exports = {
     handleNorcBirthdayCard,
     safeJSONParse,
     parseResponseJson,
+    parseRequestBody,
     uspsUrl,
     sanitizeObject,
     developmentTier
