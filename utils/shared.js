@@ -272,8 +272,8 @@ const moduleStatusConcepts = {
     "320303124" :       "promis",
     "956490759" :       "experience2024",
     "176068627" :       "cancerScreeningHistorySurvey",
-    "497020618" :       "dhq3Survey",
-    "692560814" :       "preference2026"
+    "692560814" :       "dhq3Survey",
+    "278023676" :       "preference2026"
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
