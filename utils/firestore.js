@@ -1055,7 +1055,6 @@ const verifyIdentity = async (type, token, siteCode) => {
       .collection("participants")
       .where("token", "==", token)
       .where("827220437", "==", siteCode)
-      .select(verificationStatus)
       .get();
     printDocsCount(snapshot, "verifyIdentity");
 
@@ -5206,7 +5205,7 @@ const updateParticipantCorrection = async (participantData) => {
         const snapshot = await db.collection('participants').where('token', '==', participantData['token']).get();
         printDocsCount(snapshot, "updateParticipantCorrection");
         if (snapshot.empty) return false;
-        
+
         const doc = snapshot.docs[0];
         const docData = doc.data();
         delete  participantData['token'];
