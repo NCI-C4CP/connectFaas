@@ -92,11 +92,7 @@ const validatePin = async (res, body, uid) => {
         } else if (noLongerEnrolling) {
             return res.status(286).json(getResponseJSON(healthCareProvider, 286));
         } else if (isValid) {
-            const linkAccountResponse = await linkInvitationRecordWithParticipantUID(docId, pin, firstSignInTimestamp, uid);
-            if (linkAccountResponse instanceof Error) {
-                console.error('Error in validatePin:', linkAccountResponse);
-                return res.status(500).json(getResponseJSON(linkAccountResponse.message, 500));
-            }
+            await linkInvitationRecordWithParticipantUID(docId, pin, firstSignInTimestamp, uid);
             return res.status(200).json(getResponseJSON('Ok', 200));
         }
 
@@ -658,11 +654,11 @@ const updateParticipantFirebaseAuthentication = async (req, res) => {
     if (flag === `updateEmail` || flag === `updatePhone`) status = await updateUsersCurrentLogin(data, uid);
 
     if (status === true) return res.status(200).json({code: 200});
-    else if (status === `auth/phone-number-already-exists`) return res.status(409).json(getResponseJSON('The user with provided phone number already exists.', 409));
-    else if (status === `auth/email-already-exists`) return res.status(409).json(getResponseJSON('The user with the provided email already exists.', 409));
-    else if (status === `auth/invalid-phone-number`) return res.status(403).json(getResponseJSON('Invalid Phone number', 403));
-    else if (status === `auth/invalid-email`) return res.status(403).json(getResponseJSON('Invalid Email', 403));
-    else return res.status(400).json(getResponseJSON('Operation Unsuccessful', 400));
+    else if (status === `auth/phone-number-already-exists`) return res.status(409).json({ message: 'The user with provided phone number already exists.', code: 409, errorCode:'auth/credential-already-in-use' });
+    else if (status === `auth/email-already-exists`) return res.status(409).json({ message: 'The user with the provided email already exists.', code: 409, errorCode: 'auth/email-already-in-use' });
+    else if (status === `auth/invalid-phone-number`) return res.status(403).json({ message: 'Invalid Phone number', code: 403, errorCode: 'auth/invalid-phone-number' });
+    else if (status === `auth/invalid-email`) return res.status(403).json({ message: 'Invalid Email', code: 403, errorCode: 'auth/invalid-email' });
+    else return res.status(400).json({ message: 'Operation Unsuccessful', code: 400, errorCode: status });
 }
 
 const isIsoDate = (str) => {

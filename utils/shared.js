@@ -272,8 +272,8 @@ const moduleStatusConcepts = {
     "320303124" :       "promis",
     "956490759" :       "experience2024",
     "176068627" :       "cancerScreeningHistorySurvey",
-    "497020618" :       "dhq3Survey",
-    "692560814" :       "preference2026"
+    "692560814" :       "dhq3Survey",
+    "278023676" :       "preference2026"
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -1502,14 +1502,25 @@ const extractCollectionIdsFromBoxes = (boxesList) => {
  * @returns {array} - modified specimen collection data array
  */
 const processSpecimenCollections = (specimenCollections, receivedTimestamp) => {
+    const { 
+        shipmentReceivedTimestamp, collectionId, collectionDateTimeStamp,
+        healthCareProvider, collectionLocation, collectionScannedTime, collectionSetting
+     } = fieldMapping;
     const specimenDataArray = [];
 
+    let endDateObject = new Date(receivedTimestamp);
+    endDateObject.setUTCDate(endDateObject.getUTCDate() + 1);
+    const endDateTimestamp = endDateObject.toISOString();
+
     for (const specimenCollection of specimenCollections) {
+        const specimentReceivedTimestamp = specimenCollection['data'][shipmentReceivedTimestamp];
         let hasSpecimens = false;
         const filteredSpecimens = tubeConceptIds.reduce((acc, key) => {
             const tube = specimenCollection['data'][key];
 
-            if (tube && tube['926457119'] === receivedTimestamp) {
+
+            // Check that the tubes are received on the same day
+            if (tube && tube[shipmentReceivedTimestamp] >= receivedTimestamp && tube[shipmentReceivedTimestamp] < endDateTimestamp) {
                 acc[key] = tube;
                 hasSpecimens = true;
             }
@@ -1519,13 +1530,13 @@ const processSpecimenCollections = (specimenCollections, receivedTimestamp) => {
         if (hasSpecimens) {
             specimenDataArray.push({
                 'specimens': filteredSpecimens,
-                '820476880': specimenCollection['data']['820476880'],
-                '926457119': receivedTimestamp, // Tube-level (not specimen-level) data required for this field. They can be different values.
-                '678166505': specimenCollection['data']['678166505'],
-                '827220437': specimenCollection['data']['827220437'],
-                '951355211': specimenCollection['data']['951355211'],
-                '915838974': specimenCollection['data']['915838974'],
-                '650516960': specimenCollection['data']['650516960'],
+                [collectionId]: specimenCollection['data'][collectionId],
+                [shipmentReceivedTimestamp]: specimentReceivedTimestamp, // Tube-level (not specimen-level) data required for this field. They can be different values.
+                [collectionDateTimeStamp]: specimenCollection['data'][collectionDateTimeStamp],
+                [healthCareProvider]: specimenCollection['data'][healthCareProvider],
+                [collectionLocation]: specimenCollection['data'][collectionLocation],
+                [collectionScannedTime]: specimenCollection['data'][collectionScannedTime],
+                [collectionSetting]: specimenCollection['data'][collectionSetting],
                 'Connect_ID': specimenCollection['data']['Connect_ID'],
             });
         }
@@ -2387,6 +2398,19 @@ const parseResponseJson = async (response) => {
 };
 
 /**
+ * Normalizes an HTTP request body to an object.
+ *
+ * @param {unknown} body - Incoming request body from an HTTP handler.
+ * @returns {Object} Parsed body object or an empty object.
+ */
+const parseRequestBody = (body) => {
+    if (!body) return {};
+    const parsed = typeof body === "string" ? safeJSONParse(body) : body;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+};
+
+/**
  * Delay for a specified time, to avoid errors (race conditions, rate limiting, etc.) 
  * @param {number} ms Delayed time in milliseconds
  * @returns {Promise<void>}
@@ -2502,6 +2526,7 @@ module.exports = {
     handleNorcBirthdayCard,
     safeJSONParse,
     parseResponseJson,
+    parseRequestBody,
     uspsUrl,
     sanitizeObject,
     developmentTier
