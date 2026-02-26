@@ -844,6 +844,27 @@ const cleanSurveyData = (data) => {
 }
 
 /**
+ * Initializes survey statuses to 'not started' for a verified participant.
+ *
+ * @param {Object} data - The participant data object, mutated in place if verified.
+ * @returns {Object} The participant data object, with survey statuses initialized if verified.
+ */
+const checkSurveyStatusAfterVerification = (data) => {
+  if (data[fieldMapping.verificationStatus] !== fieldMapping.verified) return data;
+
+  const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus];
+
+  for (const statusKey of statusesToCheck) {
+    if (!data[statusKey]) {
+      data[statusKey] = fieldMapping.notStarted;
+    }
+  }
+
+  return data;
+};
+
+
+/**
  * Gets baseline data updates for participants when submitting specimens
  * @param {object} biospecimenData The biospecimen data
  * @param {object} participantData The participant data
@@ -2473,6 +2494,7 @@ module.exports = {
     sites, 
     bagConceptIDs,
     cleanSurveyData,
+    checkSurveyStatusAfterVerification,
     updateBaselineData,
     getAddedStrayTubes,
     getHomeMWKitData,
