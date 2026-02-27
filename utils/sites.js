@@ -655,14 +655,10 @@ const participantDataCorrection = async (req, res) => {
 
     try {
         const { updateParticipantCorrection } = require('./firestore');
-        if (req.body.data) {
-            const status = await updateParticipantCorrection(req.body.data[0]);
-            return status === true
-                ? res.status(200).json({ code: 200 })
-                : res.status(400).json(getResponseJSON('Operation Unsuccessful', 400));
-        } else {
-            return res.status(400).json(getResponseJSON('Invalid request format', 400));
-        }
+        const status = await updateParticipantCorrection(req.body.data[0]);
+        return status === true
+            ? res.status(200).json({ code: 200 })
+            : res.status(400).json(getResponseJSON('Operation Unsuccessful', 400));
     } catch (error) {
         console.error(error);
         return res.status(500).json(getResponseJSON('Internal Server Error', 500));
