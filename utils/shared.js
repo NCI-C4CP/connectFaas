@@ -846,21 +846,22 @@ const cleanSurveyData = (data) => {
 /**
  * Initializes survey statuses to 'not started' for a verified participant.
  *
- * @param {Object} data - The participant data object, mutated in place if verified.
- * @returns {Object} The participant data object, with survey statuses initialized if verified.
+ * @param {Object} payloadData - The update payload, mutated in place if the participant is verified.
+ * @param {Object} docData - The existing Firestore document data, used to check current survey statuses.
+ * @returns {Object} payloadData, with missing survey statuses added if the participant is verified.
  */
-const checkSurveyStatusAfterVerification = (data) => {
-  if (data[fieldMapping.verificationStatus] !== fieldMapping.verified) return data;
+const checkSurveyStatusesWhenVerified = (payloadData, docData) => {
+    if (payloadData[fieldMapping.verificationStatus] !== fieldMapping.verified) return payloadData;
 
-  const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus];
+    const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus];
 
-  for (const statusKey of statusesToCheck) {
-    if (!data[statusKey]) {
-      data[statusKey] = fieldMapping.notStarted;
+    for (const statusKey of statusesToCheck) {
+        if (!docData[statusKey]) {
+            payloadData[statusKey] = fieldMapping.notStarted;
+        }
     }
-  }
 
-  return data;
+    return payloadData;
 };
 
 
@@ -2494,7 +2495,7 @@ module.exports = {
     sites, 
     bagConceptIDs,
     cleanSurveyData,
-    checkSurveyStatusAfterVerification,
+    checkSurveyStatusesWhenVerified,
     updateBaselineData,
     getAddedStrayTubes,
     getHomeMWKitData,

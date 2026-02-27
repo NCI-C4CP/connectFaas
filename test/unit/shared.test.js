@@ -1,57 +1,45 @@
 const { expect } = require('chai');
 const fieldMapping = require('../../utils/fieldToConceptIdMapping');
-const { checkSurveyStatusAfterVerification } = require('../../utils/shared');
+const { checkSurveyStatusesWhenVerified } = require('../../utils/shared');
 
-const { verificationStatus, verified, notStarted, cancerScreeningHistorySurveyStatus, dhq3SurveyStatus } = fieldMapping;
+const { verificationStatus, verified, notVerified, cannotBeVerified, notStarted, cancerScreeningHistorySurveyStatus, dhq3SurveyStatus } = fieldMapping;
 
+describe('checkSurveyStatusesWhenVerified', () => {
+    // --- No verification status or not verified in payloadData  ---
 
-describe('checkSurveyStatusAfterVerification', () => {
-    it('returns data unchanged when participant is not verified', () => {
-        const data = { [verificationStatus]: fieldMapping.notVerified };
-        const result = checkSurveyStatusAfterVerification(data);
-        expect(result).to.equal(data);
+    it('returns payloadData unchanged when payloadData has no verification status', () => {
+        const payloadData = { "state.148197146": 638335430 };
+        const docData = { [verificationStatus]: notVerified };
+        const result = checkSurveyStatusesWhenVerified(payloadData, docData);
         expect(result[cancerScreeningHistorySurveyStatus]).to.be.undefined;
         expect(result[dhq3SurveyStatus]).to.be.undefined;
     });
 
-    it('initializes cancerScreeningHistorySurveyStatus to notStarted when absent', () => {
-        const data = { [verificationStatus]: verified, [dhq3SurveyStatus]: notStarted };
-        checkSurveyStatusAfterVerification(data);
-        expect(data[cancerScreeningHistorySurveyStatus]).to.equal(notStarted);
+    it('returns payloadData unchanged when payloadData has verification status other than "verified" ', () => {
+        const payloadData = { [verificationStatus]: cannotBeVerified };
+        const docData = {};
+        const result = checkSurveyStatusesWhenVerified(payloadData, docData);
+        expect(result[cancerScreeningHistorySurveyStatus]).to.be.undefined;
+        expect(result[dhq3SurveyStatus]).to.be.undefined;
     });
 
-    it('initializes dhq3SurveyStatus to notStarted when absent', () => {
-        const data = { [verificationStatus]: verified, [cancerScreeningHistorySurveyStatus]: notStarted };
-        checkSurveyStatusAfterVerification(data);
-        expect(data[dhq3SurveyStatus]).to.equal(notStarted);
+    // --- Verified in payloadData ---
+
+    it('initializes only the missing survey status when payloadData sets verificationStatus to verified', () => {
+        const existingStatus = 789467219; // "not yet eligible"
+        const payloadData = { [verificationStatus]: verified };
+        const docData = { [cancerScreeningHistorySurveyStatus]: existingStatus };
+        const result = checkSurveyStatusesWhenVerified(payloadData, docData);
+        expect(result[cancerScreeningHistorySurveyStatus]).to.be.undefined; // not added, already in docData
+        expect(result[dhq3SurveyStatus]).to.equal(notStarted);
     });
 
-    it('initializes both survey statuses to notStarted when both are absent', () => {
-        const data = { [verificationStatus]: verified };
-        checkSurveyStatusAfterVerification(data);
-        expect(data[cancerScreeningHistorySurveyStatus]).to.equal(notStarted);
-        expect(data[dhq3SurveyStatus]).to.equal(notStarted);
-    });
-
-    it('does not overwrite cancerScreeningHistorySurveyStatus when already set', () => {
-        const existingStatus = 615768760; // "started"
-        const data = {
-            [verificationStatus]: verified,
-            [cancerScreeningHistorySurveyStatus]: existingStatus,
-        };
-        checkSurveyStatusAfterVerification(data);
-        expect(data[cancerScreeningHistorySurveyStatus]).to.equal(existingStatus);
-    });
-
-    it('does not overwrite dhq3SurveyStatus when already set', () => {
-        const existingStatus = 615768760; // "started"
-        const data = {
-            [verificationStatus]: verified,
-            [dhq3SurveyStatus]: existingStatus,
-        };
-        checkSurveyStatusAfterVerification(data);
-        expect(data[dhq3SurveyStatus]).to.equal(existingStatus);
+    it('initializes survey statuses, if missing, when payloadData sets verificationStatus to verified', () => {
+        const payloadData = { [verificationStatus]: verified };
+        const docData = {};
+        const result = checkSurveyStatusesWhenVerified(payloadData, docData);
+        expect(result[cancerScreeningHistorySurveyStatus]).to.equal(notStarted);
+        expect(result[dhq3SurveyStatus]).to.equal(notStarted);
     });
 
 });
-
