@@ -93,9 +93,7 @@ module.exports = {
     baselineSurveyStatusModuleMedReproHealth: 536735468,
     baselineSurveyStatusModuleSmokeAlcoholSun: 976570371,
     baselineSurveyStatusModuleLiveAndWork: 663265240,
-    collectionDetails: 173836415,
     biospecimenVisit: 331584571,
-    collectionSetting: 650516960,
     researchCollectionSetting: 534621077,
     reasonTubeNotCollected: 883732523,
     participantRefusal: 681745422,
@@ -108,7 +106,6 @@ module.exports = {
     baselineUrineSampleRefused: 949501163,
     baselineBloodAndUrineIsRefused: 526455436,
     baselineMouthwashCollected: 684635302,
-    baselineBloodSampleCollected: 878865966,
     allBaselineSamplesCollected: 254109640,
 
     // Specimen submission
