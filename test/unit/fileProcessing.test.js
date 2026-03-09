@@ -1,5 +1,3 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
 const { setupTestSuite, createConsoleSafeStub } = require('../shared/testHelpers');
 const zlib = require('zlib');
 
@@ -9,7 +7,7 @@ describe('File Processing (Unzipping, CSV Parsing, Validation) Test Suite', () =
     
     let factory, mocks;
 
-    before(() => {
+    beforeAll(() => {
         const mockSystem = setupTestSuite({
             setupConsole: false,
             setupModuleMocks: false
@@ -27,8 +25,8 @@ value1,value2,value3
 value4,value5,value6`;
 
             const result = fileProcessing.cleanCSVContent(csvContent);
-            
-            expect(result).to.equal(`header1,header2,header3
+
+            expect(result).toBe(`header1,header2,header3
 value1,value2,value3
 value4,value5,value6`);
         });
@@ -42,15 +40,15 @@ value4,value5,value6
 `;
 
             const result = fileProcessing.cleanCSVContent(csvContent);
-            
-            expect(result).to.equal(`header1,header2,header3
+
+            expect(result).toBe(`header1,header2,header3
 value1,value2,value3
 value4,value5,value6`);
         });
 
         it('should handle empty string input', () => {
             const result = fileProcessing.cleanCSVContent('');
-            expect(result).to.equal('');
+            expect(result).toBe('');
         });
     });
 
@@ -62,8 +60,8 @@ value4,value5,value6`);
         });
 
         afterEach(() => {
-            if (consoleWarnStub && consoleWarnStub.restore) {
-                consoleWarnStub.restore();
+            if (consoleWarnStub && consoleWarnStub.mockRestore) {
+                consoleWarnStub.mockRestore();
                 consoleWarnStub = null;
             }
         });
@@ -75,18 +73,18 @@ value7,value8,value9`;
 
             const result = fileProcessing.parseCSV(csvContent);
 
-            expect(result).to.have.lengthOf(3);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(3);
+            expect(result[0]).toEqual({
                 header1: 'value1',
                 header2: 'value2',
                 header3: 'value3'
             });
-            expect(result[1]).to.deep.equal({
+            expect(result[1]).toEqual({
                 header1: 'value4',
                 header2: 'value5',
                 header3: 'value6'
             });
-            expect(result[2]).to.deep.equal({
+            expect(result[2]).toEqual({
                 header1: 'value7',
                 header2: 'value8',
                 header3: 'value9'
@@ -100,13 +98,13 @@ value7,value8,value9`;
 
             const result = fileProcessing.parseCSV(csvContent);
 
-            expect(result).to.have.lengthOf(2);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
                 name: 'John Doe',
                 description: 'A field with, commas',
                 age: '50'
             });
-            expect(result[1]).to.deep.equal({
+            expect(result[1]).toEqual({
                 name: 'Jane Smith',
                 description: 'Another "quoted" field',
                 age: '30'
@@ -118,8 +116,8 @@ value7,value8,value9`;
 
             const result = fileProcessing.parseCSV(csvContent);
 
-            expect(result).to.have.lengthOf(2);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
                 header1: 'value1',
                 header2: 'value2'
             });
@@ -133,14 +131,14 @@ value7,value8,value9`;
 
             const result = fileProcessing.parseCSV(csvContent, { convertNumbers: true });
 
-            expect(result).to.have.lengthOf(3);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(3);
+            expect(result[0]).toEqual({
                 id: 1,
                 score: 85.5,
                 name: 'John'
             });
-            expect(result[1].score).to.equal(92.0);
-            expect(result[2].id).to.equal(3);
+            expect(result[1].score).toBe(92.0);
+            expect(result[2].id).toBe(3);
         });
 
         it('should handle CSV with custom comment character', () => {
@@ -152,8 +150,8 @@ value3,value4`;
 
             const result = fileProcessing.parseCSV(csvContent, { commentChar: '#' });
 
-            expect(result).to.have.lengthOf(2);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
                 header1: 'value1',
                 header2: 'value2'
             });
@@ -161,13 +159,13 @@ value3,value4`;
 
         it('should return empty array for empty CSV', () => {
             const result = fileProcessing.parseCSV('');
-            expect(result).to.be.an('array').that.is.empty;
+            expect(result).toEqual([]);
         });
 
         it('should return empty array for CSV with only headers', () => {
             const csvContent = `header1,header2,header3`;
             const result = fileProcessing.parseCSV(csvContent);
-            expect(result).to.be.an('array').that.is.empty;
+            expect(result).toEqual([]);
         });
 
         it('should skip rows with mismatched column counts', () => {
@@ -181,25 +179,25 @@ value6,value7,value8`;
 
             const result = fileProcessing.parseCSV(csvContent);
 
-            expect(result).to.have.lengthOf(2);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
                 header1: 'value1',
                 header2: 'value2',
                 header3: 'value3'
             });
-            expect(result[1]).to.deep.equal({
+            expect(result[1]).toEqual({
                 header1: 'value6',
                 header2: 'value7',
                 header3: 'value8'
             });
-            
+
             // Check console.warn was called
-            expect(localConsoleWarnStub.calledOnce).to.be.true;
-            expect(localConsoleWarnStub.firstCall.args[0]).to.include('Row 3 has 2 columns');
-            
+            expect(localConsoleWarnStub.mock.calls.length === 1).toBe(true);
+            expect(localConsoleWarnStub.mock.calls[0][0]).toContain('Row 3 has 2 columns');
+
             // Restore the local stub
-            if (localConsoleWarnStub.restore) {
-                localConsoleWarnStub.restore();
+            if (localConsoleWarnStub.mockRestore) {
+                localConsoleWarnStub.mockRestore();
             }
         });
 
@@ -212,12 +210,12 @@ value3,value4
 
             const result = fileProcessing.parseCSV(csvContent);
 
-            expect(result).to.have.lengthOf(2);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
                 header1: 'value1',
                 header2: 'value2'
             });
-            expect(result[1]).to.deep.equal({
+            expect(result[1]).toEqual({
                 header1: 'value3',
                 header2: 'value4'
             });
@@ -231,13 +229,13 @@ Bob,"",`;
 
             const result = fileProcessing.parseCSV(csvContent);
 
-            expect(result).to.have.lengthOf(3);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(3);
+            expect(result[0]).toEqual({
                 name: 'John',
                 middle: '',
                 last: 'Doe'
             });
-            expect(result[2]).to.deep.equal({
+            expect(result[2]).toEqual({
                 name: 'Bob',
                 middle: '',
                 last: ''
@@ -252,17 +250,17 @@ Bob,"",`;
 
             const result = fileProcessing.parseCSV(csvContent, { convertNumbers: true });
 
-            expect(result[0]).to.deep.equal({
+            expect(result[0]).toEqual({
                 id: 1,
                 score: '.',
                 comment: 'good'
             });
-            expect(result[1]).to.deep.equal({
+            expect(result[1]).toEqual({
                 id: 2,
                 score: '',
                 comment: 'excellent'
             });
-            expect(result[2]).to.deep.equal({
+            expect(result[2]).toEqual({
                 id: 3,
                 score: 85.5,
                 comment: 'average'
@@ -276,7 +274,7 @@ Bob,"",`;
             const result = fileProcessing.parseCSV(csvContent);
 
             // Parser skips malformed rows with unclosed quotes
-            expect(result).to.be.an('array').that.is.empty;
+            expect(result).toEqual([]);
         });
     });
 
@@ -313,7 +311,7 @@ Bob,"",`;
 
             testCases.forEach(testCase => {
                 const result = fileProcessing.validateCSVRow(testCase.row, requiredFields);
-                expect(result).to.deep.equal(testCase.expected);
+                expect(result).toEqual(testCase.expected);
             });
         });
     });
@@ -324,18 +322,18 @@ Bob,"",`;
 
         beforeEach(() => {
             mockZlib = {
-                inflateRawSync: sinon.stub()
+                inflateRawSync: vi.fn()
             };
-            // Only stub zlib.inflateRawSync if not already stubbed
+            // Only stub zlib.inflateRawSync if not already mocked
             const zlib = require('zlib');
-            if (!zlib.inflateRawSync.isSinonProxy) {
-                zlibStub = sinon.stub(zlib, 'inflateRawSync').callsFake(mockZlib.inflateRawSync);
+            if (!vi.isMockFunction(zlib.inflateRawSync)) {
+                zlibStub = vi.spyOn(zlib, 'inflateRawSync').mockImplementation(mockZlib.inflateRawSync);
             }
         });
 
         afterEach(() => {
-            if (zlibStub && zlibStub.restore) {
-                zlibStub.restore();
+            if (zlibStub && zlibStub.mockRestore) {
+                zlibStub.mockRestore();
                 zlibStub = null;
             }
         });
@@ -349,16 +347,16 @@ Bob,"",`;
             const zipBuffer = createMockZipBuffer(filename, content);
             const base64Data = zipBuffer.toString('base64');
 
-            mockZlib.inflateRawSync.returns(content);
+            mockZlib.inflateRawSync.mockReturnValue(content);
 
             const result = await fileProcessing.extractZipFiles(base64Data);
 
-            expect(result).to.be.an('array');
-            expect(result).to.have.lengthOf(1);
-            expect(result[0]).to.have.property('filename', filename);
-            expect(result[0]).to.have.property('content');
-            expect(result[0]).to.have.property('size');
-            expect(result[0]).to.have.property('compressedSize');
+            expect(result).toEqual(expect.any(Array));
+            expect(result).toHaveLength(1);
+            expect(result[0]).toHaveProperty('filename', filename);
+            expect(result[0]).toHaveProperty('content');
+            expect(result[0]).toHaveProperty('size');
+            expect(result[0]).toHaveProperty('compressedSize');
         });
 
         it('should handle uncompressed files (compression method 0)', async () => {
@@ -370,8 +368,8 @@ Bob,"",`;
 
             const result = await fileProcessing.extractZipFiles(base64Data);
 
-            expect(result).to.have.lengthOf(1);
-            expect(result[0].content.toString()).to.equal('Hello, World!\nThis is a test uncompressed file.');
+            expect(result).toHaveLength(1);
+            expect(result[0].content.toString()).toBe('Hello, World!\nThis is a test uncompressed file.');
         });
 
         it('should handle DEFLATE compressed files (compression method 8)', async () => {
@@ -382,13 +380,13 @@ Bob,"",`;
             const zipBuffer = createMockZipBuffer(filename, compressedContent, 8);
             const base64Data = zipBuffer.toString('base64');
 
-            mockZlib.inflateRawSync.returns(originalContent);
+            mockZlib.inflateRawSync.mockReturnValue(originalContent);
 
             const result = await fileProcessing.extractZipFiles(base64Data);
 
-            expect(result).to.have.lengthOf(1);
-            expect(mockZlib.inflateRawSync.calledOnce).to.be.true;
-            expect(result[0].content).to.equal(originalContent);
+            expect(result).toHaveLength(1);
+            expect(mockZlib.inflateRawSync).toHaveBeenCalledOnce();
+            expect(result[0].content).toBe(originalContent);
         });
 
         it('should handle decompression errors gracefully', async () => {
@@ -398,12 +396,12 @@ Bob,"",`;
             const zipBuffer = createMockZipBuffer(filename, content, 8);
             const base64Data = zipBuffer.toString('base64');
 
-            mockZlib.inflateRawSync.throws(new Error('Decompression failed'));
+            mockZlib.inflateRawSync.mockImplementation(() => { throw new Error('Decompression failed'); });
 
             const result = await fileProcessing.extractZipFiles(base64Data);
 
-            expect(result).to.have.lengthOf(1);
-            expect(Buffer.compare(result[0].content, Buffer.from('compressed-data'))).to.equal(0);
+            expect(result).toHaveLength(1);
+            expect(Buffer.compare(result[0].content, Buffer.from('compressed-data'))).toBe(0);
         });
 
         it('should skip unsupported compression methods', async () => {
@@ -415,7 +413,7 @@ Bob,"",`;
 
             const result = await fileProcessing.extractZipFiles(base64Data);
 
-            expect(result).to.be.an('array').that.is.empty;
+            expect(result).toEqual([]);
         });
 
         it('should skip directory entries', async () => {
@@ -427,7 +425,7 @@ Bob,"",`;
 
             const result = await fileProcessing.extractZipFiles(base64Data);
 
-            expect(result).to.be.an('array').that.is.empty;
+            expect(result).toEqual([]);
         });
 
         it('should throw error for invalid ZIP data', async () => {
@@ -437,7 +435,7 @@ Bob,"",`;
                 await fileProcessing.extractZipFiles(invalidBase64);
                 expect.fail('Should have thrown an error');
             } catch (error) {
-                expect(error.message).to.include('Failed to extract ZIP file');
+                expect(error.message).toContain('Failed to extract ZIP file');
             }
         });
 
@@ -449,7 +447,7 @@ Bob,"",`;
                 await fileProcessing.extractZipFiles(base64Data);
                 expect.fail('Should have thrown an error');
             } catch (error) {
-                expect(error.message).to.include('End of Central Directory record not found');
+                expect(error.message).toContain('End of Central Directory record not found');
             }
         });
     });
@@ -469,7 +467,7 @@ Bob,"",`;
                 await fileProcessing.extractZipFiles(base64Data);
                 expect.fail('Should have thrown an error');
             } catch (error) {
-                expect(error.message).to.include('Failed to extract ZIP file');
+                expect(error.message).toContain('Failed to extract ZIP file');
             }
         });
 
@@ -488,7 +486,7 @@ Bob,"",`;
                     await fileProcessing.extractZipFiles(base64Data);
                     expect.fail(`Should have thrown an error for ${scenario.name}`);
                 } catch (error) {
-                    expect(error.message).to.include('Failed to extract ZIP file');
+                    expect(error.message).toContain('Failed to extract ZIP file');
                 }
             }
         });
@@ -504,7 +502,7 @@ Bob,"",`;
 
             malformedCSVs.forEach(scenario => {
                 const result = fileProcessing.parseCSV(scenario.content);
-                expect(result).to.be.an('array');
+                expect(Array.isArray(result)).toBe(true);
                 // Should not throw, but might return empty or partial results
             });
         });
@@ -525,8 +523,8 @@ Bob,"",`;
                 Array.from({length: 1000}, (_, i) => `${i},"${'x'.repeat(1000)}"`).join('\n');
 
             const result = fileProcessing.parseCSV(largeCSVContent);
-            expect(result).to.be.an('array');
-            expect(result.length).to.equal(1000);
+            expect(Array.isArray(result)).toBe(true);
+            expect(result.length).toBe(1000);
 
             // Restore original function
             process.memoryUsage = originalMemoryUsage;
@@ -545,8 +543,8 @@ Bob,"",`;
             const results = await Promise.all(promises);
             
             results.forEach(result => {
-                expect(result).to.have.lengthOf(1);
-                expect(result[0].filename).to.equal('test.csv');
+                expect(result).toHaveLength(1);
+                expect(result[0].filename).toBe('test.csv');
             });
         });
 
@@ -560,8 +558,8 @@ Bob,"",`;
 
             encodingTests.forEach(test => {
                 const result = fileProcessing.parseCSV(test.content);
-                expect(result).to.be.an('array');
-                expect(result.length).to.be.greaterThan(0);
+                expect(Array.isArray(result)).toBe(true);
+                expect(result.length).toBeGreaterThan(0);
             });
         });
 
@@ -578,7 +576,7 @@ Bob,"",`;
 
             edgeCases.forEach(testCase => {
                 const result = fileProcessing.validateCSVRow(testCase.row, testCase.fields);
-                expect(result.isValid).to.equal(testCase.expected);
+                expect(result.isValid).toBe(testCase.expected);
             });
         });
 
@@ -587,9 +585,9 @@ Bob,"",`;
             const csvContent = 'id;name;email\n1;John;john@example.com\n2;Jane;jane@example.com';
             const result = fileProcessing.parseCSV(csvContent);
             
-            expect(result).to.have.lengthOf(2);
-            expect(result[0]).to.have.property('id;name;email');
-            expect(result[0]['id;name;email']).to.equal('1;John;john@example.com');
+            expect(result).toHaveLength(2);
+            expect(result[0]).toHaveProperty('id;name;email');
+            expect(result[0]['id;name;email']).toBe('1;John;john@example.com');
         });
 
         it('should handle resource cleanup after errors', async () => {
@@ -602,13 +600,13 @@ Bob,"",`;
                     await fileProcessing.extractZipFiles(base64Data);
                     expect.fail('Should have thrown an error');
                 } catch (error) {
-                    expect(error.message).to.include('Failed to extract ZIP file');
+                    expect(error.message).toContain('Failed to extract ZIP file');
                 }
             }
-            
+
             // Memory usage should remain stable
             const memoryAfter = process.memoryUsage();
-            expect(memoryAfter.heapUsed).to.be.lessThan(500 * 1024 * 1024); // Less than 500MB
+            expect(memoryAfter.heapUsed).toBeLessThan(500 * 1024 * 1024); // Less than 500MB
         });
     });
 
@@ -624,14 +622,14 @@ Respondent ID,Age,Score,Comments
 
             const result = fileProcessing.parseCSV(csvContent, { convertNumbers: true });
 
-            expect(result).to.have.lengthOf(3);
-            expect(result[0]).to.deep.equal({
+            expect(result).toHaveLength(3);
+            expect(result[0]).toEqual({
                 'Respondent ID': 1,
                 'Age': 25,
                 'Score': 85.5,
                 'Comments': 'Good performance'
             });
-            expect(result[2]['Respondent ID']).to.equal(3);
+            expect(result[2]['Respondent ID']).toBe(3);
         });
 
         it('should validate processed CSV data', () => {
@@ -647,11 +645,11 @@ Respondent ID,Age,Score,Comments
                 fileProcessing.validateCSVRow(row, requiredFields)
             );
 
-            expect(validationResults[0].isValid).to.be.true;
-            expect(validationResults[1].isValid).to.be.false;
-            expect(validationResults[1].missingFields).to.include('name');
-            expect(validationResults[2].isValid).to.be.false;
-            expect(validationResults[2].missingFields).to.include('email');
+            expect(validationResults[0].isValid).toBe(true);
+            expect(validationResults[1].isValid).toBe(false);
+            expect(validationResults[1].missingFields).toContain('name');
+            expect(validationResults[2].isValid).toBe(false);
+            expect(validationResults[2].missingFields).toContain('email');
         });
 
         it('should handle complete workflow: ZIP extraction → CSV parsing → validation', async () => {
@@ -670,16 +668,16 @@ participant_id,name,email,age,survey_score
             // Step 1: Extract files from ZIP
             const extractedFiles = await fileProcessing.extractZipFiles(base64Data);
             
-            expect(extractedFiles).to.have.lengthOf(1);
-            expect(extractedFiles[0].filename).to.equal('survey_data.csv');
+            expect(extractedFiles).toHaveLength(1);
+            expect(extractedFiles[0].filename).toBe('survey_data.csv');
 
             // Step 2: Parse the CSV content
             const csvData = fileProcessing.parseCSV(extractedFiles[0].content.toString(), { 
                 convertNumbers: true 
             });
             
-            expect(csvData).to.have.lengthOf(3);
-            expect(csvData[0]).to.deep.equal({
+            expect(csvData).toHaveLength(3);
+            expect(csvData[0]).toEqual({
                 participant_id: 1,
                 name: 'John Doe',
                 email: 'john@example.com',
@@ -693,17 +691,17 @@ participant_id,name,email,age,survey_score
                 fileProcessing.validateCSVRow(row, requiredFields)
             );
 
-            expect(validationResults[0].isValid).to.be.true;
-            expect(validationResults[1].isValid).to.be.false;
-            expect(validationResults[1].missingFields).to.deep.equal(['email']);
-            expect(validationResults[2].isValid).to.be.false;
-            expect(validationResults[2].missingFields).to.deep.equal(['name']);
+            expect(validationResults[0].isValid).toBe(true);
+            expect(validationResults[1].isValid).toBe(false);
+            expect(validationResults[1].missingFields).toEqual(['email']);
+            expect(validationResults[2].isValid).toBe(false);
+            expect(validationResults[2].missingFields).toEqual(['name']);
 
             const validRows = validationResults.filter(r => r.isValid).length;
             const invalidRows = validationResults.filter(r => !r.isValid).length;
             
-            expect(validRows).to.equal(1);
-            expect(invalidRows).to.equal(2);
+            expect(validRows).toBe(1);
+            expect(invalidRows).toBe(2);
         });
 
         it('should handle ZIP with multiple CSV files and process each', async () => {
@@ -723,7 +721,7 @@ participant_id,name,email,age,survey_score
 
             const extractedFiles = await fileProcessing.extractZipFiles(base64Data);
             
-            expect(extractedFiles).to.have.lengthOf(2);
+            expect(extractedFiles).toHaveLength(2);
 
             const processedData = {};
             for (const file of extractedFiles) {
@@ -733,15 +731,15 @@ participant_id,name,email,age,survey_score
                 processedData[file.filename] = parsedData;
             }
 
-            expect(processedData['participants.csv']).to.have.lengthOf(2);
-            expect(processedData['participants.csv'][0]).to.deep.equal({
+            expect(processedData['participants.csv']).toHaveLength(2);
+            expect(processedData['participants.csv'][0]).toEqual({
                 id: 1,
                 name: 'Alice',
                 score: 95
             });
 
-            expect(processedData['departments.csv']).to.have.lengthOf(2);
-            expect(processedData['departments.csv'][0]).to.deep.equal({
+            expect(processedData['departments.csv']).toHaveLength(2);
+            expect(processedData['departments.csv'][0]).toEqual({
                 id: 1,
                 department: 'Engineering',
                 budget: 50000
@@ -830,10 +828,10 @@ value4,value5,value6`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(3);
-            expect(rows[0]).to.deep.equal(['header1', 'header2', 'header3']);
-            expect(rows[1]).to.deep.equal(['value1', 'value2', 'value3']);
-            expect(rows[2]).to.deep.equal(['value4', 'value5', 'value6']);
+            expect(rows).toHaveLength(3);
+            expect(rows[0]).toEqual(['header1', 'header2', 'header3']);
+            expect(rows[1]).toEqual(['value1', 'value2', 'value3']);
+            expect(rows[2]).toEqual(['value4', 'value5', 'value6']);
         });
 
         it('should handle quoted fields with commas and escapes', async () => {
@@ -846,10 +844,10 @@ value4,value5,value6`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(3);
-            expect(rows[0]).to.deep.equal(['name', 'description', 'count']);
-            expect(rows[1]).to.deep.equal(['John, Jr.', '"Hello" World', '123']);
-            expect(rows[2]).to.deep.equal(['Jane', 'Simple field', '456']);
+            expect(rows).toHaveLength(3);
+            expect(rows[0]).toEqual(['name', 'description', 'count']);
+            expect(rows[1]).toEqual(['John, Jr.', '"Hello" World', '123']);
+            expect(rows[2]).toEqual(['Jane', 'Simple field', '456']);
         });
 
         it('should skip comment lines starting with asterisk', async () => {
@@ -865,10 +863,10 @@ value3,value4`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(3);
-            expect(rows[0]).to.deep.equal(['header1', 'header2']);
-            expect(rows[1]).to.deep.equal(['value1', 'value2']);
-            expect(rows[2]).to.deep.equal(['value3', 'value4']);
+            expect(rows).toHaveLength(3);
+            expect(rows[0]).toEqual(['header1', 'header2']);
+            expect(rows[1]).toEqual(['value1', 'value2']);
+            expect(rows[2]).toEqual(['value3', 'value4']);
         });
 
         it('should skip empty lines', async () => {
@@ -885,10 +883,10 @@ value3,value4
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(3);
-            expect(rows[0]).to.deep.equal(['header1', 'header2']);
-            expect(rows[1]).to.deep.equal(['value1', 'value2']);
-            expect(rows[2]).to.deep.equal(['value3', 'value4']);
+            expect(rows).toHaveLength(3);
+            expect(rows[0]).toEqual(['header1', 'header2']);
+            expect(rows[1]).toEqual(['value1', 'value2']);
+            expect(rows[2]).toEqual(['value3', 'value4']);
         });
 
         it('should use custom comment character', async () => {
@@ -902,9 +900,9 @@ value1,value2`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(2);
-            expect(rows[0]).to.deep.equal(['header1', 'header2']);
-            expect(rows[1]).to.deep.equal(['value1', 'value2']);
+            expect(rows).toHaveLength(2);
+            expect(rows[0]).toEqual(['header1', 'header2']);
+            expect(rows[1]).toEqual(['value1', 'value2']);
         });
 
         it('should convert numbers when convertNumbers option is true', async () => {
@@ -918,11 +916,11 @@ Bob,invalid,99`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(4);
-            expect(rows[0]).to.deep.equal(['name', 'age', 'score']);
-            expect(rows[1]).to.deep.equal(['John', 25, 95.5]);
-            expect(rows[2]).to.deep.equal(['Jane', 30, 87.2]);
-            expect(rows[3]).to.deep.equal(['Bob', 'invalid', 99]);
+            expect(rows).toHaveLength(4);
+            expect(rows[0]).toEqual(['name', 'age', 'score']);
+            expect(rows[1]).toEqual(['John', 25, 95.5]);
+            expect(rows[2]).toEqual(['Jane', 30, 87.2]);
+            expect(rows[3]).toEqual(['Bob', 'invalid', 99]);
         });
 
         it('should not convert dots and empty strings to numbers', async () => {
@@ -935,9 +933,9 @@ empty,,456`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(3);
-            expect(rows[1]).to.deep.equal(['.', 123, '']);
-            expect(rows[2]).to.deep.equal(['empty', '', 456]);
+            expect(rows).toHaveLength(3);
+            expect(rows[1]).toEqual(['.', 123, '']);
+            expect(rows[2]).toEqual(['empty', '', 456]);
         });
 
         it('should handle CRLF line endings', async () => {
@@ -948,10 +946,10 @@ empty,,456`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(3);
-            expect(rows[0]).to.deep.equal(['header1', 'header2']);
-            expect(rows[1]).to.deep.equal(['value1', 'value2']);
-            expect(rows[2]).to.deep.equal(['value3', 'value4']);
+            expect(rows).toHaveLength(3);
+            expect(rows[0]).toEqual(['header1', 'header2']);
+            expect(rows[1]).toEqual(['value1', 'value2']);
+            expect(rows[2]).toEqual(['value3', 'value4']);
         });
 
         it('should handle empty CSV content', async () => {
@@ -962,7 +960,7 @@ empty,,456`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(0);
+            expect(rows).toHaveLength(0);
         });
 
         it('should handle CSV with only comments', async () => {
@@ -975,7 +973,7 @@ empty,,456`;
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(0);
+            expect(rows).toHaveLength(0);
         });
 
         it('should be memory efficient for large datasets', async () => {
@@ -997,11 +995,11 @@ empty,,456`;
                 if (rowCount % 1000 === 0) {
                     const currentMemory = process.memoryUsage().heapUsed;
                     const memoryIncrease = currentMemory - initialMemory;
-                    expect(memoryIncrease).to.be.lessThan(100 * 1024 * 1024);
+                    expect(memoryIncrease).toBeLessThan(100 * 1024 * 1024);
                 }
             }
 
-            expect(rowCount).to.equal(numRows + 1); // +1 for header
+            expect(rowCount).toBe(numRows + 1); // +1 for header
         });
 
         it('should handle Buffer input', async () => {
@@ -1013,9 +1011,9 @@ value1,value2`);
                 rows.push(row);
             }
 
-            expect(rows).to.have.lengthOf(2);
-            expect(rows[0]).to.deep.equal(['header1', 'header2']);
-            expect(rows[1]).to.deep.equal(['value1', 'value2']);
+            expect(rows).toHaveLength(2);
+            expect(rows[0]).toEqual(['header1', 'header2']);
+            expect(rows[1]).toEqual(['value1', 'value2']);
         });
     });
 });

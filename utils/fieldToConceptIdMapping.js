@@ -541,8 +541,6 @@ module.exports = {
         cancerScreeningHistorySurveyCompletionTime: 389890053,
         dhq3SurveyStatus: 692560814,
         dhq3SurveyCompletionTime: 610227793,
-        dhq3StudyID: 196723965,
-        dhq3Username: 148184166,
         dhq3HEIReportStatusInternal: 542983589,
         dhq3HEIReportStatusExternal: 892697201,
         dhq3HEIReportFirstViewedISOTime: 600958089,

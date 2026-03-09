@@ -1,5 +1,3 @@
-const sinon = require('sinon');
-
 /**
  * Mock helper utilities
  */
@@ -9,10 +7,7 @@ class MockHelpers {
     }
 
     reset() {
-        if (this.sandbox) {
-            this.sandbox.restore();
-        }
-        this.sandbox = sinon.createSandbox();
+        // No sandbox needed with vi.fn()
     }
 
     /**
@@ -22,28 +17,64 @@ class MockHelpers {
         const TEST_CONSTANTS = require('../../constants');
         process.env.NODE_ENV = TEST_CONSTANTS.ENV.NODE_ENV;
         process.env.DHQ_TOKEN = TEST_CONSTANTS.ENV.TEST_TOKEN;
-        global.fetch = sinon.stub();
+        global.fetch = vi.fn();
     }
 
     /**
      * Module mocking for Firebase Admin SDK
+     * Uses require.cache replacement instead of Module.prototype.require hijacking.
+     * This approach is compatible with Vitest's parallel execution and test isolation.
      */
     setupModuleMocks(mockAdmin) {
-        const Module = require('module');
-        const originalRequire = Module.prototype.require;
-
-        Module.prototype.require = function(id) {
-            if (id === 'firebase-admin') {
-                return mockAdmin;
-            }
-            if (id === 'firebase-admin/firestore') {
-                return { FieldValue: mockAdmin.firestore().FieldValue };
-            }
-            return originalRequire.apply(this, arguments);
+        const adminPath = require.resolve('firebase-admin');
+        const firestorePath = require.resolve('firebase-admin/firestore');
+        const fieldValue = mockAdmin.firestore().FieldValue || {
+            arrayUnion: vi.fn().mockReturnValue('arrayUnion'),
+            arrayRemove: vi.fn().mockReturnValue('arrayRemove'),
+            increment: vi.fn().mockReturnValue('increment'),
+            serverTimestamp: vi.fn().mockReturnValue('serverTimestamp'),
+            delete: vi.fn().mockReturnValue('delete'),
         };
 
+        // Save original cache entries (if they exist)
+        const origAdmin = require.cache[adminPath];
+        const origFirestore = require.cache[firestorePath];
+
+        // Install mock admin into require.cache
+        require.cache[adminPath] = {
+            id: adminPath,
+            filename: adminPath,
+            loaded: true,
+            exports: mockAdmin,
+        };
+
+        // Install mock firestore into require.cache
+        require.cache[firestorePath] = {
+            id: firestorePath,
+            filename: firestorePath,
+            loaded: true,
+            exports: {
+                FieldValue: fieldValue,
+                FieldPath: {
+                    documentId: vi.fn().mockReturnValue('__name__'),
+                },
+                Transaction: function Transaction() {},
+                Filter: {},
+            },
+        };
+
+        // Return restore function
         return () => {
-            Module.prototype.require = originalRequire;
+            if (origAdmin) {
+                require.cache[adminPath] = origAdmin;
+            } else {
+                delete require.cache[adminPath];
+            }
+            if (origFirestore) {
+                require.cache[firestorePath] = origFirestore;
+            } else {
+                delete require.cache[firestorePath];
+            }
         };
     }
 
@@ -52,7 +83,7 @@ class MockHelpers {
      */
     setupConsoleMocks() {
         const { createConsoleSafeStub } = require('../../shared/testHelpers');
-        
+
         const consoleMocks = {
             log: createConsoleSafeStub('log'),
             warn: createConsoleSafeStub('warn'),
@@ -62,9 +93,7 @@ class MockHelpers {
         return {
             ...consoleMocks,
             restore: () => {
-                if (consoleMocks.log && consoleMocks.log.restore) consoleMocks.log.restore();
-                if (consoleMocks.warn && consoleMocks.warn.restore) consoleMocks.warn.restore();
-                if (consoleMocks.error && consoleMocks.error.restore) consoleMocks.error.restore();
+                vi.restoreAllMocks();
             }
         };
     }
@@ -75,7 +104,7 @@ class MockHelpers {
     createTestHelper() {
         const fieldMapping = require('../../../utils/fieldToConceptIdMapping');
         const TEST_CONSTANTS = require('../../constants');
-        
+
         return {
             // Helper to create a mock DHQ participant
             createMockDHQParticipant: (uid, data = {}) => ({
@@ -94,7 +123,19 @@ class MockHelpers {
 
             // Create mock participants collection
             createMockParticipantsCollection: (participants = []) => {
-                const mockDocs = participants.map(p => this.createMockDHQParticipant(p.uid, p.data));
+                const mockDocs = participants.map((p) => ({
+                    id: p.uid,
+                    data: () => ({
+                        state: { uid: p.uid },
+                        [fieldMapping.dhq3StudyID]: TEST_CONSTANTS.STUDY_IDS.DEFAULT,
+                        [fieldMapping.dhq3Username]: `user_${p.uid}`,
+                        [fieldMapping.dhq3UUID]: `uuid_${p.uid}`,
+                        [fieldMapping.dhq3SurveyStatus]: fieldMapping.notStarted,
+                        ...p.data
+                    }),
+                    exists: true,
+                    ref: { id: p.uid }
+                }));
                 return {
                     empty: mockDocs.length === 0,
                     size: mockDocs.length,

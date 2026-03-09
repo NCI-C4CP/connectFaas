@@ -2,7 +2,6 @@
  * Test Setup Helpers: Reusable test setup functions and patterns
  */
 
-const sinon = require('sinon');
 const { createFirebaseMocks } = require('../mocks/mockFactory.js');
 const TEST_CONSTANTS = require('../constants');
 
@@ -15,7 +14,7 @@ function setupTestSuite(options = {}) {
     // Set up test environment variables
     process.env.NODE_ENV = TEST_CONSTANTS.ENV.NODE_ENV;
     process.env.DHQ_TOKEN = TEST_CONSTANTS.ENV.TEST_TOKEN;
-    global.fetch = sinon.stub();
+    global.fetch = vi.fn();
 
     // Set up Firebase mocks with per-test-file isolation
     const mockSystem = createFirebaseMocks({
@@ -27,15 +26,15 @@ function setupTestSuite(options = {}) {
 
     // Clean up after each test
     afterEach(() => {
-        sinon.restore();
+        vi.restoreAllMocks();
         mockSystem.factory.reset();
         // Clear document registry for fresh state
         if (mockSystem.factory.clearDocumentRegistry) {
             mockSystem.factory.clearDocumentRegistry();
         }
-        // Clear any global fetch stub
-        if (global.fetch && global.fetch.restore) {
-            global.fetch.restore();
+        // Clear any global fetch mock
+        if (global.fetch && vi.isMockFunction(global.fetch)) {
+            global.fetch.mockReset();
         }
         // Reset process.env if needed
         if (process.env.NODE_ENV === TEST_CONSTANTS.ENV.NODE_ENV) {
@@ -45,7 +44,7 @@ function setupTestSuite(options = {}) {
     });
 
     // Clean up after all tests
-    after(() => {
+    afterAll(() => {
         mockSystem.restore();
     });
 
@@ -68,18 +67,17 @@ function createTestData(count, factory) {
  * @param {Object} expected - Expected values (documentCount, respondentCount, skippedCount, expectedIds)
  */
 function assertResult(result, expected) {
-    const { expect } = require('chai');
     if (expected.documentCount !== undefined) {
-        expect(result.documents).to.have.length(expected.documentCount);
+        expect(result.documents).toHaveLength(expected.documentCount);
     }
     if (expected.respondentCount !== undefined) {
-        expect(result.respondentIds).to.have.length(expected.respondentCount);
+        expect(result.respondentIds).toHaveLength(expected.respondentCount);
     }
     if (expected.skippedCount !== undefined) {
-        expect(result.skippedCount).to.equal(expected.skippedCount);
+        expect(result.skippedCount).toBe(expected.skippedCount);
     }
     if (expected.expectedIds && expected.expectedIds.length > 0) {
-        expect(result.respondentIds).to.deep.equal(expected.expectedIds);
+        expect(result.respondentIds).toEqual(expected.expectedIds);
     }
 }
 
@@ -95,7 +93,7 @@ function benchmarkFunction(testFunction, testName = 'Test') {
     const result = testFunction();
     const endTime = Date.now();
     const processingTime = endTime - startTime;
-    
+
     return {
         result,
         processingTime,
@@ -106,11 +104,11 @@ function benchmarkFunction(testFunction, testName = 'Test') {
 /**
  * Creates a safe console stub that won't conflict with existing stubs
  * @param {string} method - Console method name ('log', 'warn', 'error')
- * @returns {Object} Stub or existing proxy
+ * @returns {Object} Spy or existing mock
  */
 function createConsoleSafeStub(method) {
-    if (!console[method].isSinonProxy) {
-        return sinon.stub(console, method);
+    if (!vi.isMockFunction(console[method])) {
+        return vi.spyOn(console, method).mockImplementation(() => {});
     }
     return console[method];
 }
@@ -121,22 +119,22 @@ function createConsoleSafeStub(method) {
  */
 function validateTestState() {
     const issues = [];
-    
-    // Check for lingering stubs
-    if (console.log.isSinonProxy) issues.push('console.log still stubbed');
-    if (console.warn.isSinonProxy) issues.push('console.warn still stubbed');
-    if (console.error.isSinonProxy) issues.push('console.error still stubbed');
-    
+
+    // Check for lingering mocks
+    if (vi.isMockFunction(console.log)) issues.push('console.log still mocked');
+    if (vi.isMockFunction(console.warn)) issues.push('console.warn still mocked');
+    if (vi.isMockFunction(console.error)) issues.push('console.error still mocked');
+
     // Check for global pollution
-    if (global.fetch && typeof global.fetch.restore === 'function') {
+    if (global.fetch && vi.isMockFunction(global.fetch)) {
         issues.push('global.fetch not properly restored');
     }
-    
+
     // Check environment variables
     if (process.env.NODE_ENV !== TEST_CONSTANTS.ENV.NODE_ENV) {
         issues.push(`NODE_ENV is ${process.env.NODE_ENV}, expected ${TEST_CONSTANTS.ENV.NODE_ENV}`);
     }
-    
+
     return {
         clean: issues.length === 0,
         issues

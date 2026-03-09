@@ -1,5 +1,3 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
 const { setupTestSuite } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
 
@@ -29,7 +27,7 @@ describe('Firebase Mock System Tests', () => {
 
                 // Verify the mock is set up correctly
                 const collectionRef = mocks.firestore.collection('participants');
-                expect(collectionRef).to.not.be.undefined;
+                expect(collectionRef).toBeDefined();
                 
                 // Test basic collection querying
                 const mockQuerySnapshot = {
@@ -43,9 +41,9 @@ describe('Firebase Mock System Tests', () => {
                     }))
                 };
                 
-                collectionRef.get.resolves(mockQuerySnapshot);
+                collectionRef.get.mockResolvedValue(mockQuerySnapshot);
                 const result = await collectionRef.get();
-                expect(result.size).to.equal(4);
+                expect(result.size).toBe(4);
 
                 // Test querying with conditions
                 const startedParticipants = mockParticipants.filter(p => 
@@ -65,10 +63,10 @@ describe('Firebase Mock System Tests', () => {
                 };
 
                 // Set up the mock to return the filtered results
-                collectionRef.where.returns({
-                    select: sinon.stub().returnsThis(),
-                    limit: sinon.stub().returnsThis(),
-                    get: sinon.stub().resolves(mockFilteredSnapshot)
+                collectionRef.where.mockReturnValue({
+                    select: vi.fn().mockReturnThis(),
+                    limit: vi.fn().mockReturnThis(),
+                    get: vi.fn().mockResolvedValue(mockFilteredSnapshot)
                 });
 
                 // Test the filtered query
@@ -77,7 +75,7 @@ describe('Firebase Mock System Tests', () => {
                     .get();
 
                 const filteredResult = await querySnapshot;
-                expect(filteredResult.size).to.equal(startedParticipants.length);
+                expect(filteredResult.size).toBe(startedParticipants.length);
             });
 
             it('should demonstrate transaction mocking', async () => {
@@ -96,7 +94,7 @@ describe('Firebase Mock System Tests', () => {
                     return { success: true };
                 });
 
-                expect(result).to.deep.equal({ success: true });
+                expect(result).toEqual({ success: true });
             });
 
             it('should demonstrate batch operation mocking', () => {
@@ -108,8 +106,8 @@ describe('Firebase Mock System Tests', () => {
                 batch.set(docRef, { test: 'data' });
                 batch.commit();
 
-                expect(batch.set.called).to.be.true;
-                expect(batch.commit.called).to.be.true;
+                expect(batch.set).toHaveBeenCalled();
+                expect(batch.commit).toHaveBeenCalled();
             });
 
             it('should demonstrate count() operation mocking', async () => {
@@ -119,8 +117,8 @@ describe('Firebase Mock System Tests', () => {
                 };
 
                 const collectionRef = mocks.firestore.collection('dhq3SurveyCredentials/study_123/availableCredentials');
-                collectionRef.count.returns({
-                    get: sinon.stub().resolves(mockCountSnapshot)
+                collectionRef.count.mockReturnValue({
+                    get: vi.fn().mockResolvedValue(mockCountSnapshot)
                 });
 
                 // Test count operation
@@ -129,7 +127,7 @@ describe('Firebase Mock System Tests', () => {
                     .get();
 
                 const result = await countSnapshot;
-                expect(result.data().count).to.equal(1500);
+                expect(result.data().count).toBe(1500);
             });
 
 
@@ -171,27 +169,27 @@ describe('Firebase Mock System Tests', () => {
                 const docRef1 = mocks.firestore.collection('dhq3SurveyCredentials/isolationTest/responseTracking').doc('analysisResults');
                 const docSnapshot1 = await docRef1.get();
                 
-                expect(docSnapshot1.exists).to.be.true;
-                expect(docSnapshot1.data()).to.deep.equal(mockData1);
-                expect(docSnapshot1.id).to.equal('analysisResults');
+                expect(docSnapshot1.exists).toBe(true);
+                expect(docSnapshot1.data()).toEqual(mockData1);
+                expect(docSnapshot1.id).toBe('analysisResults');
 
                 const docRef2 = mocks.firestore.collection('dhq3SurveyCredentials/isolationTest/responseTracking').doc('otherResults');
                 const docSnapshot2 = await docRef2.get();
                 
-                expect(docSnapshot2.exists).to.be.true;
-                expect(docSnapshot2.data()).to.deep.equal(mockData2);
-                expect(docSnapshot2.id).to.equal('otherResults');
+                expect(docSnapshot2.exists).toBe(true);
+                expect(docSnapshot2.data()).toEqual(mockData2);
+                expect(docSnapshot2.id).toBe('otherResults');
 
                 const docRef3 = mocks.firestore.collection('dhq3SurveyCredentials/isolationTest/responseTracking').doc('missingDoc');
                 const docSnapshot3 = await docRef3.get();
                 
-                expect(docSnapshot3.exists).to.be.false;
+                expect(docSnapshot3.exists).toBe(false);
 
                 // Test document not in registry returns false
                 const docRef4 = mocks.firestore.collection('dhq3SurveyCredentials/isolationTest/responseTracking').doc('notSetup');
                 const docSnapshot4 = await docRef4.get();
                 
-                expect(docSnapshot4.exists).to.be.false;
+                expect(docSnapshot4.exists).toBe(false);
             });
 
             it('should demonstrate document write operations (.set(), .update(), .delete()) mocking', async () => {
@@ -214,7 +212,7 @@ describe('Firebase Mock System Tests', () => {
                 await docRef.delete();
                 
                 // The test validates that operations complete without throwing
-                expect(true).to.be.true; // Operations completed successfully
+                expect(true).toBe(true); // Operations completed successfully
             });
 
             it('should demonstrate error handling in Firebase operations', async () => {
@@ -225,13 +223,13 @@ describe('Firebase Mock System Tests', () => {
                 // is designed for success cases. This is a valid use case for direct mocking.
                 const mockError = new Error('Firestore permission denied');
                 const mockDocRef = {
-                    get: sinon.stub().rejects(mockError),
-                    set: sinon.stub().rejects(mockError)
+                    get: vi.fn().mockRejectedValue(mockError),
+                    set: vi.fn().mockRejectedValue(mockError)
                 };
-                
-                mocks.firestore.collection.withArgs(collectionPath).returns({
-                    doc: sinon.stub().withArgs(docId).returns(mockDocRef)
-                });
+
+                mocks.firestore.collection.mockImplementation(path => path === collectionPath ? {
+                    doc: vi.fn().mockImplementation(id => id === docId ? mockDocRef : undefined)
+                } : mocks.firestore.collection(path));
 
                 const docRef = mocks.firestore.collection(collectionPath).doc(docId);
                 
@@ -240,15 +238,15 @@ describe('Firebase Mock System Tests', () => {
                     await docRef.get();
                     expect.fail('Should have thrown an error');
                 } catch (error) {
-                    expect(error.message).to.equal('Firestore permission denied');
+                    expect(error.message).toBe('Firestore permission denied');
                 }
-                
+
                 // Test error handling for set operation
                 try {
                     await docRef.set({ test: 'data' });
                     expect.fail('Should have thrown an error');
                 } catch (error) {
-                    expect(error.message).to.equal('Firestore permission denied');
+                    expect(error.message).toBe('Firestore permission denied');
                 }
             });
         });
@@ -263,15 +261,15 @@ describe('Firebase Mock System Tests', () => {
                 const rawCSV = csvUtils.createRawAnswersCSV(4);
 
                 // Verify CSV structure and content
-                expect(analysisCSV).to.include('Respondent ID,Energy,Protein,Carbs,Fat');
-                expect(detailedCSV).to.include('Respondent ID,Question ID,Food ID,Answer');
-                expect(rawCSV).to.include('Respondent Login ID,Question ID,Answer');
+                expect(analysisCSV).toContain('Respondent ID,Energy,Protein,Carbs,Fat');
+                expect(detailedCSV).toContain('Respondent ID,Question ID,Food ID,Answer');
+                expect(rawCSV).toContain('Respondent Login ID,Question ID,Answer');
 
                 // Verify data structure (more flexible)
                 const analysisLines = analysisCSV.split('\n');
-                expect(analysisLines.length).to.be.at.least(2); // At least header + 1 data row
-                expect(analysisLines[0]).to.include('Respondent ID'); // Header check
-                expect(analysisLines[1]).to.match(/^[^,]+,\d+,\d+,\d+,\d+$/); // Data row pattern
+                expect(analysisLines.length).toBeGreaterThanOrEqual(2); // At least header + 1 data row
+                expect(analysisLines[0]).toContain('Respondent ID'); // Header check
+                expect(analysisLines[1]).toMatch(/^[^,]+,\d+,\d+,\d+,\d+$/); // Data row pattern
             });
 
             it('should demonstrate participant and app settings generation utilities', () => {
@@ -285,11 +283,11 @@ describe('Firebase Mock System Tests', () => {
                 const startedParticipant = participantUtils.createStartedDHQParticipant('participant101');
 
                 // Verify participant data structure
-                expect(notStartedParticipant.state.uid).to.equal('participant123');
-                expect(notStartedParticipant[fieldMapping.dhq3SurveyStatus]).to.equal(fieldMapping.notStarted);
-                expect(completedParticipant[fieldMapping.dhq3SurveyStatus]).to.equal(fieldMapping.submitted);
-                expect(credentialedParticipant[fieldMapping.dhq3UUID]).to.equal('uuid_participant789');
-                expect(startedParticipant[fieldMapping.dhq3SurveyStatus]).to.equal(fieldMapping.started);
+                expect(notStartedParticipant.state.uid).toBe('participant123');
+                expect(notStartedParticipant[fieldMapping.dhq3SurveyStatus]).toBe(fieldMapping.notStarted);
+                expect(completedParticipant[fieldMapping.dhq3SurveyStatus]).toBe(fieldMapping.submitted);
+                expect(credentialedParticipant[fieldMapping.dhq3UUID]).toBe('uuid_participant789');
+                expect(startedParticipant[fieldMapping.dhq3SurveyStatus]).toBe(fieldMapping.started);
 
                 // Create and verify app settings
                 const basicSettings = settingsUtils.createAppSettings();
@@ -297,9 +295,9 @@ describe('Firebase Mock System Tests', () => {
                     dhqDepletedCredentials: ['study_123']
                 });
 
-                expect(basicSettings.appName).to.equal('connectApp');
-                expect(basicSettings.dhq.dhqStudyIDs).to.include('study_123');
-                expect(depletedSettings.dhq.dhqDepletedCredentials).to.include('study_123');
+                expect(basicSettings.appName).toBe('connectApp');
+                expect(basicSettings.dhq.dhqStudyIDs).toContain('study_123');
+                expect(depletedSettings.dhq.dhqDepletedCredentials).toContain('study_123');
             });
 
             it('should demonstrate DHQ API and error scenario generation utilities', () => {
@@ -314,20 +312,20 @@ describe('Firebase Mock System Tests', () => {
                 });
 
                 // Verify DHQ response structure
-                expect(inProgressResponse.questionnaire_status).to.equal(2);
-                expect(inProgressResponse.viewed_hei_report).to.be.false;
-                expect(completedResponse.questionnaire_status).to.equal(3);
-                expect(completedResponse.viewed_hei_report).to.be.true;
+                expect(inProgressResponse.questionnaire_status).toBe(2);
+                expect(inProgressResponse.viewed_hei_report).toBe(false);
+                expect(completedResponse.questionnaire_status).toBe(3);
+                expect(completedResponse.viewed_hei_report).toBe(true);
 
                 // Create and verify error scenarios
                 const networkError = errorUtils.createNetworkError('Connection timeout');
                 const apiError = errorUtils.createDHQAPIError(401, 'Invalid token');
                 const validationError = errorUtils.createValidationError('email', 'Invalid email format');
 
-                expect(networkError.message).to.equal('Connection timeout');
-                expect(apiError.message).to.include('DHQ API Error 401');
-                expect(apiError.status).to.equal(401);
-                expect(validationError.field).to.equal('email');
+                expect(networkError.message).toBe('Connection timeout');
+                expect(apiError.message).toContain('DHQ API Error 401');
+                expect(apiError.status).toBe(401);
+                expect(validationError.field).toBe('email');
             });
 
             it('should demonstrate performance data generation utilities', () => {
@@ -338,16 +336,16 @@ describe('Firebase Mock System Tests', () => {
                 const processingMetrics = perfUtils.createProcessingMetrics(1000, 950, 50, 5000);
 
                 // Verify memory usage structure
-                expect(memoryUsage.heapUsed).to.equal(1200 * 1024 * 1024);
-                expect(memoryUsage.heapTotal).to.equal(2048 * 1024 * 1024);
+                expect(memoryUsage.heapUsed).toBe(1200 * 1024 * 1024);
+                expect(memoryUsage.heapTotal).toBe(2048 * 1024 * 1024);
 
                 // Verify processing metrics structure
-                expect(processingMetrics.totalItems).to.equal(1000);
-                expect(processingMetrics.successCount).to.equal(950);
-                expect(processingMetrics.errorCount).to.equal(50);
-                expect(processingMetrics.successRate).to.equal(95);
-                expect(processingMetrics.errorRate).to.equal(5);
-                expect(processingMetrics.hasErrors).to.be.true;
+                expect(processingMetrics.totalItems).toBe(1000);
+                expect(processingMetrics.successCount).toBe(950);
+                expect(processingMetrics.errorCount).toBe(50);
+                expect(processingMetrics.successRate).toBe(95);
+                expect(processingMetrics.errorRate).toBe(5);
+                expect(processingMetrics.hasErrors).toBe(true);
             });
         });
     });

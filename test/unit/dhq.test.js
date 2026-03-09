@@ -1,5 +1,3 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
 const { setupTestSuite, assertResult } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
 const ErrorScenarios = require('../shared/errorScenarios');
@@ -8,14 +6,14 @@ let factory, mocks;
 let fieldMapping, dhqModule;
 const errorScenarios = new ErrorScenarios();
 
-before(() => {
+beforeAll(() => {
     const mockSystem = setupTestSuite({
         setupConsole: true,
         setupModuleMocks: true
     });
     factory = mockSystem.factory;
     mocks = mockSystem.mocks;
-    
+
     // Load modules after mocking is set up
     fieldMapping = require('../../utils/fieldToConceptIdMapping');
     dhqModule = require('../../utils/dhq');
@@ -25,74 +23,74 @@ describe('DHQ Unit Tests', () => {
 
     describe('Function Exports', () => {
         it('should export core utility functions', () => {
-            expect(dhqModule.createResponseDocID).to.be.a('function');
-            expect(dhqModule.getDynamicChunkSize).to.be.a('function');
-            expect(dhqModule.sanitizeFieldName).to.be.a('function');
-            expect(dhqModule.processAnalysisResultsCSV).to.be.a('function');
-            expect(dhqModule.processDetailedAnalysisCSV).to.be.a('function');
-            expect(dhqModule.processRawAnswersCSV).to.be.a('function');
+            expect(dhqModule.createResponseDocID).toBeTypeOf('function');
+            expect(dhqModule.getDynamicChunkSize).toBeTypeOf('function');
+            expect(dhqModule.sanitizeFieldName).toBeTypeOf('function');
+            expect(dhqModule.processAnalysisResultsCSV).toBeTypeOf('function');
+            expect(dhqModule.processDetailedAnalysisCSV).toBeTypeOf('function');
+            expect(dhqModule.processRawAnswersCSV).toBeTypeOf('function');
         });
     });
 
     describe('Core Utility Functions - Basic Implementation', () => {
         describe('dhqModule.sanitizeFieldName', () => {
             it('should handle basic field names without changes', () => {
-                expect(dhqModule.sanitizeFieldName('Energy')).to.equal('Energy');
-                expect(dhqModule.sanitizeFieldName('protein_g')).to.equal('protein_g');
-                expect(dhqModule.sanitizeFieldName('vitamin_A123')).to.equal('vitamin_A123');
+                expect(dhqModule.sanitizeFieldName('Energy')).toBe('Energy');
+                expect(dhqModule.sanitizeFieldName('protein_g')).toBe('protein_g');
+                expect(dhqModule.sanitizeFieldName('vitamin_A123')).toBe('vitamin_A123');
             });
 
             it('should replace special characters with underscores', () => {
-                expect(dhqModule.sanitizeFieldName('Energy (kcal)')).to.equal('Energy_kcal');
-                expect(dhqModule.sanitizeFieldName('Protein-total')).to.equal('Protein_total');
-                expect(dhqModule.sanitizeFieldName('vitamin A.mg')).to.equal('vitamin_A_mg');
-                expect(dhqModule.sanitizeFieldName('field name with spaces')).to.equal('field_name_with_spaces');
+                expect(dhqModule.sanitizeFieldName('Energy (kcal)')).toBe('Energy_kcal');
+                expect(dhqModule.sanitizeFieldName('Protein-total')).toBe('Protein_total');
+                expect(dhqModule.sanitizeFieldName('vitamin A.mg')).toBe('vitamin_A_mg');
+                expect(dhqModule.sanitizeFieldName('field name with spaces')).toBe('field_name_with_spaces');
             });
 
             it('should handle leading asterisk by adding star_ prefix', () => {
-                expect(dhqModule.sanitizeFieldName('*Energy')).to.equal('star_Energy');
-                expect(dhqModule.sanitizeFieldName('*total_calories')).to.equal('star_total_calories');
-                expect(dhqModule.sanitizeFieldName('***')).to.equal('star');
+                expect(dhqModule.sanitizeFieldName('*Energy')).toBe('star_Energy');
+                expect(dhqModule.sanitizeFieldName('*total_calories')).toBe('star_total_calories');
+                expect(dhqModule.sanitizeFieldName('***')).toBe('star');
             });
 
             it('should add field_ prefix when starting with numbers', () => {
-                expect(dhqModule.sanitizeFieldName('123calories')).to.equal('field_123calories');
-                expect(dhqModule.sanitizeFieldName('2024_data')).to.equal('field_2024_data');
+                expect(dhqModule.sanitizeFieldName('123calories')).toBe('field_123calories');
+                expect(dhqModule.sanitizeFieldName('2024_data')).toBe('field_2024_data');
             });
 
             it('should throw errors for invalid inputs', () => {
-                expect(() => dhqModule.sanitizeFieldName(null)).to.throw('Invalid field name: null (must be a non-empty string)');
-                expect(() => dhqModule.sanitizeFieldName(undefined)).to.throw('Invalid field name: undefined (must be a non-empty string)');
-                expect(() => dhqModule.sanitizeFieldName('')).to.throw('Invalid field name:  (must be a non-empty string)');
-                expect(() => dhqModule.sanitizeFieldName('___')).to.throw('empty after sanitization');
+                expect(() => dhqModule.sanitizeFieldName(null)).toThrow('Invalid field name: null (must be a non-empty string)');
+                expect(() => dhqModule.sanitizeFieldName(undefined)).toThrow('Invalid field name: undefined (must be a non-empty string)');
+                expect(() => dhqModule.sanitizeFieldName('')).toThrow('Invalid field name:  (must be a non-empty string)');
+                expect(() => dhqModule.sanitizeFieldName('___')).toThrow('empty after sanitization');
             });
         });
 
         describe('dhqModule.createResponseDocID', () => {
             it('should create valid document ID from respondent ID', () => {
                 const result = dhqModule.createResponseDocID('participant123');
-                expect(result).to.equal('participant123');
+                expect(result).toBe('participant123');
             });
 
             it('should sanitize invalid Firestore characters', () => {
                 const result = dhqModule.createResponseDocID('participant/123\\test.doc#id$[0]');
-                expect(result).to.equal('participant_123_test_doc_id__0_');
+                expect(result).toBe('participant_123_test_doc_id__0_');
             });
 
             it('should handle character combinations', () => {
                 const result = dhqModule.createResponseDocID('participant.name#123$array[0]/path\\file');
-                expect(result).to.equal('participant_name_123_array_0__path_file');
+                expect(result).toBe('participant_name_123_array_0__path_file');
             });
 
             it('should handle null and undefined input', () => {
-                expect(dhqModule.createResponseDocID(null)).to.be.null;
-                expect(dhqModule.createResponseDocID(undefined)).to.be.null;
-                expect(dhqModule.createResponseDocID('')).to.be.null;
+                expect(dhqModule.createResponseDocID(null)).toBeNull();
+                expect(dhqModule.createResponseDocID(undefined)).toBeNull();
+                expect(dhqModule.createResponseDocID('')).toBeNull();
             });
 
             it('should handle numeric input', () => {
                 const result = dhqModule.createResponseDocID(12345);
-                expect(result).to.equal('12345');
+                expect(result).toBe('12345');
             });
         });
 
@@ -113,7 +111,7 @@ describe('DHQ Unit Tests', () => {
 
             malformedInputs.forEach(testCase => {
                 const result = dhqModule.createResponseDocID(testCase.input);
-                expect(result).to.equal(testCase.expected, `Failed for input: ${testCase.input}`);
+                expect(result).toBe(testCase.expected, `Failed for input: ${testCase.input}`);
             });
         });
 
@@ -130,7 +128,7 @@ describe('DHQ Unit Tests', () => {
             });
 
             const chunkSize = dhqModule.getDynamicChunkSize([]);
-            expect(chunkSize).to.equal(100); // Should use minimum chunk size
+            expect(chunkSize).toBe(100); // Should use minimum chunk size
 
             // Restore original function
             process.memoryUsage = originalMemoryUsage;
@@ -140,8 +138,8 @@ describe('DHQ Unit Tests', () => {
             // Test with extremely large array
             const largeArray = new Array(10000).fill({ data: 'test' });
             const chunkSize = dhqModule.getDynamicChunkSize(largeArray);
-            expect(chunkSize).to.be.a('number');
-            expect(chunkSize).to.be.above(0);
+            expect(chunkSize).toBeTypeOf('number');
+            expect(chunkSize).toBeGreaterThan(0);
         });
 
         it('should handle concurrent chunk size calculations', () => {
@@ -154,7 +152,7 @@ describe('DHQ Unit Tests', () => {
             }
 
             // All results should be consistent
-            expect(results.every(size => size === results[0])).to.be.true;
+            expect(results.every(size => size === results[0])).toBe(true);
         });
 
         it('should handle corrupted input data', () => {
@@ -170,7 +168,7 @@ describe('DHQ Unit Tests', () => {
 
             corruptedData.forEach(data => {
                 const result = dhqModule.createResponseDocID(data['Respondent ID']);
-                expect(result).to.satisfy(val => val === null || typeof val === 'string');
+                expect(result).toSatisfy(val => val === null || typeof val === 'string');
             });
         });
     });
@@ -194,11 +192,11 @@ describe('DHQ Unit Tests', () => {
                 }
 
                 // We get at least the minimum expected chunks
-                expect(chunks.length).to.be.at.least(scenario.minChunks);
+                expect(chunks.length).toBeGreaterThanOrEqual(scenario.minChunks);
                 // Each chunk doesn't exceed the calculated chunk size
-                expect(chunks[0].length).to.be.at.most(chunkSize);
+                expect(chunks[0].length).toBeLessThanOrEqual(chunkSize);
                 // All data is included
-                expect(chunks.flat().length).to.equal(scenario.dataSize);
+                expect(chunks.flat().length).toBe(scenario.dataSize);
             });
         });
 
@@ -218,13 +216,13 @@ describe('DHQ Unit Tests', () => {
                 // Test with direct memory usage mocking
                 process.memoryUsage = () => ({ heapUsed: scenario.memory });
                 let chunkSize = dhqModule.getDynamicChunkSize();
-                expect(chunkSize).to.equal(scenario.expectedChunkSize);
+                expect(chunkSize).toBe(scenario.expectedChunkSize);
 
                 // Test with utility function
                 const memoryUsage = perfUtils.createMemoryUsage(scenario.memory / (1024 * 1024));
                 process.memoryUsage = () => memoryUsage;
                 chunkSize = dhqModule.getDynamicChunkSize();
-                expect(chunkSize).to.equal(scenario.expectedChunkSize);
+                expect(chunkSize).toBe(scenario.expectedChunkSize);
             });
 
             // Restore original memory usage
@@ -240,10 +238,10 @@ describe('DHQ Unit Tests', () => {
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
-            expect(participant.state.uid).to.equal('participant123');
-            expect(participant.state.query).to.equal('test-query');
-            expect(participant.state.site).to.equal('test-site');
-            expect(participant[fieldMapping.dhq3SurveyStatus]).to.equal(fieldMapping.notStarted);
+            expect(participant.state.uid).toBe('participant123');
+            expect(participant.state.query).toBe('test-query');
+            expect(participant.state.site).toBe('test-site');
+            expect(participant[fieldMapping.dhq3SurveyStatus]).toBe(fieldMapping.notStarted);
         });
 
         it('should preserve uid when overriding state in createStartedDHQParticipant', () => {
@@ -253,10 +251,10 @@ describe('DHQ Unit Tests', () => {
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
-            expect(participant.state.uid).to.equal('participant456');
-            expect(participant.state.sessionId).to.equal('session-789');
-            expect(participant.state.device).to.equal('mobile');
-            expect(participant[fieldMapping.dhq3SurveyStatus]).to.equal(fieldMapping.started);
+            expect(participant.state.uid).toBe('participant456');
+            expect(participant.state.sessionId).toBe('session-789');
+            expect(participant.state.device).toBe('mobile');
+            expect(participant[fieldMapping.dhq3SurveyStatus]).toBe(fieldMapping.started);
         });
 
         it('should preserve uid when overriding state in createCompletedDHQParticipant', () => {
@@ -266,10 +264,10 @@ describe('DHQ Unit Tests', () => {
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
-            expect(participant.state.uid).to.equal('participant789');
-            expect(participant.state.completionReason).to.equal('normal');
-            expect(participant.state.finalScore).to.equal(95);
-            expect(participant[fieldMapping.dhq3SurveyStatus]).to.equal(fieldMapping.submitted);
+            expect(participant.state.uid).toBe('participant789');
+            expect(participant.state.completionReason).toBe('normal');
+            expect(participant.state.finalScore).toBe(95);
+            expect(participant[fieldMapping.dhq3SurveyStatus]).toBe(fieldMapping.submitted);
         });
 
         it('should handle non-state overrides correctly', () => {
@@ -280,18 +278,18 @@ describe('DHQ Unit Tests', () => {
             });
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
-            expect(participant.state.uid).to.equal('participant123');
-            expect(participant.customField).to.equal('custom-value');
-            expect(participant[fieldMapping.dhq3StudyID]).to.equal('override-study-id');
+            expect(participant.state.uid).toBe('participant123');
+            expect(participant.customField).toBe('custom-value');
+            expect(participant[fieldMapping.dhq3StudyID]).toBe('override-study-id');
         });
 
         it('should handle empty overrides correctly', () => {
             const participantUtils = TestUtils.createMockParticipantData();
             const participant = participantUtils.createNotStartedDHQParticipant('participant123', {});
-            
+
             // Verify uid is preserved, overrides are applied, and other fields are still present
-            expect(participant.state.uid).to.equal('participant123');
-            expect(Object.keys(participant.state)).to.deep.equal(['uid']);
+            expect(participant.state.uid).toBe('participant123');
+            expect(Object.keys(participant.state)).toEqual(['uid']);
         });
 
         it('should handle undefined overrides correctly', () => {
@@ -299,8 +297,8 @@ describe('DHQ Unit Tests', () => {
             const participant = participantUtils.createNotStartedDHQParticipant('participant123');
 
             // Verify uid is preserved, overrides are applied, and other fields are still present
-            expect(participant.state.uid).to.equal('participant123');
-            expect(Object.keys(participant.state)).to.deep.equal(['uid']);
+            expect(participant.state.uid).toBe('participant123');
+            expect(Object.keys(participant.state)).toEqual(['uid']);
         });
     });
 
@@ -315,7 +313,7 @@ describe('DHQ Unit Tests', () => {
                     await processAnalysisResultsCSV(csvContent, 'study_test');
                     expect.fail('Should have thrown an error for missing Respondent ID column');
                 } catch (error) {
-                    expect(error.message).to.include('Respondent ID column not found');
+                    expect(error.message).toContain('Respondent ID column not found');
                 }
             });
 
@@ -328,7 +326,7 @@ describe('DHQ Unit Tests', () => {
                     await processDetailedAnalysisCSV(csvContent, 'study_test');
                     expect.fail('Should have thrown an error for missing required columns');
                 } catch (error) {
-                    expect(error.message).to.include('Required columns missing');
+                    expect(error.message).toContain('Required columns missing');
                 }
             });
 
@@ -341,7 +339,7 @@ describe('DHQ Unit Tests', () => {
                     await processRawAnswersCSV(csvContent, 'study_test');
                     expect.fail('Should have thrown an error for missing required columns');
                 } catch (error) {
-                    expect(error.message).to.include('Required columns missing');
+                    expect(error.message).toContain('Required columns missing');
                 }
             });
         });
@@ -349,7 +347,7 @@ describe('DHQ Unit Tests', () => {
         describe('Memory Management Integration', () => {
             it('should adapt chunk sizes based on memory pressure', () => {
                 const originalMemoryUsage = process.memoryUsage;
-                
+
                 const memoryScenarios = [
                     { heapUsed: 800 * 1024 * 1024, expectedSize: 1000 },  // Low memory
                     { heapUsed: 1200 * 1024 * 1024, expectedSize: 500 },  // Medium memory
@@ -361,7 +359,7 @@ describe('DHQ Unit Tests', () => {
                     memoryScenarios.forEach(scenario => {
                         process.memoryUsage = () => ({ heapUsed: scenario.heapUsed });
                         const chunkSize = dhqModule.getDynamicChunkSize();
-                        expect(chunkSize).to.equal(scenario.expectedSize);
+                        expect(chunkSize).toBe(scenario.expectedSize);
                     });
                 } finally {
                     process.memoryUsage = originalMemoryUsage;
