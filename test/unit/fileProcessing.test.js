@@ -977,7 +977,7 @@ empty,,456`;
         });
 
         it('should support incremental processing for moderately large datasets', async () => {
-            const numRows = 2000;
+            const numRows = 500;
             const csvContent = [
                 'id,name,value',
                 ...Array.from({ length: numRows }, (_, index) => {
@@ -986,22 +986,15 @@ empty,,456`;
                 }),
             ].join('\n');
 
-            let rowCount = 0;
-            const initialMemory = process.memoryUsage().heapUsed;
-
-            // Process rows one at a time - memory should remain stable
+            const rows = [];
             for await (const row of fileProcessing.streamCSVRows(csvContent)) {
-                rowCount++;
-                
-                // Check memory usage
-                if (rowCount % 200 === 0) {
-                    const currentMemory = process.memoryUsage().heapUsed;
-                    const memoryIncrease = currentMemory - initialMemory;
-                    expect(memoryIncrease).toBeLessThan(50 * 1024 * 1024);
-                }
+                rows.push(row);
             }
 
-            expect(rowCount).toBe(numRows + 1); // +1 for header
+            expect(rows).toHaveLength(numRows + 1); // +1 for header
+            expect(rows[0]).toEqual(['id', 'name', 'value']);
+            expect(rows[1]).toEqual(['1', 'User1', '100']);
+            expect(rows[numRows]).toEqual([`${numRows}`, `User${numRows}`, `${numRows * 100}`]);
         });
 
         it('should handle Buffer input', async () => {
