@@ -1,4 +1,3 @@
-const { expect } = require('chai');
 const fieldMapping = require('../../utils/fieldToConceptIdMapping');
 const { checkSurveyStatusesWhenVerified } = require('../../utils/shared');
 
@@ -11,16 +10,16 @@ describe('checkSurveyStatusesWhenVerified', () => {
         const payloadData = { "state.148197146": 638335430 };
         const docData = { [verificationStatus]: notVerified };
         const result = checkSurveyStatusesWhenVerified(payloadData, docData);
-        expect(result[cancerScreeningHistorySurveyStatus]).to.be.undefined;
-        expect(result[dhq3SurveyStatus]).to.be.undefined;
+        expect(result[cancerScreeningHistorySurveyStatus]).toBeUndefined();
+        expect(result[dhq3SurveyStatus]).toBeUndefined();
     });
 
     it('returns payloadData unchanged when payloadData has verification status other than "verified" ', () => {
         const payloadData = { [verificationStatus]: cannotBeVerified };
         const docData = {};
         const result = checkSurveyStatusesWhenVerified(payloadData, docData);
-        expect(result[cancerScreeningHistorySurveyStatus]).to.be.undefined;
-        expect(result[dhq3SurveyStatus]).to.be.undefined;
+        expect(result[cancerScreeningHistorySurveyStatus]).toBeUndefined();
+        expect(result[dhq3SurveyStatus]).toBeUndefined();
     });
 
     // --- Verified in payloadData ---
@@ -30,16 +29,16 @@ describe('checkSurveyStatusesWhenVerified', () => {
         const payloadData = { [verificationStatus]: verified };
         const docData = { [cancerScreeningHistorySurveyStatus]: existingStatus };
         const result = checkSurveyStatusesWhenVerified(payloadData, docData);
-        expect(result[cancerScreeningHistorySurveyStatus]).to.be.undefined; // not added, already in docData
-        expect(result[dhq3SurveyStatus]).to.equal(notStarted);
+        expect(result[cancerScreeningHistorySurveyStatus]).toBeUndefined(); // not added, already in docData
+        expect(result[dhq3SurveyStatus]).toBe(notStarted);
     });
 
     it('initializes survey statuses, if missing, when payloadData sets verificationStatus to verified', () => {
         const payloadData = { [verificationStatus]: verified };
         const docData = {};
         const result = checkSurveyStatusesWhenVerified(payloadData, docData);
-        expect(result[cancerScreeningHistorySurveyStatus]).to.equal(notStarted);
-        expect(result[dhq3SurveyStatus]).to.equal(notStarted);
+        expect(result[cancerScreeningHistorySurveyStatus]).toBe(notStarted);
+        expect(result[dhq3SurveyStatus]).toBe(notStarted);
     });
 
 });
