@@ -32,7 +32,7 @@ function createDestructionParticipant(overrides = {}) {
         query: { firstName: 'Jane', lastName: 'Doe', studyId: 'S1', someOtherField: 'val' },
         state: { uid: 'firebase-uid', otherStateField: 'val2' },
         [destroyDataCId()]: fieldMapping.yes,
-        [dataHasBeenDestroyedCId()]: fieldMapping.no || 104430631,
+        [dataHasBeenDestroyedCId()]: fieldMapping.no,
         [destroyDataCategoricalCId()]: requestedAndSignCId(),
         [dateRequestedDataDestroyCId()]: new Date().toISOString(),
         [fieldMapping.dhq3Username]: 'dhq-user-1',

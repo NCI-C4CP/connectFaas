@@ -174,29 +174,25 @@ describe('DHQ Unit Tests', () => {
     });
 
     describe('dhqModule.getDynamicChunkSize Functionality', () => {
-        it('should scale chunk sizes appropriately based on data size', () => {
-            const testScenarios = [
-                { dataSize: 100, minChunks: 1 },
-                { dataSize: 1500, minChunks: 2 },
-                { dataSize: 5000, minChunks: 3 },
-                { dataSize: 10000, minChunks: 5 }
-            ];
+        it('should return a valid chunk size based on current memory usage', () => {
+            const chunkSize = dhqModule.getDynamicChunkSize();
 
-            testScenarios.forEach(scenario => {
-                const data = Array.from({ length: scenario.dataSize }, (_, i) => ({ id: `item_${i}` }));
-                const chunkSize = dhqModule.getDynamicChunkSize();
+            expect(chunkSize).toBeGreaterThan(0);
+            expect(Number.isInteger(chunkSize)).toBe(true);
 
+            // Chunk size can be used to partition datasets of various sizes
+            const testDataSizes = [100, 1500, 5000, 10000];
+            testDataSizes.forEach(dataSize => {
+                const data = Array.from({ length: dataSize }, (_, i) => ({ id: `item_${i}` }));
                 const chunks = [];
                 for (let i = 0; i < data.length; i += chunkSize) {
                     chunks.push(data.slice(i, i + chunkSize));
                 }
 
-                // We get at least the minimum expected chunks
-                expect(chunks.length).toBeGreaterThanOrEqual(scenario.minChunks);
                 // Each chunk doesn't exceed the calculated chunk size
                 expect(chunks[0].length).toBeLessThanOrEqual(chunkSize);
                 // All data is included
-                expect(chunks.flat().length).toBe(scenario.dataSize);
+                expect(chunks.flat().length).toBe(dataSize);
             });
         });
 

@@ -55,7 +55,7 @@ describe('DHQ Integration Tests', () => {
             // Test querying for started participants
             const startedQuery = mocks.firestore.collection('participants')
                 .where(fieldMapping.dhq3SurveyStatus, '==', fieldMapping.started)
-                .select('state', fieldMapping.dhq3StudyID, fieldMapping.dhq3participantname)
+                .select('state', fieldMapping.dhq3StudyID, fieldMapping.dhq3Username)
                 .get();
 
             const result = await startedQuery;

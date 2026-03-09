@@ -192,7 +192,7 @@ value6,value7,value8`;
             });
 
             // Check console.warn was called
-            expect(localConsoleWarnStub.mock.calls.length === 1).toBe(true);
+            expect(localConsoleWarnStub.mock.calls).toHaveLength(1);
             expect(localConsoleWarnStub.mock.calls[0][0]).toContain('Row 3 has 2 columns');
 
             // Restore the local stub
