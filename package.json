@@ -9,8 +9,6 @@
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
     "test:mocks": "vitest run test/mocks",
-    "test:dhq": "vitest run test/unit/dhq.test.js test/integration/dhq.integration.test.js",
-    "test:fileProcessing": "vitest run test/unit/fileProcessing.test.js",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
