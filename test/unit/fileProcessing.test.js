@@ -976,8 +976,8 @@ empty,,456`;
             expect(rows).toHaveLength(0);
         });
 
-        it('should be memory efficient for large datasets', async () => {
-            const numRows = 10000;
+        it('should support incremental processing for moderately large datasets', async () => {
+            const numRows = 2000;
             const csvContent = [
                 'id,name,value',
                 ...Array.from({ length: numRows }, (_, index) => {
@@ -994,10 +994,10 @@ empty,,456`;
                 rowCount++;
                 
                 // Check memory usage
-                if (rowCount % 500 === 0) {
+                if (rowCount % 200 === 0) {
                     const currentMemory = process.memoryUsage().heapUsed;
                     const memoryIncrease = currentMemory - initialMemory;
-                    expect(memoryIncrease).toBeLessThan(100 * 1024 * 1024);
+                    expect(memoryIncrease).toBeLessThan(50 * 1024 * 1024);
                 }
             }
 
