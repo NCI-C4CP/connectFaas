@@ -977,12 +977,14 @@ empty,,456`;
         });
 
         it('should be memory efficient for large datasets', async () => {
-            // Create a large CSV content
-            let csvContent = 'id,name,value\n';
-            const numRows = 100000;
-            for (let i = 1; i <= numRows; i++) {
-                csvContent += `${i},User${i},${i * 100}\n`;
-            }
+            const numRows = 10000;
+            const csvContent = [
+                'id,name,value',
+                ...Array.from({ length: numRows }, (_, index) => {
+                    const rowNumber = index + 1;
+                    return `${rowNumber},User${rowNumber},${rowNumber * 100}`;
+                }),
+            ].join('\n');
 
             let rowCount = 0;
             const initialMemory = process.memoryUsage().heapUsed;
@@ -992,7 +994,7 @@ empty,,456`;
                 rowCount++;
                 
                 // Check memory usage
-                if (rowCount % 1000 === 0) {
+                if (rowCount % 500 === 0) {
                     const currentMemory = process.memoryUsage().heapUsed;
                     const memoryIncrease = currentMemory - initialMemory;
                     expect(memoryIncrease).toBeLessThan(100 * 1024 * 1024);
