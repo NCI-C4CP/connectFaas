@@ -295,7 +295,7 @@ const dashboard = async (req, res) => {
         }
 
         const dataArray = await getAllMySamples();
-        if (!dataArray) {
+        if (!dataArray || dataArray.length === 0) {
             return res.status(404).json(getResponseJSON('No data found!', 404));
         }
 

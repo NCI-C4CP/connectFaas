@@ -310,12 +310,12 @@ const connectApp = async (req, res) => {
               return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
           }
 
-          const siteAronym = req.query.siteAronym;
-          if (!siteAronym) {
-              return res.status(400).json(getResponseJSON('siteAronym parameter is required!', 400));
+          const siteAcronym = req.query.siteAcronym;
+          if (!siteAcronym) {
+              return res.status(400).json(getResponseJSON('siteAcronym parameter is required!', 400));
           }
 
-          const docData = await getMySamples(siteAronym);
+          const docData = await getMySamples(siteAcronym);
           if (!docData) {
               return res.status(404).json(getResponseJSON('Not found!', 404));
           }

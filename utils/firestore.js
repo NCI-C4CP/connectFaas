@@ -5639,6 +5639,10 @@ const updateEhrDeliveries = async (acronymLower, deliveryDataArray, replace = fa
  */
 const getMySamples = async (siteAcronym) => {
   const snapshot = await db.collection('mySamples').where('siteAcronym', '==', siteAcronym).select('published').get();
+  if (snapshot.size > 1) {
+    throw new Error(`Multiple documents found for site acronym ${siteAcronym} in getMySamples()`);
+  }
+
   if (snapshot.size === 1) {
     return snapshot.docs[0].data();
   }
@@ -5662,6 +5666,9 @@ const getAllMySamples = async () => {
  * @param {string} email - Email of the user making the update
  */
 const updateMySamples = async (payload, action, email) => {
+  if (!['publish', 'save'].includes(action)) {
+    throw new Error(`Invalid action '${action}'. Expected 'save' or 'publish'.`);
+  }
   const snapshot = await db.collection('mySamples').where('id', '==', payload.id).select().get();
   if (snapshot.empty) {
     throw new Error('No document found!');
