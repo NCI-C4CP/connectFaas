@@ -5632,6 +5632,55 @@ const updateEhrDeliveries = async (acronymLower, deliveryDataArray, replace = fa
   }
 };
 
+/**
+ * Retrieve My Samples content for a site.
+ * @param {string} siteAcronym Acronym of the site: "KPGA", "UChicago", etc.
+ * @returns 
+ */
+const getMySamples = async (siteAcronym) => {
+  const snapshot = await db.collection('mySamples').where('siteAcronym', '==', siteAcronym).select('published').get();
+  if (snapshot.size === 1) {
+    return snapshot.docs[0].data();
+  }
+
+  return null;
+};
+
+/**
+ * Retrieves all documents from the 'mySamples' collection with selected fields.
+ * @returns {Promise<Array<Object>>} - An array of objects containing id, siteAcronym, siteName, published, and saved fields for each document.
+ */
+const getAllMySamples = async () => {
+  const snapshot = await db.collection('mySamples').select('id', 'siteAcronym', 'siteName', 'published', 'saved').orderBy('siteAcronym').get();
+  return snapshot.docs.map((doc) => doc.data());
+};
+
+/**
+ * 
+ * @param {object} payload - Object containing id and update content
+ * @param {string} action - "publish" or "save"
+ * @param {string} email - Email of the user making the update
+ */
+const updateMySamples = async (payload, action, email) => {
+  const snapshot = await db.collection('mySamples').where('id', '==', payload.id).select().get();
+  if (snapshot.empty) {
+    throw new Error('No document found!');
+  } else if (snapshot.size > 1) {
+    throw new Error('Multiple documents found!');
+  }
+
+  const doc = snapshot.docs[0];
+  const updatedData = { updatedAt: new Date().toISOString(), updatedBy: email };
+  if (action === 'save') {
+    updatedData.saved = payload.update;
+  } else if (action === 'publish') {
+    updatedData.published = payload.update;
+    updatedData.saved = null;
+  }
+
+  await doc.ref.update(updatedData);
+};
+  
 module.exports = {
     db,
     storage,
@@ -5779,4 +5828,7 @@ module.exports = {
     deletePathologyReports,
     getEhrDeliveries,
     updateEhrDeliveries,
+    getMySamples,
+    getAllMySamples,
+    updateMySamples,
 };

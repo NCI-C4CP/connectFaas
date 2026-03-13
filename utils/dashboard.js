@@ -1,5 +1,6 @@
 const { getResponseJSON, setHeaders, logIPAddress } = require('./shared');
 const { uploadPathologyReports, getUploadedPathologyReportNames, createEhrUploadUrls, getUploadedEhrNames } = require('./fileUploads');
+const { getAllMySamples, updateMySamples } = require("./firestore");
 
 const dashboard = async (req, res) => {
     logIPAddress(req);
@@ -32,6 +33,7 @@ const dashboard = async (req, res) => {
     const api = req.query.api;
     console.log(`SMDB API: ${api}, accessed by: ${userEmail}`);
 
+  try {
     if (api === 'validateSiteUsers') {
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
@@ -283,9 +285,51 @@ const dashboard = async (req, res) => {
         return await createEhrUploadUrls(req, res, validationResult.siteDetails.acronym);
     } else if (api === "getUploadedEhrNames") {
         return await getUploadedEhrNames(req, res, validationResult.siteDetails.acronym);
+    } else if (api === 'getAllMySamples') {
+        if (!isCoordinatingCenter) {
+            return res.status(403).json(getResponseJSON('Only Coordinating Center users can access this API!', 403));
+        }
+
+        if (req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+
+        const dataArray = await getAllMySamples();
+        if (!dataArray) {
+            return res.status(404).json(getResponseJSON('No data found!', 404));
+        }
+
+        return res.status(200).json({ data: dataArray, code: 200 });
+    } else if (api === 'updateMySamples') {
+        if (!isCoordinatingCenter) {
+            return res.status(403).json(getResponseJSON('Only Coordinating Center users can access this API!', 403));
+        }
+
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+
+        const action = req.query.action;
+        if (!['publish', 'save'].includes(action)) {
+            return res.status(400).json(getResponseJSON('The action parameter must be either "publish" or "save"!', 400));
+        }
+
+        const payload = req.body;
+        if (!payload.update || !payload.id) {
+            return res.status(400).json(getResponseJSON('Incomplete data in request body!', 400));
+        }
+
+        await updateMySamples(payload, action, userEmail);
+        return res.status(200).json(getResponseJSON('Success!', 200));
+
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
+
+  } catch (error) {
+    console.error('Error calling dashboard API.', error);
+    return res.status(500).json(getResponseJSON(error.message, 500));
+  }
 };
 
 module.exports = {

@@ -4,6 +4,7 @@ const { retrieveNotifications, sendEmailLink } = require('./notifications');
 const { retrievePhysicalActivityReport } = require('./reports');
 const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, validateToken } = require('./validation');
 const { addressValidation } = require('./usps');
+const { getMySamples } = require("./firestore");
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -304,6 +305,23 @@ const connectApp = async (req, res) => {
         return res.status(code).json(getResponseJSON('ERROR: ' + (err.message || err)), code);
       }
     }
+      else if (api === "getMySamples") {
+          if (req.method !== 'GET') {
+              return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+          }
+
+          const siteAronym = req.query.siteAronym;
+          if (!siteAronym) {
+              return res.status(400).json(getResponseJSON('siteAronym parameter is required!', 400));
+          }
+
+          const docData = await getMySamples(siteAronym);
+          if (!docData) {
+              return res.status(404).json(getResponseJSON('Not found!', 404));
+          }
+
+          return res.status(200).json({ data: docData.published, code: 200 });
+      }
 
     else return res.status(400).json(getResponseJSON('Bad request!', 400));
 
