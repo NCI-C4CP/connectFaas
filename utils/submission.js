@@ -434,7 +434,7 @@ const identifyParticipant = async (req, res, site) => {
         const { verifyIdentity } = require('./firestore');
         const identify = await verifyIdentity(type, token, siteCode);
         if(identify instanceof Error){
-            return res.status(400).json(getResponseJSON(identify.message, 400));
+            return res.status(identify.errorCode ? identify.errorCode : 400).json(getResponseJSON(identify.message, identify.errorCode ? identify.errorCode : 400));
         }
 
         if(identify){
@@ -474,7 +474,7 @@ const identifyParticipant = async (req, res, site) => {
                     const identified = await verifyIdentity(type, token, siteCode);
                     if(identified instanceof Error) {
                         error = true;
-                        errorMsgs.push({token, message: identified.message, code: 400});
+                        errorMsgs.push({token, message: identified.message, code: identified.errorCode ? identified.errorCode : 400});
                     }
                 }
                 else {
