@@ -1,5 +1,3 @@
-const sinon = require('sinon');
-
 /**
  * Firebase Storage mocks
  */
@@ -9,10 +7,8 @@ class StorageMocks {
     }
 
     reset() {
-        if (this.sandbox) {
-            this.sandbox.restore();
-        }
-        this.sandbox = sinon.createSandbox();
+        this._fileOverrides = new Map();
+        this._bucketOverrides = new Map();
         this.createBaseMocks();
     }
 
@@ -21,34 +17,36 @@ class StorageMocks {
         this.mockFile = {
             name: 'test-file.txt',
             bucket: 'test-bucket',
-            download: sinon.stub().resolves([Buffer.from('test content')]),
-            save: sinon.stub().resolves(),
-            delete: sinon.stub().resolves(),
-            exists: sinon.stub().resolves([true]),
-            getMetadata: sinon.stub().resolves([{
+            download: vi.fn().mockResolvedValue([Buffer.from('test content')]),
+            save: vi.fn().mockResolvedValue(undefined),
+            delete: vi.fn().mockResolvedValue(undefined),
+            exists: vi.fn().mockResolvedValue([true]),
+            getMetadata: vi.fn().mockResolvedValue([{
                 name: 'test-file.txt',
                 size: 12,
                 contentType: 'text/plain',
                 timeCreated: new Date().toISOString(),
                 updated: new Date().toISOString()
             }]),
-            setMetadata: sinon.stub().resolves(),
-            copy: sinon.stub().resolves(),
-            move: sinon.stub().resolves(),
-            createReadStream: sinon.stub(),
-            createWriteStream: sinon.stub(),
-            getSignedUrl: sinon.stub().resolves(['https://example.com/signed-url'])
+            setMetadata: vi.fn().mockResolvedValue(undefined),
+            copy: vi.fn().mockResolvedValue(undefined),
+            move: vi.fn().mockResolvedValue(undefined),
+            createReadStream: vi.fn(),
+            createWriteStream: vi.fn(),
+            getSignedUrl: vi.fn().mockResolvedValue(['https://example.com/signed-url'])
         };
+
+        const self = this;
 
         // Mock Bucket
         this.mockBucket = {
             name: 'test-bucket',
-            file: sinon.stub().returns(this.mockFile),
-            getFiles: sinon.stub().resolves([[this.mockFile]]),
-            upload: sinon.stub().resolves([this.mockFile]),
-            deleteFiles: sinon.stub().resolves(),
-            exists: sinon.stub().resolves([true]),
-            getMetadata: sinon.stub().resolves([{
+            file: vi.fn().mockImplementation((path) => self._fileOverrides.get(path) || self.mockFile),
+            getFiles: vi.fn().mockResolvedValue([[this.mockFile]]),
+            upload: vi.fn().mockResolvedValue([this.mockFile]),
+            deleteFiles: vi.fn().mockResolvedValue(undefined),
+            exists: vi.fn().mockResolvedValue([true]),
+            getMetadata: vi.fn().mockResolvedValue([{
                 name: 'test-bucket',
                 location: 'US',
                 storageClass: 'STANDARD'
@@ -57,9 +55,9 @@ class StorageMocks {
 
         // Mock Storage
         this.mockStorage = {
-            bucket: sinon.stub().returns(this.mockBucket),
-            getBuckets: sinon.stub().resolves([[this.mockBucket]]),
-            createBucket: sinon.stub().resolves([this.mockBucket])
+            bucket: vi.fn().mockImplementation((name) => self._bucketOverrides.get(name) || self.mockBucket),
+            getBuckets: vi.fn().mockResolvedValue([[this.mockBucket]]),
+            createBucket: vi.fn().mockResolvedValue([this.mockBucket])
         };
     }
 
@@ -67,10 +65,10 @@ class StorageMocks {
         const mockFile = {
             ...this.mockFile,
             name: filePath,
-            download: sinon.stub().resolves([Buffer.from(content)])
+            download: vi.fn().mockResolvedValue([Buffer.from(content)])
         };
-        
-        this.mockBucket.file.withArgs(filePath).returns(mockFile);
+
+        this._fileOverrides.set(filePath, mockFile);
         return mockFile;
     }
 
@@ -78,11 +76,11 @@ class StorageMocks {
         const mockFile = {
             ...this.mockFile,
             name: filePath,
-            download: sinon.stub().rejects(error),
-            exists: sinon.stub().resolves([false])
+            download: vi.fn().mockRejectedValue(error),
+            exists: vi.fn().mockResolvedValue([false])
         };
-        
-        this.mockBucket.file.withArgs(filePath).returns(mockFile);
+
+        this._fileOverrides.set(filePath, mockFile);
         return mockFile;
     }
 
@@ -91,8 +89,8 @@ class StorageMocks {
             ...this.mockBucket,
             name: bucketName
         };
-        
-        this.mockStorage.bucket.withArgs(bucketName).returns(mockBucket);
+
+        this._bucketOverrides.set(bucketName, mockBucket);
         return mockBucket;
     }
 

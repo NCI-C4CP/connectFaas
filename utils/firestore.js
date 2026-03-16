@@ -414,7 +414,7 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             ...defaultFlags
         }
         keysToPreserve.forEach(key => {
-            if(typeof prevUserData[key] !== undefined) {
+            if (Object.prototype.hasOwnProperty.call(prevUserData, key)) {
                 obj[key] = prevUserData[key];
             }
         });
@@ -455,7 +455,6 @@ const resetParticipantHelper = async (uid, saveToDb) => {
                 const biospecimenQuery = db.collection('biospecimen').where('token', '==', token);
                 const biospecimenSnapshot = await transaction.get(biospecimenQuery);
                 toDelete.biospecimen = biospecimenSnapshot.docs.map(doc => doc.id);
-                biospecimensToDelete = biospecimenSnapshot.docs.map(doc => doc.data());
                 return resolve();
             } catch (err) {
                 reject(err);
@@ -772,16 +771,17 @@ const getCursorDocument = async (collection, cursor) => {
 }
 
 const removeDocumentFromCollection = async (connectID, token, dhq3Username = null) => {
-    try {
+    // Collection query mappings. All remaining collections default to Connect_ID.
+    const tokenCollections = new Set(['notifications', 'ssn']);
+    const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
+    const errors = [];
+    let totalDeleted = 0;
 
-        // Collection query mappings. All remaining collections default to Connect_ID.
-        const tokenCollections = new Set(['notifications', 'ssn']);
-        const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
-        
-        for (const collection of listOfCollectionsRelatedToDataDestruction) {
+    for (const collection of listOfCollectionsRelatedToDataDestruction) {
+        try {
             const query = db.collection(collection);
             let snapshot;
-            
+
             // Build query based on collection type
             if (tokenCollections.has(collection)) {
                 snapshot = await query.where("token", "==", token).get();
@@ -789,22 +789,28 @@ const removeDocumentFromCollection = async (connectID, token, dhq3Username = nul
             } else if (dhqCollections.has(collection)) {
                 if (!dhq3Username) continue; // If dhq3Username is null, participant has not interacted with DHQ. There's no DHQ data to destroy.
                 snapshot = await query.where(fieldMapping.dhq3Username.toString(), "==", dhq3Username).get();
-            
+
             } else {
                 snapshot = await query.where("Connect_ID", "==", connectID).get();
             }
-            
+
             printDocsCount(snapshot, "removeDocumentFromCollection");
 
             if (snapshot.size !== 0) {
                 for (const dt of snapshot.docs) {
                     await db.collection(collection).doc(dt.id).delete();
+                    totalDeleted++;
                 }
             }
+        } catch (error) {
+            console.error(`Error removing docs from ${collection} for participant ${connectID}: ${error}`);
+            errors.push(`${collection}: ${error.message}`);
         }
-    } catch (error) {
-        console.error(`Error occurred when remove documents related to participan: ${error}`);
     }
+
+    console.log(`removeDocumentFromCollection summary for participant ${connectID}: ${totalDeleted} docs deleted across ${listOfCollectionsRelatedToDataDestruction.length} collections.`);
+
+    return errors;
 };
 
 /**
@@ -813,8 +819,12 @@ const removeDocumentFromCollection = async (connectID, token, dhq3Username = nul
  * @returns Promise<void>
  */
 const deletePathologyReports = async (connectId) => {
+  const errors = [];
   const tierStr = process.env.GCLOUD_PROJECT?.split("-").slice(3, 5).join("-").toLowerCase() || "";
-  if (!tierStr) return;
+  if (!tierStr) {
+    errors.push("GCLOUD_PROJECT is not set — cannot determine storage tier for pathology report deletion");
+    return errors;
+  }
 
   const fileNameCidStr = fieldMapping.pathologyReportFilename.toString();
   try {
@@ -823,7 +833,7 @@ const deletePathologyReports = async (connectId) => {
       .where("Connect_ID", "==", connectId)
       .select("bucketName", fileNameCidStr)
       .get();
-    if (snapshot.empty) return;
+    if (snapshot.empty) return errors;
 
     /**
      * Over a period of 10–20 years, a participant might appear in more than one bucket (e.g., due to changing healthcare providers).
@@ -858,6 +868,10 @@ const deletePathologyReports = async (connectId) => {
 
     await Promise.all(fileDeletePromises);
 
+    if (failedDeletionSet.size > 0) {
+      errors.push(`pathologyReports: ${failedDeletionSet.size} file(s) failed to delete from storage`);
+    }
+
     let batch = db.batch();
     let counter = 0;
     const batchLimit = 500;
@@ -883,7 +897,10 @@ const deletePathologyReports = async (connectId) => {
     }
   } catch (error) {
     console.error(`Error occurred when removing pathology reports for participant ${connectId}: ${error}`);
+    errors.push(`pathologyReports: ${error.message}`);
   }
+
+  return errors;
 };
 
 /**
@@ -948,42 +965,58 @@ const removeParticipantsDataDestruction = async () => {
                     requestedAndSignCId ||
                 timeDiff > millisecondsWait
             ) {
-                const updatedData = {};
-                let hasRemovedField = false;
-                const fieldKeys = Object.keys(participant);
-                fieldKeys.forEach((key) => {
-                    if (!stubFieldArray.includes(key)) {
-                        updatedData[key] = admin.firestore.FieldValue.delete();
-                        hasRemovedField = true;
-                    } else {
-                        if (key === "query" || key === "state" || key === fieldMapping.dataDestruction.physicalActivity.toString()) {
-                            const subFieldKeys = Object.keys(participant[key]);
-                            subFieldKeys.forEach((subKey) => {
-                                if (!subStubFieldArray.includes(subKey)) {
-                                    updatedData[`${key}.${subKey}`] = admin.firestore.FieldValue.delete();
-                                }
-                            });
+                try {
+                    // Build field-deletion update: remove all non-stub fields and non-stub sub-fields.
+                    const updatedData = {};
+                    const fieldKeys = Object.keys(participant);
+                    fieldKeys.forEach((key) => {
+                        if (!stubFieldArray.includes(key)) {
+                            updatedData[key] = admin.firestore.FieldValue.delete();
+                        } else {
+                            if (key === "query" || key === "state" || key === fieldMapping.dataDestruction.physicalActivity.toString()) {
+                                const subFieldKeys = Object.keys(participant[key]);
+                                subFieldKeys.forEach((subKey) => {
+                                    if (!subStubFieldArray.includes(subKey)) {
+                                        updatedData[`${key}.${subKey}`] = admin.firestore.FieldValue.delete();
+                                    }
+                                });
+                            }
                         }
+                    });
+
+                    // Collect errors from both cleanup operations.
+                    // Both always run regardless of the other's outcome.
+                    const errors = [];
+
+                    const collectionErrors = await removeDocumentFromCollection(
+                        participant["Connect_ID"],
+                        participant["token"],
+                        participant?.[fieldMapping.dhq3Username] // field can be null
+                    );
+                    errors.push(...collectionErrors);
+
+                    const pathologyErrors = await deletePathologyReports(participant["Connect_ID"]);
+                    errors.push(...pathologyErrors);
+
+                    if (errors.length === 0) {
+                        try {
+                            updatedData[dataHasBeenDestroyed] = fieldMapping.yes;
+                            updatedData[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestroyedStatus;
+                            await db.collection('participants').doc(participantId).update(updatedData);
+                            count++;
+                        } catch (error) {
+                            console.error(`Failed to update participant profile for ${participant["Connect_ID"]}: ${error}`);
+                        }
+                    } else {
+                        console.error(`Data destruction incomplete for participant ${participant["Connect_ID"]}. Errors: ${errors.join("; ")}`);
                     }
-                });
-                if (hasRemovedField) {
-                    updatedData[dataHasBeenDestroyed] = fieldMapping.yes;
-                    updatedData[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestroyedStatus;
-                    count++;
+                } catch (error) {
+                    console.error(`Failed to process data destruction for participant ${participant["Connect_ID"]}: ${error}`);
                 }
-                await db.collection('participants').doc(participantId).update(updatedData);
-                await removeDocumentFromCollection(
-                    participant["Connect_ID"],
-                    participant["token"],
-                    participant?.[fieldMapping.dhq3Username] // field can be null
-                );
-                await deletePathologyReports(participant["Connect_ID"]);
             }
         }
 
-        console.log(
-            `Successfully updated ${count} participants for data destruction`
-        );
+        console.log(`Successfully updated ${count} participants for data destruction`);
     } catch (error) {
         console.error(`Error occurred when updating documents: ${error}`);
     }
@@ -1074,8 +1107,8 @@ const verifyIdentity = async (type, token, siteCode) => {
       if (docData[fieldMapping.dataDestruction.birthMonth.toString()] && docData[fieldMapping.dataDestruction.birthDay.toString()] && docData[fieldMapping.dataDestruction.birthYear.toString()]) {
           let dobString = docData[fieldMapping.dataDestruction.birthMonth.toString()] + '/' + docData[fieldMapping.dataDestruction.birthDay.toString()]  + '/' + docData[fieldMapping.dataDestruction.birthYear.toString()];
           let dobInMs = +new Date() - +new Date(dobString);
-          if  (dobInMs === NaN || 
-            dobInMs > nintyYearsInMs || 
+          if  (dobInMs === NaN ||
+            dobInMs > nintyYearsInMs ||
             dobInMs < eightteenYearsInMs) {
             let error = new Error('Participant DOB ('+dobString+') is out of range');
             error.errorCode = 206;
@@ -2762,7 +2795,7 @@ const getEmailNotifications = async (scheduleAt) => {
 /**
  * Get all notification specifications that are not drafts and match the scheduleAt time. This function can be run multiple times per day, for testing.
  * @param {string} scheduleAt Time of day to send notifications, eg. '15:00'
- * @returns 
+ * @returns
  */
 const getNotificationSpecsBySchedule = async (scheduleAt) => {
   const snapshot = await db.collection("notificationSpecifications").where("scheduleAt", "==", scheduleAt).get();
@@ -2779,7 +2812,7 @@ const getNotificationSpecsBySchedule = async (scheduleAt) => {
 /**
  * Get all notification specifications that are not drafts and match the scheduleAt time. This function is run once per day, for production use.
  * @param {string} scheduleAt Time of day to send notifications, eg. '15:00'
- * @returns 
+ * @returns
  */
 const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
   const eastTimeZone = { timeZone: "America/New_York" };
@@ -5396,7 +5429,7 @@ const getAppSettings = async (appName, selectedParamsArray) => {
 }
 
 /**
- * 
+ *
  * @param {string} phoneNumber Phone number in +1XXXXXXXXXX format
  * @param {boolean} isSmsPermitted Whether SMS is permitted or not
  * @returns {Promise<number>} Number of document(s) updated
@@ -5649,7 +5682,7 @@ const updateEhrDeliveries = async (acronymLower, deliveryDataArray, replace = fa
 /**
  * Retrieve My Samples content for a site.
  * @param {string} siteAcronym Acronym of the site: "KPGA", "UChicago", etc.
- * @returns 
+ * @returns
  */
 const getMySamples = async (siteAcronym) => {
   const snapshot = await db.collection('mySamples').where('siteAcronym', '==', siteAcronym).select('published').get();
@@ -5674,7 +5707,7 @@ const getAllMySamples = async () => {
 };
 
 /**
- * 
+ *
  * @param {object} payload - Object containing id and update content
  * @param {string} action - "publish" or "save"
  * @param {string} email - Email of the user making the update
@@ -5701,7 +5734,7 @@ const updateMySamples = async (payload, action, email) => {
 
   await doc.ref.update(updatedData);
 };
-  
+
 module.exports = {
     db,
     storage,

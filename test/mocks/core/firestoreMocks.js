@@ -1,5 +1,3 @@
-const sinon = require('sinon');
-
 /**
  * Firestore mocks
  */
@@ -9,15 +7,12 @@ class FirestoreMocks {
     }
 
     reset() {
-        if (this.sandbox) {
-            this.sandbox.restore();
-        }
-        this.sandbox = sinon.createSandbox();
         this.mockDocs = new Map();
         this.mockCollections = new Map();
         this.mockQueries = new Map();
         this.testDocumentRegistry = new Map();
-        
+        this._collectionOverrides = new Map();
+
         this.createBaseMocks();
     }
 
@@ -28,114 +23,118 @@ class FirestoreMocks {
     createBaseMocks() {
         // Mock FieldValue
         this.mockFieldValue = {
-            arrayUnion: sinon.stub().returns('arrayUnion'),
-            arrayRemove: sinon.stub().returns('arrayRemove'),
-            increment: sinon.stub().returns('increment'),
-            serverTimestamp: sinon.stub().returns('serverTimestamp')
+            arrayUnion: vi.fn().mockReturnValue('arrayUnion'),
+            arrayRemove: vi.fn().mockReturnValue('arrayRemove'),
+            increment: vi.fn().mockReturnValue('increment'),
+            serverTimestamp: vi.fn().mockReturnValue('serverTimestamp')
         };
 
         // Mock Document Reference
         this.mockFirestoreDoc = {
-            get: sinon.stub(),
-            set: sinon.stub(),
-            update: sinon.stub(),
-            delete: sinon.stub(),
-            onSnapshot: sinon.stub(),
+            get: vi.fn(),
+            set: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
+            onSnapshot: vi.fn(),
             ref: null
         };
 
         // Mock Query
         this.mockFirestoreQuery = {
-            where: sinon.stub().returnsThis(),
-            select: sinon.stub().returnsThis(),
-            limit: sinon.stub().returnsThis(),
-            orderBy: sinon.stub().returnsThis(),
-            offset: sinon.stub().returnsThis(),
-            startAfter: sinon.stub().returnsThis(),
-            endBefore: sinon.stub().returnsThis(),
-            get: sinon.stub().resolves({ empty: true, size: 0, docs: [] }),
-            onSnapshot: sinon.stub(),
-            count: sinon.stub().returns({
-                get: sinon.stub().resolves({ data: () => ({ count: 0 }) })
+            where: vi.fn().mockReturnThis(),
+            select: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            orderBy: vi.fn().mockReturnThis(),
+            offset: vi.fn().mockReturnThis(),
+            startAfter: vi.fn().mockReturnThis(),
+            endBefore: vi.fn().mockReturnThis(),
+            get: vi.fn().mockResolvedValue({ empty: true, size: 0, docs: [] }),
+            onSnapshot: vi.fn(),
+            count: vi.fn().mockReturnValue({
+                get: vi.fn().mockResolvedValue({ data: () => ({ count: 0 }) })
             })
         };
 
         // Mock Collection Reference
         this.mockFirestoreCollection = {
-            doc: sinon.stub().returns(this.mockFirestoreDoc),
-            where: sinon.stub().returns(this.mockFirestoreQuery),
-            add: sinon.stub(),
-            get: sinon.stub().resolves({ empty: true, size: 0, docs: [] }),
-            onSnapshot: sinon.stub(),
-            count: sinon.stub().returns({
-                get: sinon.stub().resolves({ data: () => ({ count: 0 }) })
+            doc: vi.fn().mockReturnValue(this.mockFirestoreDoc),
+            where: vi.fn().mockReturnValue(this.mockFirestoreQuery),
+            add: vi.fn(),
+            get: vi.fn().mockResolvedValue({ empty: true, size: 0, docs: [] }),
+            onSnapshot: vi.fn(),
+            count: vi.fn().mockReturnValue({
+                get: vi.fn().mockResolvedValue({ data: () => ({ count: 0 }) })
             })
         };
 
+        const self = this;
+
         // Mock Firestore Database
         this.mockFirestore = {
-            collection: sinon.stub().callsFake((collectionPath) => {
-                const self = this;
+            collection: vi.fn().mockImplementation((collectionPath) => {
+                // Check for collection overrides first
+                if (self._collectionOverrides.has(collectionPath)) {
+                    return self._collectionOverrides.get(collectionPath);
+                }
+
                 const collectionMock = {
-                    ...this.mockFirestoreCollection,
-                    doc: sinon.stub().callsFake((docId) => {
+                    ...self.mockFirestoreCollection,
+                    doc: vi.fn().mockImplementation((docId) => {
                         const currentCollectionRegistry = self.testDocumentRegistry.get(collectionPath);
-                        const retrievedMockDoc = currentCollectionRegistry && currentCollectionRegistry.has(docId) 
+                        const retrievedMockDoc = currentCollectionRegistry && currentCollectionRegistry.has(docId)
                             ? currentCollectionRegistry.get(docId)
                             : { exists: false, data: () => null };
-                        
+
                         return {
-                            get: sinon.stub().resolves(retrievedMockDoc),
-                            set: sinon.stub().resolves(),
-                            update: sinon.stub().resolves(),
-                            delete: sinon.stub().resolves()
+                            get: vi.fn().mockResolvedValue(retrievedMockDoc),
+                            set: vi.fn().mockResolvedValue(undefined),
+                            update: vi.fn().mockResolvedValue(undefined),
+                            delete: vi.fn().mockResolvedValue(undefined)
                         };
                     })
                 };
                 return collectionMock;
             }),
-            batch: sinon.stub().returns(this.createMockBatch()),
-            runTransaction: sinon.stub().callsFake(async (updateFunction) => {
-                const transaction = this.createMockTransaction();
+            batch: vi.fn().mockImplementation(() => self.createMockBatch()),
+            runTransaction: vi.fn().mockImplementation(async (updateFunction) => {
+                const transaction = self.createMockTransaction();
                 return await updateFunction(transaction);
             }),
-            settings: sinon.stub()
+            settings: vi.fn()
         };
     }
 
     createMockBatch() {
         const batch = {
-            set: sinon.stub(),
-            update: sinon.stub(),
-            delete: sinon.stub(),
-            commit: sinon.stub().resolves()
+            set: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
+            commit: vi.fn().mockResolvedValue(undefined)
         };
-        
-        batch.set.returns(batch);
-        batch.update.returns(batch);
-        batch.delete.returns(batch);
-        
+
+        batch.set.mockReturnValue(batch);
+        batch.update.mockReturnValue(batch);
+        batch.delete.mockReturnValue(batch);
+
         return batch;
     }
 
     createMockTransaction() {
         const transaction = {
-            get: sinon.stub(),
-            set: sinon.stub(),
-            update: sinon.stub(),
-            delete: sinon.stub(),
-            where: sinon.stub().returns({
-                select: sinon.stub().returnsThis(),
-                limit: sinon.stub().returnsThis(),
-                get: sinon.stub().resolves({ empty: true, size: 0, docs: [] })
+            get: vi.fn(),
+            set: vi.fn(),
+            update: vi.fn(),
+            delete: vi.fn(),
+            where: vi.fn().mockReturnValue({
+                select: vi.fn().mockReturnThis(),
+                limit: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue({ empty: true, size: 0, docs: [] })
             })
         };
         return transaction;
     }
 
     setupCollectionData(collectionPath, documents = [], idField = 'id') {
-        const collectionRef = this.mockFirestore.collection.withArgs(collectionPath);
-        
         const mockDocs = documents.map(doc => ({
             id: doc[idField] || doc.id,
             data: () => doc,
@@ -150,12 +149,13 @@ class FirestoreMocks {
             forEach: (callback) => mockDocs.forEach(callback)
         };
 
-        collectionRef.returns({
+        const self = this;
+        const collectionObj = {
             ...this.mockFirestoreCollection,
-            get: sinon.stub().resolves(mockQuerySnapshot),
-            where: sinon.stub().returns({
+            get: vi.fn().mockResolvedValue(mockQuerySnapshot),
+            where: vi.fn().mockReturnValue({
                 ...this.mockFirestoreQuery,
-                get: sinon.stub().resolves(mockQuerySnapshot)
+                get: vi.fn().mockResolvedValue(mockQuerySnapshot)
             }),
             doc: (docId) => {
                 const doc = mockDocs.find(d => d.id === docId);
@@ -167,29 +167,30 @@ class FirestoreMocks {
                     exists: false,
                     data: () => null
                 };
-                
+
                 return {
-                    ...this.mockFirestoreDoc,
-                    get: sinon.stub().resolves(mockDoc),
-                    set: sinon.stub().resolves(),
-                    update: sinon.stub().resolves(),
-                    delete: sinon.stub().resolves()
+                    ...self.mockFirestoreDoc,
+                    get: vi.fn().mockResolvedValue(mockDoc),
+                    set: vi.fn().mockResolvedValue(undefined),
+                    update: vi.fn().mockResolvedValue(undefined),
+                    delete: vi.fn().mockResolvedValue(undefined)
                 };
             }
-        });
+        };
 
-        return collectionRef;
+        this._collectionOverrides.set(collectionPath, collectionObj);
+        return collectionObj;
     }
 
     setupDocumentRetrieval(collectionPath, docId, data = null) {
         if (!this.testDocumentRegistry) {
             this.testDocumentRegistry = new Map();
         }
-        
+
         if (!this.testDocumentRegistry.has(collectionPath)) {
             this.testDocumentRegistry.set(collectionPath, new Map());
         }
-        
+
         const collectionRegistry = this.testDocumentRegistry.get(collectionPath);
         const mockDoc = data ? {
             exists: true,
@@ -199,7 +200,7 @@ class FirestoreMocks {
             exists: false,
             data: () => null
         };
-        
+
         collectionRegistry.set(docId, mockDoc);
     }
 
@@ -218,22 +219,22 @@ class FirestoreMocks {
             forEach: (callback) => mockDocs.forEach(callback)
         };
 
-        const collectionRef = this.mockFirestore.collection.withArgs(collectionPath);
-        collectionRef.returns({
+        const collectionObj = {
             ...this.mockFirestoreCollection,
-            where: sinon.stub().returns({
+            where: vi.fn().mockReturnValue({
                 ...this.mockFirestoreQuery,
-                select: sinon.stub().returnsThis(),
-                limit: sinon.stub().returnsThis(),
-                get: sinon.stub().resolves(mockQuerySnapshot)
+                select: vi.fn().mockReturnThis(),
+                limit: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue(mockQuerySnapshot)
             })
-        });
+        };
 
+        this._collectionOverrides.set(collectionPath, collectionObj);
         return mockQuerySnapshot;
     }
 
     setupTransaction(transactionHandler) {
-        this.mockFirestore.runTransaction.callsFake(async (updateFunction) => {
+        this.mockFirestore.runTransaction.mockImplementation(async (updateFunction) => {
             const transaction = this.createMockTransaction();
             return await updateFunction(transaction);
         });
@@ -241,19 +242,20 @@ class FirestoreMocks {
 
     setupBatch(batchResults = { success: true, errorCount: 0 }) {
         const batch = this.createMockBatch();
-        batch.commit.resolves(batchResults);
-        this.mockFirestore.batch.returns(batch);
+        batch.commit.mockResolvedValue(batchResults);
+        this.mockFirestore.batch.mockReturnValue(batch);
         return batch;
     }
 
     setupCount(collectionPath, count = 0) {
-        const collectionRef = this.mockFirestore.collection.withArgs(collectionPath);
-        collectionRef.returns({
+        const collectionObj = {
             ...this.mockFirestoreCollection,
-            count: sinon.stub().returns({
-                get: sinon.stub().resolves({ data: () => ({ count }) })
+            count: vi.fn().mockReturnValue({
+                get: vi.fn().mockResolvedValue({ data: () => ({ count }) })
             })
-        });
+        };
+
+        this._collectionOverrides.set(collectionPath, collectionObj);
     }
 
     getMocks() {
