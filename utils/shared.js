@@ -569,27 +569,29 @@ const decodingJWT = (token) => {
  * @returns Promise<false | object> Returns false if validation fails, otherwise returns an object with siteDetails, email, and role boolean values
  */
 const SSOValidation = async (appName, idToken) => {
-  const appUserGroupsObj = {
-    biospecimen: { biospecimenUser: "isBiospecimenUser", bptlUser: "isBPTLUser" },
-    dashboard: {
-      siteManagerUser: "isSiteManagerUser",
-      helpDeskUser: "isHelpDeskUser",
-      ehrUploadUser: "isEHRUploadUser",
-    },
-  };
-  const userGroupsObj = appUserGroupsObj[appName];
-  if (!userGroupsObj || !idToken || idToken.trim() === "") return false;
-
-  const { validateMultiTenantIDToken, getSiteDetailsWithSignInProvider } = require("./firestore");
-  const validatedGroupSet = new Set();
-  const decodedJWT = decodingJWT(idToken);
-  if (!decodedJWT || !decodedJWT.firebase || !decodedJWT.firebase.tenant) {
-    console.error("SSOValidation - Invalid decoded JWT");
-    return false;
-  }
-
-  const tenant = decodedJWT.firebase.tenant;
+  
   try {
+    const appUserGroupsObj = {
+        biospecimen: { biospecimenUser: "isBiospecimenUser", bptlUser: "isBPTLUser" },
+        dashboard: {
+            siteManagerUser: "isSiteManagerUser",
+            helpDeskUser: "isHelpDeskUser",
+            ehrUploadUser: "isEHRUploadUser",
+        },
+    };
+    const userGroupsObj = appUserGroupsObj[appName];
+    if (!userGroupsObj || !idToken || idToken.trim() === "") return false;
+
+    const { validateMultiTenantIDToken, getSiteDetailsWithSignInProvider } = require("./firestore");
+    const validatedGroupSet = new Set();
+    const decodedJWT = decodingJWT(idToken);
+    if (!decodedJWT || !decodedJWT.firebase || !decodedJWT.firebase.tenant) {
+        console.error("SSOValidation - Invalid decoded JWT");
+        return false;
+    }
+
+    const tenant = decodedJWT.firebase.tenant;
+
     const decodedToken = await validateMultiTenantIDToken(idToken, tenant);
     const email = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["email"]];
     const allGroups = decodedToken.firebase.sign_in_attributes[SSOConfig[tenant]["group"]]?.toString();

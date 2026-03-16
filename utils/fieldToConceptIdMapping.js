@@ -238,6 +238,7 @@ module.exports = {
     pkgLostDateTime: 980891990,
     collectionDateTimeStamp: 678166505,
     collectionCardFlag: 137401245,
+    collectionDateMissingInvalid: 276082785,
     collectionAddtnlNotes: 260133861,
     unexpectedCollectionDateConfirm: 858101893,
     collectionDetails: 173836415,
