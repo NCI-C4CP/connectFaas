@@ -3788,7 +3788,7 @@ const storeKitReceipt = async (pkg) => {
             collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2, uniqueKitID,
             healthCareProvider, preferredName, firstName, mouthwashSurveyCompletionStatus,
             collectionCupId, tubeIsCollected, yes, no, receivedDateTime, 
-            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, unexpectedCollectionDateConfirm, received, shipped,
+            collectionAddtnlNotes, collectionDateTimeStamp, collectionCardFlag, collectionDateMissingInvalid, received, shipped,
             pkgReceiptConditions, kitPkgComments, baselineMouthwashCollected, allBaselineSamplesCollected,
             biospecimenHome, mouthwashCollectionSetting, baselineMouthwashCollectedTime, shippedDateTime
         } = fieldMapping;
@@ -3873,11 +3873,8 @@ const storeKitReceipt = async (pkg) => {
             /**
              * Check that the collection date is not later than the date received or earlier than the date shipped.
              * If either is true, return an error.
-             * This check is here as backend hardening
-             * but should no longer be the primary workflow, as the front end now
-             * sets the unexpectedCollectionDateConfirm flag
              */
-            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime]) && pkg[unexpectedCollectionDateConfirm] !== yes) {
+            if ((pkg[collectionDateTimeStamp] > pkg[receivedDateTime] || pkg[collectionDateTimeStamp] < kitData[shippedDateTime])) {
                 toReturn = { status: 'Check collection date, possible invalid entry' };
                 return;
             }
@@ -3912,14 +3909,12 @@ const storeKitReceipt = async (pkg) => {
 
             const kitDocUpdates = {
                 [collectionCardFlag]: pkg[collectionCardFlag] === true ? yes : no,
+                [collectionDateMissingInvalid]: pkg[collectionDateMissingInvalid] === true ? yes : no,
                 [kitStatus]: received,
                 [pkgReceiptConditions]: processPackageConditions(pkg[pkgReceiptConditions]),
                 [kitPkgComments]: pkg[kitPkgComments],
                 [receivedDateTime]: pkg[receivedDateTime]
             };
-            if(pkg[unexpectedCollectionDateConfirm]) {
-                kitDocUpdates[unexpectedCollectionDateConfirm] = pkg[unexpectedCollectionDateConfirm];
-            }
 
             transaction.update(kitDoc.ref, kitDocUpdates);
 
