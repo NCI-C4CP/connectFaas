@@ -119,18 +119,20 @@ class FirebaseMockFactory {
  */
 function createFirebaseMocks(options = {}) {
     const factory = new FirebaseMockFactory();
+    let restoreModuleMocks = null;
+    let consoleMocks = null;
     
     // Set up environment
     factory.setupEnvironment();
     
     // Set up module mocks (optional)
     if (options.setupModuleMocks !== false) {
-        factory.setupModuleMocks();
+        restoreModuleMocks = factory.setupModuleMocks();
     }
     
     // Set up console mocks (optional)
     if (options.setupConsole) {
-        factory.setupConsoleMocks();
+        consoleMocks = factory.setupConsoleMocks();
     }
     
     // Enable per-test-file isolation if requested
@@ -147,6 +149,12 @@ function createFirebaseMocks(options = {}) {
         mocks: factory.getMocks(),
         helper: factory.createTestHelper(),
         restore: () => {
+            if (consoleMocks && typeof consoleMocks.restore === 'function') {
+                consoleMocks.restore();
+            }
+            if (typeof restoreModuleMocks === 'function') {
+                restoreModuleMocks();
+            }
             factory.reset();
         }
     };

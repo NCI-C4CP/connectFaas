@@ -1,73 +1,126 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
+/**
+ * USPS Unit Tests
+ *
+ * Strategy: Since vi.mock() does not intercept CJS require(), we use
+ * require.cache manipulation to install vi.fn()-based mocks for the
+ * dependencies BEFORE requiring the module under test. The usps module
+ * is re-required in each beforeEach to pick up fresh mocks.
+ */
 
-const sharedModule = require('../../utils/shared');
-const firestoreModule = require('../../utils/firestore');
+// --- Step 1: Ensure dependency modules are cached ---
+require('../../utils/shared');
+require('../../utils/firestore');
 
+// --- Step 2: Build mock objects with vi.fn() ---
+const sharedMock = {
+    getSecret: vi.fn(),
+    logIPAddress: vi.fn(),
+    setHeaders: vi.fn(),
+    delay: vi.fn().mockResolvedValue(undefined),
+    backoffMs: vi.fn().mockReturnValue(0),
+    uspsUrl: { auth: 'https://apis.usps.com/oauth2/v3/token' },
+    getResponseJSON: (msg, code) => ({ message: msg, code }),
+    safeJSONParse: (str) => {
+        try { return JSON.parse(str); } catch { return null; }
+    },
+    parseResponseJson: async (res) => {
+        try {
+            const text = await res.text();
+            if (!text) return null;
+            return JSON.parse(text);
+        } catch { return null; }
+    },
+};
+
+const createFirestoreMock = () => {
+    const mockDocRef = {
+        get: vi.fn(),
+        set: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDocRef.ref = mockDocRef;
+
+    const mockQuerySnapshot = {
+        empty: false,
+        docs: [mockDocRef],
+    };
+
+    const mockCollection = {
+        doc: vi.fn().mockReturnValue(mockDocRef),
+        where: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        get: vi.fn().mockResolvedValue(mockQuerySnapshot),
+        onSnapshot: vi.fn(),
+        count: vi.fn().mockReturnValue({
+            get: vi.fn().mockResolvedValue({ data: () => ({ count: 0 }) }),
+        }),
+    };
+
+    return {
+        db: {
+            collection: vi.fn().mockReturnValue(mockCollection),
+        },
+    };
+};
+
+let firestoreMock = createFirestoreMock();
+
+// --- Step 3: Resolve paths once ---
+const sharedPath = require.resolve('../../utils/shared');
+const firestorePath = require.resolve('../../utils/firestore');
+const uspsPath = require.resolve('../../utils/usps');
+
+// Save original exports for cleanup
+const origSharedExports = require.cache[sharedPath].exports;
+const origFirestoreExports = require.cache[firestorePath].exports;
+
+// --- Tests ---
 describe('USPS Unit Tests', () => {
     let uspsModule;
     let fetchStub;
-    let clock;
-    
+    let originalFetch;
+    let originalAbortController;
+
     const validAddressPayload = {
         streetAddress: '123 Main St',
         city: 'Anytown',
         state: 'NY',
-        zipCode: '12345'
+        zipCode: '12345',
     };
 
     const mockToken = 'mock-access-token';
-    const mockExpiresIn = 28799; // ~8 hours in seconds
+    const mockExpiresIn = 28799;
 
-    // Helper to create mock response matching what utils/shared.js expects
     const mockResponse = (data, status = 200, ok = true) => ({
         ok,
         status,
         json: async () => data,
-        text: async () => JSON.stringify(data)
+        text: async () => JSON.stringify(data),
     });
 
     beforeEach(() => {
-        // Clear cache and re-require with fresh stubs
-        delete require.cache[require.resolve('../../utils/usps')];
-        
-        // Stub Shared Dependencies
-        sinon.stub(sharedModule, 'getSecret');
-        sinon.stub(sharedModule, 'logIPAddress');
-        sinon.stub(sharedModule, 'setHeaders');
-        sinon.stub(sharedModule, 'delay').resolves();
-        sinon.stub(sharedModule, 'backoffMs').returns(0);
+        originalFetch = global.fetch;
+        originalAbortController = global.AbortController;
 
-        // Stub Firestore
-        const mockDocRef = {
-            get: sinon.stub(),
-            set: sinon.stub().resolves(),
-        };
-        mockDocRef.ref = mockDocRef; // Self-reference for Firestore
+        // Reset vi.fn() mocks
+        sharedMock.getSecret.mockReset();
+        sharedMock.logIPAddress.mockReset();
+        sharedMock.setHeaders.mockReset();
+        sharedMock.delay.mockReset().mockResolvedValue(undefined);
+        sharedMock.backoffMs.mockReset().mockReturnValue(0);
 
-        const mockQuerySnapshot = {
-            empty: false,
-            docs: [mockDocRef]
-        };
+        // Reset firestore mock
+        firestoreMock = createFirestoreMock();
 
-        const mockCollection = {
-            doc: sinon.stub().returns(mockDocRef),
-            where: sinon.stub().returnsThis(),
-            select: sinon.stub().returnsThis(),
-            limit: sinon.stub().returnsThis(),
-            get: sinon.stub().resolves(mockQuerySnapshot),
-            onSnapshot: sinon.stub(),
-            count: sinon.stub().returns({
-                get: sinon.stub().resolves({ data: () => ({ count: 0 }) })
-            })
-        };
+        // Install mocks into require.cache
+        require.cache[sharedPath].exports = sharedMock;
+        require.cache[firestorePath].exports = firestoreMock;
 
-        sinon.stub(firestoreModule, 'db').value({
-            collection: sinon.stub().returns(mockCollection)
-        });
+        // Clear usps module cache so it re-requires mocked deps
+        delete require.cache[uspsPath];
 
         // Mock global fetch
-        fetchStub = sinon.stub();
+        fetchStub = vi.fn();
         global.fetch = fetchStub;
         global.AbortController = class {
             constructor() {
@@ -78,119 +131,137 @@ describe('USPS Unit Tests', () => {
             }
         };
 
-        // Setup secrets resolution
+        // Setup env vars
         process.env.USPS_CLIENT_ID = 'usps-client-id';
         process.env.USPS_CLIENT_SECRET = 'usps-client-secret';
-        
-        sharedModule.getSecret.withArgs(process.env.USPS_CLIENT_ID).resolves('mock-client-id');
-        sharedModule.getSecret.withArgs(process.env.USPS_CLIENT_SECRET).resolves('mock-client-secret');
 
-        // Setup clock
-        clock = sinon.useFakeTimers(Date.now());
+        sharedMock.getSecret.mockImplementation((key) => {
+            if (key === 'usps-client-id') return Promise.resolve('mock-client-id');
+            if (key === 'usps-client-secret') return Promise.resolve('mock-client-secret');
+            return Promise.resolve(null);
+        });
 
-        // Now require the module under test
+        // Setup fake timers
+        vi.useFakeTimers({ now: Date.now() });
+
+        // Now require the module under test (picks up mocked deps)
         uspsModule = require('../../utils/usps');
     });
 
     afterEach(() => {
-        sinon.restore();
-        clock.restore();
-        delete global.fetch;
-        delete global.AbortController;
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        if (originalFetch === undefined) {
+            delete global.fetch;
+        } else {
+            global.fetch = originalFetch;
+        }
+        if (originalAbortController === undefined) {
+            delete global.AbortController;
+        } else {
+            global.AbortController = originalAbortController;
+        }
         delete process.env.USPS_CLIENT_ID;
         delete process.env.USPS_CLIENT_SECRET;
+    });
+
+    afterAll(() => {
+        // Restore original module exports
+        require.cache[sharedPath].exports = origSharedExports;
+        require.cache[firestorePath].exports = origFirestoreExports;
+        delete require.cache[uspsPath];
     });
 
     describe('Address Param Validation', () => {
         it('should validate all required fields successfully', () => {
             const result = uspsModule.validateAddressParams(validAddressPayload);
-            
-            expect(result.errors).to.be.empty;
-            expect(result.params.streetAddress).to.equal('123 Main St');
-            expect(result.params.city).to.equal('Anytown');
-            expect(result.params.state).to.equal('NY');
-            expect(result.params.ZIPCode).to.equal('12345');
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.streetAddress).toBe('123 Main St');
+            expect(result.params.city).toBe('Anytown');
+            expect(result.params.state).toBe('NY');
+            expect(result.params.ZIPCode).toBe('12345');
         });
 
         it('should handle optional secondaryAddress field', () => {
             const payload = { ...validAddressPayload, secondaryAddress: 'Apt 4B' };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.be.empty;
-            expect(result.params.secondaryAddress).to.equal('Apt 4B');
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.secondaryAddress).toBe('Apt 4B');
         });
 
         it('should convert lowercase state to uppercase', () => {
             const payload = { ...validAddressPayload, state: 'ny' };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.be.empty;
-            expect(result.params.state).to.equal('NY');
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.state).toBe('NY');
         });
 
         it('should handle numeric state input', () => {
             const payload = { ...validAddressPayload, state: 12 };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('state');
-            expect(result.params.state).to.be.undefined;
+
+            expect(result.errors).toContain('state');
+            expect(result.params.state).toBeUndefined();
         });
 
         it('should handle numeric zipCode input', () => {
             const payload = { ...validAddressPayload, zipCode: 12345 };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.be.empty;
-            expect(result.params.ZIPCode).to.equal('12345');
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.ZIPCode).toBe('12345');
         });
 
         it('should reject null/undefined state without throwing', () => {
             const payload = { ...validAddressPayload, state: null };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('state');
-            expect(result.params.state).to.be.undefined;
+
+            expect(result.errors).toContain('state');
+            expect(result.params.state).toBeUndefined();
         });
 
         it('should reject null/undefined zipCode without throwing', () => {
             const payload = { ...validAddressPayload, zipCode: null };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('zipCode');
-            expect(result.params.ZIPCode).to.be.undefined;
+
+            expect(result.errors).toContain('zipCode');
+            expect(result.params.ZIPCode).toBeUndefined();
         });
 
         it('should reject undefined state without throwing', () => {
             const payload = { ...validAddressPayload };
             delete payload.state;
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('state');
-            expect(result.params.state).to.be.undefined;
+
+            expect(result.errors).toContain('state');
+            expect(result.params.state).toBeUndefined();
         });
 
         it('should reject state with invalid length', () => {
             const payload = { ...validAddressPayload, state: 'NYC' };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('state');
-            expect(result.params.state).to.be.undefined;
+
+            expect(result.errors).toContain('state');
+            expect(result.params.state).toBeUndefined();
         });
 
         it('should reject zipCode with invalid length', () => {
             const payload = { ...validAddressPayload, zipCode: '1234' };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('zipCode');
-            expect(result.params.ZIPCode).to.be.undefined;
+
+            expect(result.errors).toContain('zipCode');
+            expect(result.params.ZIPCode).toBeUndefined();
         });
 
         it('should reject zipCode with non-digits', () => {
             const payload = { ...validAddressPayload, zipCode: '1234A' };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.include('zipCode');
-            expect(result.params.ZIPCode).to.be.undefined;
+
+            expect(result.errors).toContain('zipCode');
+            expect(result.params.ZIPCode).toBeUndefined();
         });
 
         it('should trim whitespace from all fields', () => {
@@ -199,236 +270,232 @@ describe('USPS Unit Tests', () => {
                 secondaryAddress: '  Apt 4B  ',
                 city: '  Anytown  ',
                 state: '  ny  ',
-                zipCode: '  12345  '
+                zipCode: '  12345  ',
             };
             const result = uspsModule.validateAddressParams(payload);
-            
-            expect(result.errors).to.be.empty;
-            expect(result.params.streetAddress).to.equal('123 Main St');
-            expect(result.params.secondaryAddress).to.equal('Apt 4B');
-            expect(result.params.city).to.equal('Anytown');
-            expect(result.params.state).to.equal('NY');
-            expect(result.params.ZIPCode).to.equal('12345');
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.streetAddress).toBe('123 Main St');
+            expect(result.params.secondaryAddress).toBe('Apt 4B');
+            expect(result.params.city).toBe('Anytown');
+            expect(result.params.state).toBe('NY');
+            expect(result.params.ZIPCode).toBe('12345');
         });
 
         it('should return all missing required fields', () => {
             const result = uspsModule.validateAddressParams({});
-            
-            expect(result.errors).to.have.lengthOf(4);
-            expect(result.errors).to.include.members(['streetAddress', 'city', 'state', 'zipCode']);
+
+            expect(result.errors).toHaveLength(4);
+            expect(result.errors).toEqual(expect.arrayContaining(['streetAddress', 'city', 'state', 'zipCode']));
         });
 
         it('should handle string JSON input', () => {
             const result = uspsModule.validateAddressParams(JSON.stringify(validAddressPayload));
-            
-            expect(result.errors).to.be.empty;
-            expect(result.params.streetAddress).to.equal('123 Main St');
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.streetAddress).toBe('123 Main St');
         });
 
         it('should handle null payload', () => {
             const result = uspsModule.validateAddressParams(null);
-            
-            expect(result.errors).to.have.lengthOf(1);
-            expect(result.errors[0]).to.include('Invalid or missing all fields');
+
+            expect(result.errors).toHaveLength(1);
+            expect(result.errors[0]).toContain('Invalid or missing all fields');
         });
 
         it('should handle non-object payload', () => {
             const result = uspsModule.validateAddressParams('invalid');
-            
-            expect(result.errors).to.have.lengthOf(1);
-            expect(result.errors[0]).to.include('Invalid or missing all fields');
+
+            expect(result.errors).toHaveLength(1);
+            expect(result.errors[0]).toContain('Invalid or missing all fields');
         });
     });
 
     describe('Parameter Validation - Integration Tests', () => {
         it('should return error for missing body', async () => {
-            const req = { method: 'POST' }; 
+            const req = { method: 'POST' };
             const res = {
-                status: sinon.stub().returnsThis(),
-                json: sinon.stub()
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
             };
 
             await uspsModule.addressValidation(req, res);
 
-            expect(res.status.calledWith(400)).to.be.true;
-            expect(res.json.firstCall.args[0].message).to.equal('Bad Request');
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json.mock.calls[0][0].message).toBe('Bad Request');
         });
 
         it('should return error for invalid fields', async () => {
-            const req = { 
-                method: 'POST', 
-                body: { invalidField: 'value' } 
+            const req = {
+                method: 'POST',
+                body: { invalidField: 'value' },
             };
             const res = {
-                status: sinon.stub().returnsThis(),
-                json: sinon.stub()
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
             };
 
             await uspsModule.addressValidation(req, res);
 
-            expect(res.status.calledWith(400)).to.be.true;
-            expect(res.json.firstCall.args[0].message).to.include('Invalid or missing fields');
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json.mock.calls[0][0].message).toContain('Invalid or missing fields');
         });
 
         it('should parse string body correctly', async () => {
-            const req = { 
-                method: 'POST', 
-                body: JSON.stringify(validAddressPayload) 
+            const req = {
+                method: 'POST',
+                body: JSON.stringify(validAddressPayload),
             };
             const res = {
-                status: sinon.stub().returnsThis(),
-                json: sinon.stub()
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
             };
 
-            fetchStub.onFirstCall().resolves(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
-            fetchStub.onSecondCall().resolves(mockResponse({ address: 'validated' }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ address: 'validated' }));
 
             await uspsModule.addressValidation(req, res);
 
-            expect(res.status.calledWith(200)).to.be.true;
+            expect(res.status).toHaveBeenCalledWith(200);
         });
     });
 
     describe('Token Management & Authentication', () => {
         it('should fetch new token when cache is empty', async () => {
             const req = { method: 'POST', body: validAddressPayload };
-            const res = { status: sinon.stub().returnsThis(), json: sinon.stub() };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
             // Mock Firestore empty cache result
-            firestoreModule.db.collection().get.resolves({ empty: true });
+            firestoreMock.db.collection().get.mockResolvedValue({ empty: true });
 
             // Mock Auth Call
-            fetchStub.onFirstCall().resolves(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
 
             // Mock Address Call
-            fetchStub.onSecondCall().resolves(mockResponse({ result: 'success' }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ result: 'success' }));
 
             await uspsModule.addressValidation(req, res);
 
             // Verify Auth Call
-            const authCall = fetchStub.firstCall;
-            const body = authCall.args[1].body;
-            expect(body.get('grant_type')).to.equal('client_credentials');
-            expect(body.get('client_id')).to.equal('mock-client-id');
+            const authCall = fetchStub.mock.calls[0];
+            const body = authCall[1].body;
+            expect(body.get('grant_type')).toBe('client_credentials');
+            expect(body.get('client_id')).toBe('mock-client-id');
         });
 
         it('should use cached token from Firestore if available', async () => {
             const req = { method: 'POST', body: validAddressPayload };
-            const res = { status: sinon.stub().returnsThis(), json: sinon.stub() };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
             const mockDoc = {
                 exists: true,
                 data: () => ({
                     usps: {
                         token: 'firestore-token',
-                        expiresAt: Date.now() + 1000000
-                    }
+                        expiresAt: Date.now() + 1000000,
+                    },
                 }),
-                ref: { set: sinon.stub().resolves() }
+                ref: { set: vi.fn().mockResolvedValue(undefined) },
             };
-            mockDoc.ref.get = sinon.stub().resolves(mockDoc); // ensure get returns the doc
-            
-            firestoreModule.db.collection().get.resolves({
-                empty: false,
-                docs: [mockDoc]
-            });
-            // Also need to stub the .get() on the docRef returned by getAppSettingsDocAndSnapshot
-            mockDoc.get = sinon.stub().resolves(mockDoc); 
+            mockDoc.ref.get = vi.fn().mockResolvedValue(mockDoc);
+            mockDoc.get = vi.fn().mockResolvedValue(mockDoc);
 
+            firestoreMock.db.collection().get.mockResolvedValue({
+                empty: false,
+                docs: [mockDoc],
+            });
 
             // Mock Address Call directly (no auth call expected)
-            fetchStub.resolves(mockResponse({ result: 'success' }));
+            fetchStub.mockResolvedValue(mockResponse({ result: 'success' }));
 
             await uspsModule.addressValidation(req, res);
 
             // Expect only 1 call for address validation (no auth call due to cached token)
-            expect(fetchStub.callCount).to.equal(1);
-            expect(fetchStub.firstCall.args[1].headers.Authorization).to.equal('Bearer firestore-token');
+            expect(fetchStub.mock.calls.length).toBe(1);
+            expect(fetchStub.mock.calls[0][1].headers.Authorization).toBe('Bearer firestore-token');
         });
 
         it('should refresh token on 401 Unauthorized', async () => {
             const req = { method: 'POST', body: validAddressPayload };
-            const res = { status: sinon.stub().returnsThis(), json: sinon.stub() };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
             // Initial Auth Call (Success)
-            fetchStub.onFirstCall().resolves(mockResponse({ access_token: 'expired-token', expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: 'expired-token', expires_in: mockExpiresIn }));
 
             // Address Call (Fail with 401)
-            fetchStub.onSecondCall().resolves(mockResponse({ error: 'Unauthorized' }, 401, false));
+            fetchStub.mockResolvedValueOnce(mockResponse({ error: 'Unauthorized' }, 401, false));
 
             // Auth Refresh Call (Success)
-            fetchStub.onThirdCall().resolves(mockResponse({ access_token: 'new-token', expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: 'new-token', expires_in: mockExpiresIn }));
 
             // Retry Address Call (Success)
-            fetchStub.onCall(3).resolves(mockResponse({ result: 'success' }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ result: 'success' }));
 
             await uspsModule.addressValidation(req, res);
 
-            expect(fetchStub.callCount).to.equal(4);
+            expect(fetchStub.mock.calls.length).toBe(4);
             // 3rd call (index 2) should be the auth refresh
-            expect(fetchStub.getCall(2).args[0]).to.equal(sharedModule.uspsUrl.auth);
+            expect(fetchStub.mock.calls[2][0]).toBe(sharedMock.uspsUrl.auth);
             // 4th call (index 3) should use the new token
-            expect(fetchStub.getCall(3).args[1].headers.Authorization).to.equal('Bearer new-token');
+            expect(fetchStub.mock.calls[3][1].headers.Authorization).toBe('Bearer new-token');
         });
     });
 
     describe('Error Handling & Retries', () => {
         it('should retry on network error', async () => {
             const req = { method: 'POST', body: validAddressPayload };
-            const res = { status: sinon.stub().returnsThis(), json: sinon.stub() };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
             // Auth Success
-            fetchStub.onFirstCall().resolves(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
 
             // Address Network Error
-            fetchStub.onSecondCall().rejects(new Error('Network Error'));
+            fetchStub.mockRejectedValueOnce(new Error('Network Error'));
 
             // Retry Address Success
-            fetchStub.onThirdCall().resolves(mockResponse({ result: 'success' }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ result: 'success' }));
 
             await uspsModule.addressValidation(req, res);
 
-            expect(sharedModule.delay.called).to.be.true;
-            expect(res.status.calledWith(200)).to.be.true;
+            expect(sharedMock.delay).toHaveBeenCalled();
+            expect(res.status).toHaveBeenCalledWith(200);
         });
 
         it('should fail gracefully after exhausting retries', async () => {
             const req = { method: 'POST', body: validAddressPayload };
-            const res = { status: sinon.stub().returnsThis(), json: sinon.stub() };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
-            fetchStub.onFirstCall().resolves(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
 
             // Fail all subsequent calls
-            fetchStub.callsFake(async (url) => {
-                // If it's an auth URL (string check), return success
+            fetchStub.mockImplementation(async (url) => {
                 if (typeof url === 'string' && url.includes('oauth')) {
                     return mockResponse({ access_token: mockToken });
                 }
-                // Otherwise (address URL), fail
                 throw new Error('Persistent Error');
             });
 
             await uspsModule.addressValidation(req, res);
 
-            expect(res.status.calledWith(502)).to.be.true;
-            expect(res.json.firstCall.args[0].message).to.include('temporarily unavailable');
+            expect(res.status).toHaveBeenCalledWith(502);
+            expect(res.json.mock.calls[0][0].message).toContain('temporarily unavailable');
         });
 
         it('should handle non-retryable 4xx errors immediately', async () => {
             const req = { method: 'POST', body: validAddressPayload };
-            const res = { status: sinon.stub().returnsThis(), json: sinon.stub() };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
 
             // Mock Auth Success
-            fetchStub.onFirstCall().resolves(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
 
             // Mock 422 Unprocessable Entity
-            fetchStub.onSecondCall().resolves(mockResponse({ error: 'Invalid Address' }, 422, false));
+            fetchStub.mockResolvedValueOnce(mockResponse({ error: 'Invalid Address' }, 422, false));
 
             await uspsModule.addressValidation(req, res);
 
-            expect(fetchStub.callCount).to.equal(2); 
-            expect(res.status.calledWith(400)).to.be.true;
-            expect(res.json.firstCall.args[0].message).to.include('Invalid Address');
+            expect(fetchStub.mock.calls.length).toBe(2);
+            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.json.mock.calls[0][0].message).toContain('Invalid Address');
         });
     });
 });

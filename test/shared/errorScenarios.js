@@ -3,9 +3,6 @@
  * Provides comprehensive error testing patterns and scenarios
  */
 
-const sinon = require('sinon');
-const { expect } = require('chai');
-
 class ErrorScenarios {
     constructor() {
         this.errorTypes = {
@@ -152,19 +149,19 @@ class ErrorScenarios {
      * Test helper to verify error properties
      */
     verifyError(error, expectedType, expectedMessage, expectedDetails = {}) {
-        expect(error).to.be.an.instanceof(Error);
-        expect(error.name).to.equal(expectedType);
-        expect(error.message).to.equal(expectedMessage);
-        
+        expect(error).toBeInstanceOf(Error);
+        expect(error.name).toBe(expectedType);
+        expect(error.message).toBe(expectedMessage);
+
         if (expectedDetails.code) {
-            expect(error.code).to.equal(expectedDetails.code);
+            expect(error.code).toBe(expectedDetails.code);
         }
-        
+
         if (expectedDetails.statusCode) {
-            expect(error.statusCode).to.equal(expectedDetails.statusCode);
+            expect(error.statusCode).toBe(expectedDetails.statusCode);
         }
-        
-        expect(error.timestamp).to.be.a('string');
+
+        expect(error.timestamp).toBeTypeOf('string');
     }
 
     /**
@@ -290,16 +287,16 @@ class ErrorScenarios {
                 
                 switch (operation) {
                     case 'get':
-                        mocks.firestore.collection().doc().get.rejects(error);
+                        mocks.firestore.collection().doc().get.mockRejectedValue(error);
                         break;
                     case 'set':
-                        mocks.firestore.collection().doc().set.rejects(error);
+                        mocks.firestore.collection().doc().set.mockRejectedValue(error);
                         break;
                     case 'update':
-                        mocks.firestore.collection().doc().update.rejects(error);
+                        mocks.firestore.collection().doc().update.mockRejectedValue(error);
                         break;
                     case 'delete':
-                        mocks.firestore.collection().doc().delete.rejects(error);
+                        mocks.firestore.collection().doc().delete.mockRejectedValue(error);
                         break;
                     default:
                         throw new Error(`Unknown operation: ${operation}`);
@@ -312,7 +309,7 @@ class ErrorScenarios {
                     throw new Error(`Unknown error type: ${errorType}`);
                 }
                 
-                mocks.auth[operation].rejects(error);
+                mocks.auth[operation].mockRejectedValue(error);
             },
             
             mockStorageError: (operation, errorType) => {
@@ -323,10 +320,10 @@ class ErrorScenarios {
                 
                 switch (operation) {
                     case 'download':
-                        mocks.storage.bucket().file().download.rejects(error);
+                        mocks.storage.bucket().file().download.mockRejectedValue(error);
                         break;
                     case 'upload':
-                        mocks.storage.bucket().upload.rejects(error);
+                        mocks.storage.bucket().upload.mockRejectedValue(error);
                         break;
                     default:
                         throw new Error(`Unknown operation: ${operation}`);
