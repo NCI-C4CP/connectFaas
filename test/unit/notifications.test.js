@@ -1,23 +1,62 @@
-const { expect } = require("chai");
-const sinon = require("sinon");
-const { SmsBatchSender } = require("../../utils/notifications");
+require("../../utils/shared");
+require("../../utils/firestore");
 
-const sharedModule = require("../../utils/shared");
-const firestoreModule = require("../../utils/firestore");
+const sharedMock = {
+  getResponseJSON: vi.fn((message, code) => ({ message, code })),
+  validEmailFormat: /^[^@\s]+@[^@\s]+\.[^@\s]+$/,
+  getTemplateForEmailLink: vi.fn().mockReturnValue("<p>email body</p>"),
+  getSecret: vi.fn(),
+  parseResponseJson: vi.fn(),
+  safeJSONParse: vi.fn((str) => JSON.parse(str)),
+  setHeadersDomainRestricted: vi.fn(),
+  setHeaders: vi.fn(),
+  logIPAddress: vi.fn(),
+  redactEmailLoginInfo: vi.fn(),
+  redactPhoneLoginInfo: vi.fn(),
+  nihMailbox: "noreply@example.com",
+  cidToLangMapper: {},
+  unsubscribeTextObj: {},
+  getAdjustedTime: vi.fn(),
+  parseRequestBody: (body) => {
+    if (!body) return {};
+    const parsed = typeof body === "string" ? JSON.parse(body) : body;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  },
+  delay: vi.fn().mockResolvedValue(undefined),
+};
+
+const firestoreMock = {
+  generateSignInWithEmailLink: vi.fn(),
+  getNotificationSpecById: vi.fn(),
+  getNotificationSpecByCategoryAndAttempt: vi.fn(),
+  getNotificationSpecsByScheduleOncePerDay: vi.fn(),
+  saveNotificationBatch: vi.fn(),
+  storeNotification: vi.fn(),
+  checkIsNotificationSent: vi.fn(),
+  updateSmsPermission: vi.fn(),
+};
+
+const sharedPath = require.resolve("../../utils/shared");
+const firestorePath = require.resolve("../../utils/firestore");
+const notificationsPath = require.resolve("../../utils/notifications");
+
+const origSharedExports = require.cache[sharedPath].exports;
+const origFirestoreExports = require.cache[firestorePath].exports;
+
+const { SmsBatchSender } = require("../../utils/notifications");
 
 describe("Notifications Unit Tests", () => {
   let notificationsModule;
+  let originalFetch;
+  let fetchStub;
 
   const createResponseMock = () => ({
-    status: sinon.stub().returnsThis(),
-    json: sinon.stub().returnsThis(),
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
   });
 
-  const createFetchResponse = ({
-    ok = true,
-    status = 200,
-    headers = {},
-  } = {}) => ({
+  const createFetchResponse = ({ ok = true, status = 200, headers = {} } = {}) => ({
     ok,
     status,
     headers: {
@@ -25,40 +64,64 @@ describe("Notifications Unit Tests", () => {
     },
   });
 
-  beforeEach(() => {
-    delete require.cache[require.resolve("../../utils/notifications")];
+  const mockGraphSecretLookups = () => {
+    sharedMock.getSecret.mockImplementation((key) => {
+      if (key === process.env.APP_REGISTRATION_CLIENT_ID) return Promise.resolve("client-id");
+      if (key === process.env.APP_REGISTRATION_CLIENT_SECRET) return Promise.resolve("client-secret");
+      if (key === process.env.APP_REGISTRATION_TENANT_ID) return Promise.resolve("tenant-id");
+      return Promise.resolve(undefined);
+    });
+  };
 
+  beforeEach(() => {
+    originalFetch = global.fetch;
+
+    // Reset all mocks
+    sharedMock.getResponseJSON.mockReset().mockImplementation((message, code) => ({ message, code }));
+    sharedMock.getTemplateForEmailLink.mockReset().mockReturnValue("<p>email body</p>");
+    sharedMock.getSecret.mockReset();
+    sharedMock.parseResponseJson.mockReset();
+    sharedMock.safeJSONParse.mockReset().mockImplementation((str) => JSON.parse(str));
+
+    firestoreMock.generateSignInWithEmailLink.mockReset();
+
+    // Install mocks into require.cache
+    require.cache[sharedPath].exports = sharedMock;
+    require.cache[firestorePath].exports = firestoreMock;
+
+    // Clear module under test
+    delete require.cache[notificationsPath];
+
+    // Setup env vars
     process.env.APP_REGISTRATION_CLIENT_ID = "secret/client-id";
     process.env.APP_REGISTRATION_CLIENT_SECRET = "secret/client-secret";
     process.env.APP_REGISTRATION_TENANT_ID = "secret/tenant-id";
 
-    sinon
-      .stub(sharedModule, "getResponseJSON")
-      .callsFake((message, code) => ({ message, code }));
-    sinon
-      .stub(sharedModule, "validEmailFormat")
-      .value(/^[^@\s]+@[^@\s]+\.[^@\s]+$/);
-    sinon
-      .stub(sharedModule, "getTemplateForEmailLink")
-      .returns("<p>email body</p>");
-    sinon.stub(sharedModule, "getSecret");
-    sinon.stub(sharedModule, "parseResponseJson");
-    sinon.stub(sharedModule, "safeJSONParse").callsFake((str) => JSON.parse(str));
+    // Mock global fetch
+    fetchStub = vi.fn();
+    global.fetch = fetchStub;
 
-    sinon.stub(firestoreModule, "generateSignInWithEmailLink");
-
-    global.fetch = sinon.stub();
-
+    // Now require the module under test
     notificationsModule = require("../../utils/notifications");
   });
 
   afterEach(() => {
-    sinon.restore();
-    delete global.fetch;
-    delete require.cache[require.resolve("../../utils/notifications")];
+    vi.restoreAllMocks();
+    if (originalFetch === undefined) {
+      delete global.fetch;
+    } else {
+      global.fetch = originalFetch;
+    }
+    delete require.cache[notificationsPath];
     delete process.env.APP_REGISTRATION_CLIENT_ID;
     delete process.env.APP_REGISTRATION_CLIENT_SECRET;
     delete process.env.APP_REGISTRATION_TENANT_ID;
+  });
+
+  afterAll(() => {
+    require.cache[sharedPath].exports = origSharedExports;
+    require.cache[firestorePath].exports = origFirestoreExports;
+    delete require.cache[notificationsPath];
   });
 
   describe("sendEmailLink", () => {
@@ -68,8 +131,8 @@ describe("Notifications Unit Tests", () => {
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(405)).to.be.true;
-      expect(res.json.firstCall.args[0].code).to.equal(405);
+      expect(res.status).toHaveBeenCalledWith(405);
+      expect(res.json.mock.calls[0][0].code).toBe(405);
     });
 
     it("should return 400 when email is missing", async () => {
@@ -81,12 +144,12 @@ describe("Notifications Unit Tests", () => {
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(400)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/missing-email");
-      expect(payload.code).to.equal(400);
-      expect(payload.authFlowId).to.be.a("string");
-      expect(payload.authAttemptId).to.be.a("string");
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/missing-email");
+      expect(payload.code).toBe(400);
+      expect(payload.authFlowId).toBeTypeOf("string");
+      expect(payload.authAttemptId).toBeTypeOf("string");
     });
 
     it("should return 400 when continueUrl is missing", async () => {
@@ -98,10 +161,10 @@ describe("Notifications Unit Tests", () => {
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(400)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/missing-continue-uri");
-      expect(payload.code).to.equal(400);
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/missing-continue-uri");
+      expect(payload.code).toBe(400);
     });
 
     it("should return 400 when email format is invalid", async () => {
@@ -113,9 +176,9 @@ describe("Notifications Unit Tests", () => {
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(400)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/invalid-email");
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/invalid-email");
     });
 
     it("should send email via Graph and return 202 with correlation fields", async () => {
@@ -132,61 +195,49 @@ describe("Notifications Unit Tests", () => {
       };
       const res = createResponseMock();
 
-      sharedModule.getSecret
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_ID)
-        .resolves("client-id")
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_SECRET)
-        .resolves("client-secret")
-        .withArgs(process.env.APP_REGISTRATION_TENANT_ID)
-        .resolves("tenant-id");
+      mockGraphSecretLookups();
 
-      firestoreModule.generateSignInWithEmailLink.resolves(
+      firestoreMock.generateSignInWithEmailLink.mockResolvedValue(
         "https://auth.example.com/?continueUrl=https://app.example.com&lang=en",
       );
 
-      sharedModule.parseResponseJson
-        .onFirstCall()
-        .resolves({ access_token: "graph-access-token" });
-      sharedModule.parseResponseJson.onSecondCall().resolves(null);
+      sharedMock.parseResponseJson
+        .mockResolvedValueOnce({ access_token: "graph-access-token" })
+        .mockResolvedValueOnce(null);
 
-      global.fetch.onFirstCall().resolves(createFetchResponse({ ok: true, status: 200 }));
-      global.fetch.onSecondCall().resolves(
-        createFetchResponse({
-          ok: true,
-          status: 202,
-          headers: {
-            "request-id": "graph-request-123",
-            "client-request-id": "graph-client-123",
-          },
-        }),
-      );
+      fetchStub
+        .mockResolvedValueOnce(createFetchResponse({ ok: true, status: 200 }))
+        .mockResolvedValueOnce(
+          createFetchResponse({
+            ok: true,
+            status: 202,
+            headers: {
+              "request-id": "graph-request-123",
+              "client-request-id": "graph-client-123",
+            },
+          }),
+        );
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(global.fetch.calledTwice).to.be.true;
-      const graphCall = global.fetch.secondCall;
-      expect(graphCall.args[0]).to.include(
-        "https://graph.microsoft.com/v1.0/users/",
-      );
-      expect(graphCall.args[1].headers.Authorization).to.equal(
-        "Bearer graph-access-token",
-      );
-      expect(graphCall.args[1].headers["return-client-request-id"]).to.equal(
-        "true",
-      );
-      expect(graphCall.args[1].headers["client-request-id"]).to.be.a("string");
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+      const graphCall = fetchStub.mock.calls[1];
+      expect(graphCall[0]).toContain("https://graph.microsoft.com/v1.0/users/");
+      expect(graphCall[1].headers.Authorization).toBe("Bearer graph-access-token");
+      expect(graphCall[1].headers["return-client-request-id"]).toBe("true");
+      expect(graphCall[1].headers["client-request-id"]).toBeTypeOf("string");
 
-      expect(res.status.calledWith(202)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.code).to.equal(202);
-      expect(payload.errorCode).to.equal(null);
-      expect(payload.provider).to.equal("microsoft_graph");
-      expect(payload.providerStatus).to.equal("accepted");
-      expect(payload.graphRequestId).to.equal("graph-request-123");
-      expect(payload.graphClientRequestId).to.equal("graph-client-123");
-      expect(payload.authFlowId).to.equal("auth_flow_client_1");
-      expect(payload.authAttemptId).to.equal("auth_attempt_client_1");
-      expect(payload.clientSendTs).to.equal("2026-02-12T10:00:00.000Z");
+      expect(res.status).toHaveBeenCalledWith(202);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.code).toBe(202);
+      expect(payload.errorCode).toBe(null);
+      expect(payload.provider).toBe("microsoft_graph");
+      expect(payload.providerStatus).toBe("accepted");
+      expect(payload.graphRequestId).toBe("graph-request-123");
+      expect(payload.graphClientRequestId).toBe("graph-client-123");
+      expect(payload.authFlowId).toBe("auth_flow_client_1");
+      expect(payload.authAttemptId).toBe("auth_attempt_client_1");
+      expect(payload.clientSendTs).toBe("2026-02-12T10:00:00.000Z");
     });
 
     it("should map Graph 400 invalid provider error to auth/invalid-email", async () => {
@@ -199,48 +250,42 @@ describe("Notifications Unit Tests", () => {
       };
       const res = createResponseMock();
 
-      sharedModule.getSecret
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_ID)
-        .resolves("client-id")
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_SECRET)
-        .resolves("client-secret")
-        .withArgs(process.env.APP_REGISTRATION_TENANT_ID)
-        .resolves("tenant-id");
+      mockGraphSecretLookups();
 
-      firestoreModule.generateSignInWithEmailLink.resolves(
+      firestoreMock.generateSignInWithEmailLink.mockResolvedValue(
         "https://auth.example.com/?continueUrl=https://app.example.com",
       );
 
-      sharedModule.parseResponseJson
-        .onFirstCall()
-        .resolves({ access_token: "graph-access-token" });
-      sharedModule.parseResponseJson.onSecondCall().resolves({
-        error: {
-          code: "InvalidRecipients",
-          message: "Recipient is invalid",
-        },
-      });
-
-      global.fetch.onFirstCall().resolves(createFetchResponse({ ok: true, status: 200 }));
-      global.fetch.onSecondCall().resolves(
-        createFetchResponse({
-          ok: false,
-          status: 400,
-          headers: {
-            "request-id": "graph-request-400",
-            "client-request-id": "graph-client-400",
+      sharedMock.parseResponseJson
+        .mockResolvedValueOnce({ access_token: "graph-access-token" })
+        .mockResolvedValueOnce({
+          error: {
+            code: "InvalidRecipients",
+            message: "Recipient is invalid",
           },
-        }),
-      );
+        });
+
+      fetchStub
+        .mockResolvedValueOnce(createFetchResponse({ ok: true, status: 200 }))
+        .mockResolvedValueOnce(
+          createFetchResponse({
+            ok: false,
+            status: 400,
+            headers: {
+              "request-id": "graph-request-400",
+              "client-request-id": "graph-client-400",
+            },
+          }),
+        );
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(400)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/invalid-email");
-      expect(payload.providerStatus).to.equal("failed");
-      expect(payload.providerErrorCode).to.equal("InvalidRecipients");
-      expect(payload.graphRequestId).to.equal("graph-request-400");
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/invalid-email");
+      expect(payload.providerStatus).toBe("failed");
+      expect(payload.providerErrorCode).toBe("InvalidRecipients");
+      expect(payload.graphRequestId).toBe("graph-request-400");
     });
 
     it("should map Graph 400 non-invalid provider error to auth/operation-not-allowed", async () => {
@@ -253,46 +298,40 @@ describe("Notifications Unit Tests", () => {
       };
       const res = createResponseMock();
 
-      sharedModule.getSecret
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_ID)
-        .resolves("client-id")
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_SECRET)
-        .resolves("client-secret")
-        .withArgs(process.env.APP_REGISTRATION_TENANT_ID)
-        .resolves("tenant-id");
+      mockGraphSecretLookups();
 
-      firestoreModule.generateSignInWithEmailLink.resolves(
+      firestoreMock.generateSignInWithEmailLink.mockResolvedValue(
         "https://auth.example.com/?continueUrl=https://app.example.com",
       );
 
-      sharedModule.parseResponseJson
-        .onFirstCall()
-        .resolves({ access_token: "graph-access-token" });
-      sharedModule.parseResponseJson.onSecondCall().resolves({
-        error: {
-          code: "MailboxNotEnabledForRESTAPI",
-          message: "Mailbox is not enabled",
-        },
-      });
-
-      global.fetch.onFirstCall().resolves(createFetchResponse({ ok: true, status: 200 }));
-      global.fetch.onSecondCall().resolves(
-        createFetchResponse({
-          ok: false,
-          status: 400,
-          headers: {
-            "request-id": "graph-request-400b",
-            "client-request-id": "graph-client-400b",
+      sharedMock.parseResponseJson
+        .mockResolvedValueOnce({ access_token: "graph-access-token" })
+        .mockResolvedValueOnce({
+          error: {
+            code: "MailboxNotEnabledForRESTAPI",
+            message: "Mailbox is not enabled",
           },
-        }),
-      );
+        });
+
+      fetchStub
+        .mockResolvedValueOnce(createFetchResponse({ ok: true, status: 200 }))
+        .mockResolvedValueOnce(
+          createFetchResponse({
+            ok: false,
+            status: 400,
+            headers: {
+              "request-id": "graph-request-400b",
+              "client-request-id": "graph-client-400b",
+            },
+          }),
+        );
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(400)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/operation-not-allowed");
-      expect(payload.providerErrorCode).to.equal("MailboxNotEnabledForRESTAPI");
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/operation-not-allowed");
+      expect(payload.providerErrorCode).toBe("MailboxNotEnabledForRESTAPI");
     });
 
     it("should map Graph 401 to auth/operation-not-allowed", async () => {
@@ -305,47 +344,41 @@ describe("Notifications Unit Tests", () => {
       };
       const res = createResponseMock();
 
-      sharedModule.getSecret
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_ID)
-        .resolves("client-id")
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_SECRET)
-        .resolves("client-secret")
-        .withArgs(process.env.APP_REGISTRATION_TENANT_ID)
-        .resolves("tenant-id");
+      mockGraphSecretLookups();
 
-      firestoreModule.generateSignInWithEmailLink.resolves(
+      firestoreMock.generateSignInWithEmailLink.mockResolvedValue(
         "https://auth.example.com/?continueUrl=https://app.example.com",
       );
 
-      sharedModule.parseResponseJson
-        .onFirstCall()
-        .resolves({ access_token: "graph-access-token" });
-      sharedModule.parseResponseJson.onSecondCall().resolves({
-        error: {
-          code: "InvalidAuthenticationToken",
-          message: "Access token is invalid",
-        },
-      });
-
-      global.fetch.onFirstCall().resolves(createFetchResponse({ ok: true, status: 200 }));
-      global.fetch.onSecondCall().resolves(
-        createFetchResponse({
-          ok: false,
-          status: 401,
-          headers: {
-            "request-id": "graph-request-401",
-            "client-request-id": "graph-client-401",
+      sharedMock.parseResponseJson
+        .mockResolvedValueOnce({ access_token: "graph-access-token" })
+        .mockResolvedValueOnce({
+          error: {
+            code: "InvalidAuthenticationToken",
+            message: "Access token is invalid",
           },
-        }),
-      );
+        });
+
+      fetchStub
+        .mockResolvedValueOnce(createFetchResponse({ ok: true, status: 200 }))
+        .mockResolvedValueOnce(
+          createFetchResponse({
+            ok: false,
+            status: 401,
+            headers: {
+              "request-id": "graph-request-401",
+              "client-request-id": "graph-client-401",
+            },
+          }),
+        );
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(401)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.code).to.equal(401);
-      expect(payload.errorCode).to.equal("auth/operation-not-allowed");
-      expect(payload.providerErrorCode).to.equal("InvalidAuthenticationToken");
+      expect(res.status).toHaveBeenCalledWith(401);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.code).toBe(401);
+      expect(payload.errorCode).toBe("auth/operation-not-allowed");
+      expect(payload.providerErrorCode).toBe("InvalidAuthenticationToken");
     });
 
     it("should map Firebase link generation errors to 400 when code is invalid continue url", async () => {
@@ -360,14 +393,14 @@ describe("Notifications Unit Tests", () => {
 
       const linkError = new Error("Invalid continue URL");
       linkError.code = "auth/invalid-continue-uri";
-      firestoreModule.generateSignInWithEmailLink.rejects(linkError);
+      firestoreMock.generateSignInWithEmailLink.mockRejectedValue(linkError);
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(400)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/invalid-continue-uri");
-      expect(payload.code).to.equal(400);
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/invalid-continue-uri");
+      expect(payload.code).toBe(400);
     });
 
     it("should map auth/too-many-requests to HTTP 429 in catch path", async () => {
@@ -382,14 +415,14 @@ describe("Notifications Unit Tests", () => {
 
       const tooManyRequestsError = new Error("Too many requests");
       tooManyRequestsError.code = "auth/too-many-requests";
-      firestoreModule.generateSignInWithEmailLink.rejects(tooManyRequestsError);
+      firestoreMock.generateSignInWithEmailLink.mockRejectedValue(tooManyRequestsError);
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(429)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.errorCode).to.equal("auth/too-many-requests");
-      expect(payload.code).to.equal(429);
+      expect(res.status).toHaveBeenCalledWith(429);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.errorCode).toBe("auth/too-many-requests");
+      expect(payload.code).toBe(429);
     });
 
     it("should return 502 when Graph token acquisition fails", async () => {
@@ -402,31 +435,24 @@ describe("Notifications Unit Tests", () => {
       };
       const res = createResponseMock();
 
-      sharedModule.getSecret
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_ID)
-        .resolves("client-id")
-        .withArgs(process.env.APP_REGISTRATION_CLIENT_SECRET)
-        .resolves("client-secret")
-        .withArgs(process.env.APP_REGISTRATION_TENANT_ID)
-        .resolves("tenant-id");
+      mockGraphSecretLookups();
 
-      firestoreModule.generateSignInWithEmailLink.resolves(
+      firestoreMock.generateSignInWithEmailLink.mockResolvedValue(
         "https://auth.example.com/?continueUrl=https://app.example.com",
       );
 
-      sharedModule.parseResponseJson
-        .onFirstCall()
-        .resolves({ error: { code: "invalid_client" } });
-      global.fetch.onFirstCall().resolves(createFetchResponse({ ok: false, status: 401 }));
+      sharedMock.parseResponseJson
+        .mockResolvedValueOnce({ error: { code: "invalid_client" } });
+      fetchStub.mockResolvedValueOnce(createFetchResponse({ ok: false, status: 401 }));
 
       await notificationsModule.sendEmailLink(req, res);
 
-      expect(res.status.calledWith(502)).to.be.true;
-      const payload = res.json.firstCall.args[0];
-      expect(payload.code).to.equal(502);
-      expect(payload.errorCode).to.equal("auth/operation-not-allowed");
-      expect(payload.upstreamStatus).to.equal(401);
-      expect(payload.providerStatus).to.equal("failed");
+      expect(res.status).toHaveBeenCalledWith(502);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.code).toBe(502);
+      expect(payload.errorCode).toBe("auth/operation-not-allowed");
+      expect(payload.upstreamStatus).toBe(401);
+      expect(payload.providerStatus).toBe("failed");
     });
   });
 });
@@ -478,23 +504,23 @@ describe("SmsBatchSender", () => {
     });
 
   beforeEach(() => {
-    sendFn = sinon.stub();
-    saveFn = sinon.stub().resolves();
-    delayFn = sinon.stub().resolves();
+    sendFn = vi.fn();
+    saveFn = vi.fn().mockResolvedValue(undefined);
+    delayFn = vi.fn().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
-    sinon.restore();
+    vi.restoreAllMocks();
   });
 
   describe("getSentCounts / getFailedCounts", () => {
     it("should return zero counts for unknown specId", () => {
       const sender = createSender();
-      expect(sender.getSentCounts("unknown")).to.deep.equal({
+      expect(sender.getSentCounts("unknown")).toEqual({
         english: 0,
         spanish: 0,
       });
-      expect(sender.getFailedCounts("unknown")).to.deep.equal({
+      expect(sender.getFailedCounts("unknown")).toEqual({
         english: 0,
         spanish: 0,
       });
@@ -504,20 +530,20 @@ describe("SmsBatchSender", () => {
       const sender = createSender();
       const counts = sender.getSentCounts("spec1");
       counts.english = 999;
-      expect(sender.getSentCounts("spec1")).to.deep.equal({ english: 0, spanish: 0 });
+      expect(sender.getSentCounts("spec1")).toEqual({ english: 0, spanish: 0 });
     });
   });
 
   describe("isSpecFinished", () => {
     it("should return false for unknown specId", () => {
       const sender = createSender();
-      expect(sender.isSpecFinished("spec1")).to.be.false;
+      expect(sender.isSpecFinished("spec1")).toBe(false);
     });
   });
 
   describe("basic send flow", () => {
     it("should send all records and track sent counts", async () => {
-      sendFn.callsFake((record) => Promise.resolve(successResult(record)));
+      sendFn.mockImplementation((record) => Promise.resolve(successResult(record)));
 
       const sender = createSender();
       const records = [
@@ -529,11 +555,11 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 2, spanish: 1 });
-      expect(result.failedCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(sendFn.callCount).to.equal(3);
-      expect(saveFn.callCount).to.equal(1);
-      expect(saveFn.firstCall.args[0]).to.have.lengthOf(3);
+      expect(result.sentCounts).toEqual({ english: 2, spanish: 1 });
+      expect(result.failedCounts).toEqual({ english: 0, spanish: 0 });
+      expect(sendFn.mock.calls.length).toBe(3);
+      expect(saveFn.mock.calls.length).toBe(1);
+      expect(saveFn.mock.calls[0][0]).toHaveLength(3);
     });
 
     it("should handle an empty queue with only an end marker", async () => {
@@ -541,16 +567,16 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(result.failedCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(sendFn.callCount).to.equal(0);
-      expect(saveFn.callCount).to.equal(0);
+      expect(result.sentCounts).toEqual({ english: 0, spanish: 0 });
+      expect(result.failedCounts).toEqual({ english: 0, spanish: 0 });
+      expect(sendFn.mock.calls.length).toBe(0);
+      expect(saveFn.mock.calls.length).toBe(0);
     });
   });
 
   describe("failure handling", () => {
     it("should track failed counts for non-rate-limit errors", async () => {
-      sendFn.callsFake((record) => Promise.resolve(failResult(record)));
+      sendFn.mockImplementation((record) => Promise.resolve(failResult(record)));
 
       const sender = createSender();
       sender.addToQueue([
@@ -560,25 +586,25 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(result.failedCounts).to.deep.equal({ english: 1, spanish: 1 });
-      expect(saveFn.callCount).to.equal(0);
+      expect(result.sentCounts).toEqual({ english: 0, spanish: 0 });
+      expect(result.failedCounts).toEqual({ english: 1, spanish: 1 });
+      expect(saveFn.mock.calls.length).toBe(0);
     });
 
     it("should not increment sent counts when saveNotificationBatch throws", async () => {
-      sendFn.callsFake((record) => Promise.resolve(successResult(record)));
-      saveFn.rejects(new Error("Firestore write failed"));
+      sendFn.mockImplementation((record) => Promise.resolve(successResult(record)));
+      saveFn.mockRejectedValue(new Error("Firestore write failed"));
 
-      const consoleStub = sinon.stub(console, "error");
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const sender = createSender();
       sender.addToQueue([makeSmsRecord("spec1", "english")]);
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(result.failedCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(consoleStub.calledOnce).to.be.true;
-      consoleStub.restore();
+      expect(result.sentCounts).toEqual({ english: 0, spanish: 0 });
+      expect(result.failedCounts).toEqual({ english: 0, spanish: 0 });
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      consoleErrorSpy.mockRestore();
     });
   });
 
@@ -586,7 +612,7 @@ describe("SmsBatchSender", () => {
     it("should re-queue rate-limited records and retry them", async () => {
       const record = makeSmsRecord("spec1", "english");
       let callCount = 0;
-      sendFn.callsFake((r) => {
+      sendFn.mockImplementation((r) => {
         callCount++;
         if (callCount === 1) return Promise.resolve(rateLimitResult(r));
         return Promise.resolve(successResult(r));
@@ -597,29 +623,29 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 1, spanish: 0 });
-      expect(sendFn.callCount).to.equal(2);
+      expect(result.sentCounts).toEqual({ english: 1, spanish: 0 });
+      expect(sendFn.mock.calls.length).toBe(2);
     });
 
     it("should count as failed after exceeding maxRetries", async () => {
-      sendFn.callsFake((r) => Promise.resolve(rateLimitResult(r)));
-      const consoleStub = sinon.stub(console, "error");
+      sendFn.mockImplementation((r) => Promise.resolve(rateLimitResult(r)));
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const sender = createSender({ batchSize: 10, maxRetries: 2 });
       sender.addToQueue([makeSmsRecord("spec1", "english")]);
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(result.failedCounts).to.deep.equal({ english: 1, spanish: 0 });
+      expect(result.sentCounts).toEqual({ english: 0, spanish: 0 });
+      expect(result.failedCounts).toEqual({ english: 1, spanish: 0 });
       // 1 initial + 2 retries = 3 total send attempts
-      expect(sendFn.callCount).to.equal(3);
-      consoleStub.restore();
+      expect(sendFn.mock.calls.length).toBe(3);
+      consoleErrorSpy.mockRestore();
     });
 
     it("should succeed on retry within maxRetries limit", async () => {
       let callCount = 0;
-      sendFn.callsFake((r) => {
+      sendFn.mockImplementation((r) => {
         callCount++;
         if (callCount <= 2) return Promise.resolve(rateLimitResult(r));
         return Promise.resolve(successResult(r));
@@ -630,13 +656,13 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 1, spanish: 0 });
-      expect(result.failedCounts).to.deep.equal({ english: 0, spanish: 0 });
+      expect(result.sentCounts).toEqual({ english: 1, spanish: 0 });
+      expect(result.failedCounts).toEqual({ english: 0, spanish: 0 });
     });
 
     it("should preserve end marker when rate-limited records are re-queued", async () => {
       let callCount = 0;
-      sendFn.callsFake((r) => {
+      sendFn.mockImplementation((r) => {
         callCount++;
         if (callCount <= 2) return Promise.resolve(rateLimitResult(r));
         return Promise.resolve(successResult(r));
@@ -650,8 +676,8 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 1, spanish: 1 });
-      expect(sender.isSpecFinished("spec1")).to.be.true;
+      expect(result.sentCounts).toEqual({ english: 1, spanish: 1 });
+      expect(sender.isSpecFinished("spec1")).toBe(true);
     });
   });
 
@@ -664,7 +690,7 @@ describe("SmsBatchSender", () => {
       ];
 
       let rateLimitRetried = false;
-      sendFn.callsFake((r) => {
+      sendFn.mockImplementation((r) => {
         if (r.token === "token-success") return Promise.resolve(successResult(r));
         if (r.token === "token-fail") return Promise.resolve(failResult(r));
         if (r.token === "token-ratelimit") {
@@ -681,14 +707,14 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 2, spanish: 0 });
-      expect(result.failedCounts).to.deep.equal({ english: 0, spanish: 1 });
+      expect(result.sentCounts).toEqual({ english: 2, spanish: 0 });
+      expect(result.failedCounts).toEqual({ english: 0, spanish: 1 });
     });
   });
 
   describe("batching", () => {
     it("should respect batchSize and process in multiple batches", async () => {
-      sendFn.callsFake((r) => Promise.resolve(successResult(r)));
+      sendFn.mockImplementation((r) => Promise.resolve(successResult(r)));
 
       const sender = createSender({ batchSize: 2 });
       const records = [
@@ -700,15 +726,15 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       const result = await sender.waitForSpec("spec1");
-      expect(result.sentCounts).to.deep.equal({ english: 3, spanish: 0 });
+      expect(result.sentCounts).toEqual({ english: 3, spanish: 0 });
       // saveFn called once per batch that has successful records
-      expect(saveFn.callCount).to.equal(2);
+      expect(saveFn.mock.calls.length).toBe(2);
     });
   });
 
   describe("multiple specs", () => {
     it("should track counts independently per specId", async () => {
-      sendFn.callsFake((r) => {
+      sendFn.mockImplementation((r) => {
         if (r.notificationSpecificationsID === "spec2") {
           return Promise.resolve(failResult(r));
         }
@@ -729,41 +755,40 @@ describe("SmsBatchSender", () => {
         sender.waitForSpec("spec2"),
       ]);
 
-      expect(result1.sentCounts).to.deep.equal({ english: 1, spanish: 1 });
-      expect(result1.failedCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(result2.sentCounts).to.deep.equal({ english: 0, spanish: 0 });
-      expect(result2.failedCounts).to.deep.equal({ english: 1, spanish: 0 });
+      expect(result1.sentCounts).toEqual({ english: 1, spanish: 1 });
+      expect(result1.failedCounts).toEqual({ english: 0, spanish: 0 });
+      expect(result2.sentCounts).toEqual({ english: 0, spanish: 0 });
+      expect(result2.failedCounts).toEqual({ english: 1, spanish: 0 });
     });
 
     it("should finish specs independently", async () => {
-      sendFn.callsFake((r) => Promise.resolve(successResult(r)));
+      sendFn.mockImplementation((r) => Promise.resolve(successResult(r)));
 
       const sender = createSender();
       sender.addToQueue([makeSmsRecord("spec1", "english")]);
       sender.markSpecEnd("spec1");
 
       await sender.waitForSpec("spec1");
-      expect(sender.isSpecFinished("spec1")).to.be.true;
-      expect(sender.isSpecFinished("spec2")).to.be.false;
+      expect(sender.isSpecFinished("spec1")).toBe(true);
+      expect(sender.isSpecFinished("spec2")).toBe(false);
     });
   });
 
   describe("progress logging", () => {
-    let clock;
-    let consoleLogStub;
+    let consoleLogSpy;
 
     beforeEach(() => {
-      clock = sinon.useFakeTimers({ now: Date.now() });
-      consoleLogStub = sinon.stub(console, "log");
+      vi.useFakeTimers({ now: Date.now() });
+      consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     });
 
     afterEach(() => {
-      clock.restore();
-      consoleLogStub.restore();
+      vi.useRealTimers();
+      consoleLogSpy.mockRestore();
     });
 
     it("should log progress for in-flight specs after 30 seconds", async () => {
-      sendFn.callsFake((r) => Promise.resolve(successResult(r)));
+      sendFn.mockImplementation((r) => Promise.resolve(successResult(r)));
 
       const sender = createSender({ batchSize: 1 });
       sender.addToQueue([
@@ -772,20 +797,20 @@ describe("SmsBatchSender", () => {
       ]);
       sender.markSpecEnd("spec1");
 
-      clock.tick(31000);
+      vi.advanceTimersByTime(31000);
       await sender.waitForSpec("spec1");
 
-      const progressLogs = consoleLogStub.args.filter((args) =>
+      const progressLogs = consoleLogSpy.mock.calls.filter((args) =>
         args[0]?.includes?.("SMS in progress"),
       );
-      expect(progressLogs.length).to.be.greaterThan(0);
-      expect(progressLogs[0][0]).to.include("spec1");
-      expect(progressLogs[0][0]).to.include("sent");
-      expect(progressLogs[0][0]).to.include("failed");
+      expect(progressLogs.length).toBeGreaterThan(0);
+      expect(progressLogs[0][0]).toContain("spec1");
+      expect(progressLogs[0][0]).toContain("sent");
+      expect(progressLogs[0][0]).toContain("failed");
     });
 
     it("should skip finished specs in progress log", async () => {
-      sendFn.callsFake((r) => Promise.resolve(successResult(r)));
+      sendFn.mockImplementation((r) => Promise.resolve(successResult(r)));
 
       const sender = createSender();
       sender.addToQueue([makeSmsRecord("spec1", "english")]);
@@ -793,23 +818,23 @@ describe("SmsBatchSender", () => {
 
       // spec1 finishes, then start spec2 after 30s
       await sender.waitForSpec("spec1");
-      clock.tick(31000);
+      vi.advanceTimersByTime(31000);
 
       sender.addToQueue([makeSmsRecord("spec2", "english")]);
       sender.markSpecEnd("spec2");
       await sender.waitForSpec("spec2");
 
-      const progressLogs = consoleLogStub.args.filter((args) =>
+      const progressLogs = consoleLogSpy.mock.calls.filter((args) =>
         args[0]?.includes?.("SMS in progress"),
       );
       const spec1Logs = progressLogs.filter((args) => args[0].includes("spec1"));
-      expect(spec1Logs.length).to.equal(0);
+      expect(spec1Logs.length).toBe(0);
     });
   });
 
   describe("delay behavior", () => {
     it("should call delayFn for rate limiting between batches", async () => {
-      sendFn.callsFake((r) => Promise.resolve(successResult(r)));
+      sendFn.mockImplementation((r) => Promise.resolve(successResult(r)));
 
       const sender = createSender({ batchSize: 1 });
       sender.addToQueue([
@@ -819,7 +844,7 @@ describe("SmsBatchSender", () => {
       sender.markSpecEnd("spec1");
 
       await sender.waitForSpec("spec1");
-      expect(delayFn.called).to.be.true;
+      expect(delayFn).toHaveBeenCalled();
     });
   });
 });

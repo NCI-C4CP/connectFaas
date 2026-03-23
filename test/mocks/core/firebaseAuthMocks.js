@@ -1,5 +1,3 @@
-const sinon = require('sinon');
-
 /**
  * Firebase Auth mock
  */
@@ -9,10 +7,6 @@ class FirebaseAuthMocks {
     }
 
     reset() {
-        if (this.sandbox) {
-            this.sandbox.restore();
-        }
-        this.sandbox = sinon.createSandbox();
         this.createBaseMocks();
     }
 
@@ -23,11 +17,11 @@ class FirebaseAuthMocks {
             email: 'test@example.com',
             displayName: 'Test User',
             emailVerified: true,
-            getIdToken: sinon.stub().resolves('mock-token'),
-            delete: sinon.stub().resolves(),
-            updateProfile: sinon.stub().resolves(),
-            updateEmail: sinon.stub().resolves(),
-            updatePassword: sinon.stub().resolves()
+            getIdToken: vi.fn().mockResolvedValue('mock-token'),
+            delete: vi.fn().mockResolvedValue(undefined),
+            updateProfile: vi.fn().mockResolvedValue(undefined),
+            updateEmail: vi.fn().mockResolvedValue(undefined),
+            updatePassword: vi.fn().mockResolvedValue(undefined)
         };
 
         // Mock UserRecord
@@ -47,23 +41,23 @@ class FirebaseAuthMocks {
 
         // Mock Auth
         this.mockAuth = {
-            createUser: sinon.stub().resolves(this.mockUserRecord),
-            getUser: sinon.stub().resolves(this.mockUserRecord),
-            getUserByEmail: sinon.stub().resolves(this.mockUserRecord),
-            updateUser: sinon.stub().resolves(this.mockUserRecord),
-            deleteUser: sinon.stub().resolves(),
-            listUsers: sinon.stub().resolves({
+            createUser: vi.fn().mockResolvedValue(this.mockUserRecord),
+            getUser: vi.fn().mockResolvedValue(this.mockUserRecord),
+            getUserByEmail: vi.fn().mockResolvedValue(this.mockUserRecord),
+            updateUser: vi.fn().mockResolvedValue(this.mockUserRecord),
+            deleteUser: vi.fn().mockResolvedValue(undefined),
+            listUsers: vi.fn().mockResolvedValue({
                 users: [this.mockUserRecord],
                 pageToken: undefined
             }),
-            createCustomToken: sinon.stub().resolves('custom-token'),
-            verifyIdToken: sinon.stub().resolves({
+            createCustomToken: vi.fn().mockResolvedValue('custom-token'),
+            verifyIdToken: vi.fn().mockResolvedValue({
                 uid: 'test-uid',
                 email: 'test@example.com',
                 email_verified: true
             }),
-            setCustomUserClaims: sinon.stub().resolves(),
-            revokeRefreshTokens: sinon.stub().resolves()
+            setCustomUserClaims: vi.fn().mockResolvedValue(undefined),
+            revokeRefreshTokens: vi.fn().mockResolvedValue(undefined)
         };
     }
 
@@ -74,7 +68,7 @@ class FirebaseAuthMocks {
     }
 
     setupAuthError(method, error) {
-        this.mockAuth[method].rejects(error);
+        this.mockAuth[method].mockRejectedValue(error);
     }
 
     getMocks() {

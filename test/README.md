@@ -2,13 +2,22 @@
 
 Comprehensive testing framework for the ConnectFaas project, designed to be modular, scalable, and maintainable.
 
+The suite runs on Vitest (`npm run test:all`) with global test APIs enabled (`describe`, `it`, `beforeAll`, `afterAll`, `expect`).
+
 ## Directory Structure
 
 ```
 test/
 ├── unit/                         # Unit tests
+│   ├── apiEndpoints.test.js      # Endpoint method/authorization guards
 │   ├── dhq.test.js               # DHQ unit tests
-│   └── fileProcessing.test.js    # File processing tests
+│   ├── fileProcessing.test.js    # File processing tests
+│   ├── notifications.test.js     # Notification utility tests
+│   ├── participantDataCleanup.test.js # Participant cleanup tests
+│   ├── resetParticipantHelper.test.js # resetParticipantHelper deterministic tests
+│   ├── sharedBiospecimen.test.js # Biospecimen shared helper tests
+│   ├── usps.test.js              # USPS utility tests
+│   └── validation.test.js        # Validation and derived variables tests
 ├── integration/                  # Integration tests
 │   └── dhq.integration.test.js   # DHQ workflow tests
 ├── mocks/                        # Modular mock system
@@ -31,8 +40,6 @@ test/
 ├── shared/                       # Shared utilities
 │   ├── testHelpers.js            # Test setup functions
 │   └── errorScenarios.js         # Error testing utilities
-├── scripts/                      # Test automation
-│   └── testMetrics.js            # Metrics and monitoring
 ├── constants.js                  # Test constants
 └── README.md                     # This file
 ```
@@ -44,6 +51,7 @@ test/
 ```bash
 # Run all tests
 npm run test:all
+npm run test                    # Alias for full suite
 
 # Run by category
 npm run test:unit               # Unit tests only
@@ -56,9 +64,14 @@ npm run test:fileProcessing     # File processing tests
 
 # Test utilities
 npm run test:watch              # Watch mode
-npm run test:metrics            # Generate metrics report
-npm run test:report             # View test report
+npm run test:coverage           # Coverage report (v8)
 ```
+
+### CI / PR behavior
+
+- PR checks run `npm run test:all` via `.github/workflows/pr-tests.yml`
+- Any failing test blocks the PR check
+- Vitest discovers tests via `test/**/*.test.js`
 
 ## Framework Components
 
@@ -82,12 +95,11 @@ const studyId = TEST_CONSTANTS.STUDY_IDS.DEFAULT; // 'study_123'
 **Adding New Unit Tests**:
 ```javascript
 // test/unit/newModule.test.js
-const { expect } = require('chai');
 const { setupTestSuite } = require('../shared/testHelpers');
 
 let factory, mocks, newModule;
 
-before(() => {
+beforeAll(() => {
     const mockSystem = setupTestSuite({
         setupConsole: false,
         setupModuleMocks: true
@@ -120,7 +132,6 @@ describe('New Module Unit Tests', () => {
 **Adding New Integration Tests**:
 ```javascript
 // test/integration/newWorkflow.integration.test.js
-const { expect } = require('chai');
 const { setupTestSuite } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
 
@@ -245,22 +256,6 @@ const errorScenarios = new ErrorScenarios();
 const networkError = errorScenarios.createNetworkError('Connection failed');
 ```
 
-### 7. Test Metrics (`scripts/`)
-
-**Purpose**: Automated test metrics and monitoring.
-
-**Components**:
-- `testMetrics.js`: Test metrics collection and reporting
-
-**Using Test Metrics**:
-```bash
-# Generate comprehensive metrics report
-npm run test:metrics
-
-# View formatted report
-npm run test:report
-```
-
 ## Testing
 
 ### Test Organization
@@ -274,7 +269,6 @@ npm run test:report
 
 ```javascript
 // Standard test setup pattern
-const { expect } = require('chai');
 const { setupTestSuite } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
 const TEST_CONSTANTS = require('../constants');
@@ -327,7 +321,7 @@ const { result, processingTime } = benchmarkFunction(() => {
     return prepareDocumentsForFirestore(largeDataset, TEST_CONSTANTS.STUDY_IDS.DEFAULT, TEST_CONSTANTS.DOCS.ANALYSIS_RESULTS);
 }, 'Document Processing');
 
-expect(processingTime).to.be.lessThan(5000);
+expect(processingTime).toBeLessThan(5000);
 ```
 
 ### Memory Testing
@@ -340,7 +334,7 @@ const memoryUsage = perfUtils.createMemoryUsage(1200); // 1200MB
 // Mock process.memoryUsage
 process.memoryUsage = () => memoryUsage;
 const chunkSize = getDynamicChunkSize();
-expect(chunkSize).to.equal(250); // Reduced chunk size for high memory
+expect(chunkSize).toBe(250); // Reduced chunk size for high memory
 ```
 
 ### Error Scenario Testing
@@ -354,7 +348,7 @@ const networkError = errorScenarios.createNetworkError('Connection timeout');
 const apiError = errorScenarios.createDHQAPIError(401, 'Invalid token');
 
 // Test error handling
-expect(() => someFunction()).to.throw(networkError.message);
+expect(() => someFunction()).toThrow(networkError.message);
 
 // Async error testing
 await errorScenarios.testAsyncError(asyncFunction, expectedError, ...args);
@@ -381,8 +375,8 @@ Console mocking is disabled by default in most tests to prevent conflicts when r
 1. **Module mocking conflicts**: Disable `setupModuleMocks: false` for tests that don't need Firebase
 2. **Console mocking conflicts**: Use `createConsoleSafeStub()` helper to prevent conflicts
 3. **Test isolation**: Each test file runs independently with automatic cleanup
-4. **"Already wrapped" errors**: Framework prevents these by checking `isSinonProxy` before wrapping
-5. **Firebase module loading**: Load Firebase modules after mock setup in `before()` hooks
+4. **Mock conflicts**: Framework prevents double-mocking by checking `vi.isMockFunction()` before wrapping
+5. **Firebase module loading**: Load Firebase modules after mock setup in `beforeAll()` hooks
 6. **Hardcoded values**: Use `TEST_CONSTANTS` instead of hardcoded strings for maintainability
 
 ### Debugging
@@ -391,7 +385,8 @@ Console mocking is disabled by default in most tests to prevent conflicts when r
 // Enable console logging for debugging
 const { factory, mocks } = setupTestSuite({ setupConsole: true });
 const consoleMocks = factory.setupConsoleMocks();
-consoleMocks.log.calledWith('Debug message');
+// Check if a specific message was logged
+expect(consoleMocks.log).toHaveBeenCalledWith('Debug message');
 
 // Check mock state
 console.log(factory.mockDocs);

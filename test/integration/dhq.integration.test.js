@@ -1,5 +1,3 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
 const { setupTestSuite, assertResult } = require('../shared/testHelpers');
 const TestUtils = require('../testUtils');
 const TEST_CONSTANTS = require('../constants');
@@ -12,9 +10,9 @@ const { factory, mocks } = setupTestSuite({
 
 const fieldMapping = require('../../utils/fieldToConceptIdMapping');
 
-const { 
-    createResponseDocID, 
-    getDynamicChunkSize, 
+const {
+    createResponseDocID,
+    getDynamicChunkSize,
     getProcessedRespondentIds
 } = require('../../utils/dhq');
 
@@ -48,20 +46,20 @@ describe('DHQ Integration Tests', () => {
 
             // Set up the mock to return the filtered results
             const collectionRef = mocks.firestore.collection('participants');
-            collectionRef.where.returns({
-                select: sinon.stub().returnsThis(),
-                limit: sinon.stub().returnsThis(),
-                get: sinon.stub().resolves(mockQuerySnapshot)
+            collectionRef.where.mockReturnValue({
+                select: vi.fn().mockReturnThis(),
+                limit: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue(mockQuerySnapshot)
             });
 
             // Test querying for started participants
             const startedQuery = mocks.firestore.collection('participants')
                 .where(fieldMapping.dhq3SurveyStatus, '==', fieldMapping.started)
-                .select('state', fieldMapping.dhq3StudyID, fieldMapping.dhq3participantname)
+                .select('state', fieldMapping.dhq3StudyID, fieldMapping.dhq3Username)
                 .get();
 
             const result = await startedQuery;
-            expect(result.size).to.equal(1);
+            expect(result.size).toBe(1);
         });
 
         it('should execute a transaction', async () => {
@@ -73,14 +71,14 @@ describe('DHQ Integration Tests', () => {
             factory.setupTransaction(async (transaction) => {
                 const docRef = transaction.get(`${TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS}/${TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT}`);
                 const doc = await docRef;
-                
+
                 if (doc && doc.exists) {
                     transaction.update(doc.ref, {
                         [fieldMapping.dhq3SurveyStatus]: fieldMapping.submitted,
                         [fieldMapping.dhq3SurveyCompletionTime]: new Date().toISOString()
                     });
                 }
-                
+
                 return { success: true };
             });
 
@@ -88,36 +86,36 @@ describe('DHQ Integration Tests', () => {
             const result = await mocks.firestore.runTransaction(async (transaction) => {
                 const docRef = transaction.get(`${TEST_CONSTANTS.COLLECTIONS.PARTICIPANTS}/${TEST_CONSTANTS.PARTICIPANT_IDS.DEFAULT}`);
                 const doc = await docRef;
-                
+
                 if (doc && doc.exists) {
                     transaction.update(doc.ref, {
                         [fieldMapping.dhq3SurveyStatus]: fieldMapping.submitted,
                         [fieldMapping.dhq3SurveyCompletionTime]: new Date().toISOString()
                     });
                 }
-                
+
                 return { success: true };
             });
 
-            expect(result).to.deep.equal({ success: true });
+            expect(result).toEqual({ success: true });
         });
 
     });
 
     describe('getProcessedRespondentIds', () => {
         it('should be a function that returns a Set', () => {
-            expect(getProcessedRespondentIds).to.be.a('function');
-            expect(getProcessedRespondentIds.length).to.equal(2);
+            expect(getProcessedRespondentIds).toBeTypeOf('function');
+            expect(getProcessedRespondentIds.length).toBe(2);
         });
 
         it('should handle database errors', async () => {
             // Mock the collection to throw an error
             const originalCollection = mocks.firestore.collection;
-            mocks.firestore.collection = sinon.stub().throws(new Error('Database error'));
+            mocks.firestore.collection = vi.fn().mockImplementation(() => { throw new Error('Database error'); });
 
             const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
-            expect(result).to.be.instanceof(Set);
-            expect(result.size).to.equal(0);
+            expect(result).toBeInstanceOf(Set);
+            expect(result.size).toBe(0);
 
             // Restore original mock
             mocks.firestore.collection = originalCollection;
@@ -127,29 +125,29 @@ describe('DHQ Integration Tests', () => {
             // Use setupDocumentRetrieval for non-existent document
             const collectionPath = 'dhq3SurveyCredentials/study_test/responseTracking';
             const docId = 'dhqAnalysisResults';
-            
+
             factory.setupDocumentRetrieval(collectionPath, docId, null);
 
             const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
-            expect(result).to.be.instanceof(Set);
-            expect(result.size).to.equal(0);
+            expect(result).toBeInstanceOf(Set);
+            expect(result.size).toBe(0);
         });
 
         it('should return a Set of processed respondent IDs if present', async () => {
             // Use setupDocumentRetrieval for document with data
             const collectionPath = 'dhq3SurveyCredentials/study_test/responseTracking';
             const docId = 'dhqAnalysisResults';
-            const mockData = { 
-                [fieldMapping.dhq3ProcessedRespondentArray.toString()]: ['participant1', 'participant2'] 
+            const mockData = {
+                [fieldMapping.dhq3ProcessedRespondentArray.toString()]: ['participant1', 'participant2']
             };
-            
+
             factory.setupDocumentRetrieval(collectionPath, docId, mockData);
 
             const result = await getProcessedRespondentIds('study_test', 'dhqAnalysisResults');
-            expect(result).to.be.instanceof(Set);
-            expect(result.size).to.equal(2);
-            expect(result.has('participant1')).to.be.true;
-            expect(result.has('participant2')).to.be.true;
+            expect(result).toBeInstanceOf(Set);
+            expect(result.size).toBe(2);
+            expect(result.has('participant1')).toBe(true);
+            expect(result.has('participant2')).toBe(true);
         });
     });
 
@@ -157,10 +155,10 @@ describe('DHQ Integration Tests', () => {
     describe('Streaming Processing', () => {
         it('should validate streaming logic', () => {
             const { streamCSVRows } = require('../../utils/fileProcessing');
-            
+
             // Test that streamCSVRows is properly exported and functional
-            expect(streamCSVRows).to.be.a('function');
-            
+            expect(streamCSVRows).toBeTypeOf('function');
+
             // Test basic streaming functionality
             const csvContent = `header1,header2
 value1,value2`;
@@ -169,31 +167,31 @@ value1,value2`;
             const streamTest = async () => {
                 for await (const row of streamCSVRows(csvContent)) {
                     rowCount++;
-                    expect(row).to.be.an('array');
+                    expect(Array.isArray(row)).toBe(true);
                 }
             };
 
             return streamTest().then(() => {
-                expect(rowCount).to.equal(2); // Header + 1 data row
+                expect(rowCount).toBe(2); // Header + 1 data row
             });
         });
 
         it('should validate memory efficiency of streaming approach', () => {
             const { getDynamicChunkSize } = require('../../utils/dhq');
-            
+
             // Test that memory management functions work correctly
             const originalMemoryUsage = process.memoryUsage;
-            
+
             try {
                 // Test various memory scenarios
                 process.memoryUsage = () => ({ heapUsed: 500 * 1024 * 1024 }); // 500MB
-                expect(getDynamicChunkSize()).to.equal(1000);
-                
-                process.memoryUsage = () => ({ heapUsed: 1200 * 1024 * 1024 }); // 1200MB  
-                expect(getDynamicChunkSize()).to.equal(500);
-                
+                expect(getDynamicChunkSize()).toBe(1000);
+
+                process.memoryUsage = () => ({ heapUsed: 1200 * 1024 * 1024 }); // 1200MB
+                expect(getDynamicChunkSize()).toBe(500);
+
                 process.memoryUsage = () => ({ heapUsed: 1600 * 1024 * 1024 }); // 1600MB
-                expect(getDynamicChunkSize()).to.equal(100);
+                expect(getDynamicChunkSize()).toBe(100);
             } finally {
                 process.memoryUsage = originalMemoryUsage;
             }
@@ -201,12 +199,12 @@ value1,value2`;
 
         it('should validate field sanitization works correctly', () => {
             const { sanitizeFieldName } = require('../../utils/dhq');
-            
+
             // Test field sanitization without requiring Firestore
-            expect(sanitizeFieldName('Energy (kcal)')).to.equal('Energy_kcal');
-            expect(sanitizeFieldName('*Weight')).to.equal('star_Weight');
-            expect(sanitizeFieldName('Protein-total')).to.equal('Protein_total');
-            expect(sanitizeFieldName('123field')).to.equal('field_123field');
+            expect(sanitizeFieldName('Energy (kcal)')).toBe('Energy_kcal');
+            expect(sanitizeFieldName('*Weight')).toBe('star_Weight');
+            expect(sanitizeFieldName('Protein-total')).toBe('Protein_total');
+            expect(sanitizeFieldName('123field')).toBe('field_123field');
         });
     });
 });
