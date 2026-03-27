@@ -1101,23 +1101,25 @@ const verifyIdentity = async (type, token, siteCode) => {
         return new Error(`Verification status cannot be changed from ${existingValue} to ${newValue}`);
       }
 
-      //verify the dob is valid
-      const nintyYearsInMs = 2840125680000; // 90 years times 31556952000 ms per year
-      const eightteenYearsInMs = 568025136000; // 18 years times 31556952000 ms per year
-      if (docData[fieldMapping.dataDestruction.birthMonth.toString()] && docData[fieldMapping.dataDestruction.birthDay.toString()] && docData[fieldMapping.dataDestruction.birthYear.toString()]) {
-          let dobString = docData[fieldMapping.dataDestruction.birthMonth.toString()] + '/' + docData[fieldMapping.dataDestruction.birthDay.toString()]  + '/' + docData[fieldMapping.dataDestruction.birthYear.toString()];
-          let dobInMs = +new Date() - +new Date(dobString);
-          if  (dobInMs === NaN ||
-            dobInMs > nintyYearsInMs ||
-            dobInMs < eightteenYearsInMs) {
-            let error = new Error('Participant DOB ('+dobString+') is out of range');
+      //verify the dob is valid if the new value is verified
+      if (newValue === fieldMapping.verified) {
+          const nintyYearsInMs = 2840125680000; // 90 years times 31556952000 ms per year
+          const eightteenYearsInMs = 568025136000; // 18 years times 31556952000 ms per year
+          if (docData[fieldMapping.dataDestruction.birthMonth.toString()] && docData[fieldMapping.dataDestruction.birthDay.toString()] && docData[fieldMapping.dataDestruction.birthYear.toString()]) {
+              let dobString = docData[fieldMapping.dataDestruction.birthMonth.toString()] + '/' + docData[fieldMapping.dataDestruction.birthDay.toString()]  + '/' + docData[fieldMapping.dataDestruction.birthYear.toString()];
+              let dobInMs = +new Date() - +new Date(dobString);
+              if  (dobInMs === NaN ||
+                dobInMs > nintyYearsInMs ||
+                dobInMs < eightteenYearsInMs) {
+                let error = new Error('Participant DOB ('+dobString+') is out of range');
+                error.errorCode = 206;
+                return error;
+              }
+          } else {
+            let error = new Error('Participant DOB missing or incomplete');
             error.errorCode = 206;
             return error;
           }
-      } else {
-        let error = new Error('Participant DOB missing or incomplete');
-        error.errorCode = 206;
-        return error;
       }
 
       const data = {
