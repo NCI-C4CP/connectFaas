@@ -48,20 +48,28 @@
   },
   "overridesNote": {
     "form-data": "Pinned to 2.5.5 until @google-cloud/* packages upgrade",
-    "qs": "6.14.1 for CVE-2025-15284",
+    "qs": "6.14.2 for CVE-2025-15284, GHSA-w7fw-mjwx-w883 (arrayLimit bypass DoS)",
     "jws": "4.0.1 for GHSA-869p-cjfg-cm3x",
     "js-yaml": "4.1.1 for GHSA-mh29-5h37-fv8m",
-    "node-forge": "1.3.2 for GHSA-554w-wpv2-vw27, GHSA-5gfm-wpxj-wjgq, GHSA-65ch-62r8-g69g",
+    "node-forge": "1.4.0 for GHSA-554w-wpv2-vw27, GHSA-5gfm-wpxj-wjgq, GHSA-65ch-62r8-g69g, CVE-2026-33891, CVE-2026-33894, CVE-2026-33895, CVE-2026-33896",
     "diff": "8.0.3 for GHSA-73rr-hh4g-fpgx",
-    "fast-xml-parser": "5.5.7 for CVE-2026-33036, GHSA-8gc5-j5rx-235r"
+    "fast-xml-parser": "5.5.7 for CVE-2026-33036, GHSA-8gc5-j5rx-235r",
+    "picomatch": "4.0.4 for CVE-2026-33671 (GHSA-c2c7-rcm5-vvqj), CVE-2026-33672 (GHSA-3v7f-55p6-f55p)",
+    "axios": "1.13.5 for GHSA-43fc-jf86-j433 (DoS via __proto__ in mergeConfig)",
+    "path-to-regexp": "0.1.13 for CVE-2026-4867 / GHSA-37ch-88jc-xwx2 (ReDoS via 3+ route params)",
+    "ajv": "8.18.0 for CVE-2025-69873 / GHSA-2g4f-4pwh-qvx6 (ReDoS with $data option)"
   },
   "overrides": {
     "diff": "8.0.3",
+    "axios": "1.13.5",
     "fast-xml-parser": "5.5.7",
-    "qs": "6.14.1",
+    "picomatch": "4.0.4",
+    "qs": "6.14.2",
     "jws": "4.0.1",
     "js-yaml": "4.1.1",
-    "node-forge": "1.3.2",
+    "node-forge": "1.4.0",
+    "path-to-regexp": "0.1.13",
+    "ajv": "8.18.0",
     "@google-cloud/bigquery": {
       "form-data": "2.5.5"
     },
