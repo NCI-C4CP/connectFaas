@@ -588,7 +588,7 @@ describe("SmsBatchSender", () => {
       const result = await sender.waitForSpec("spec1");
       expect(result.sentCounts).toEqual({ english: 0, spanish: 0 });
       expect(result.failedCounts).toEqual({ english: 1, spanish: 1 });
-      expect(saveFn.mock.calls.length).toBe(0);
+      expect(saveFn.mock.calls.length).toBe(1);
     });
 
     it("should not increment sent counts when saveNotificationBatch throws", async () => {
