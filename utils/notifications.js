@@ -58,8 +58,8 @@ const sendTwilioMessage = async (smsRecord) => {
     const updatedSmsRecord = { ...smsRecord, messageSid: result.sid || "" };
     return { smsRecord: updatedSmsRecord, isSuccess: true, isRateLimit: false };
   } catch (error) {
-    const errorCode = error.code?.toString() ?? "";
-    const statusCode = (error.status ?? error.statusCode)?.toString() ?? "";
+    const errorCode = error.code?.toString() ?? "500";
+    const statusCode = (error.status ?? error.statusCode)?.toString() ?? "500";
     if (errorCode === "20429" || statusCode === "429") {
       return { smsRecord, isSuccess: false, isRateLimit: true };
     }
@@ -68,7 +68,9 @@ const sendTwilioMessage = async (smsRecord) => {
       `Error sending SMS (participant token: ${smsRecord.token}; spec ID: ${smsRecord.notificationSpecificationsID}).`,
       error,
     );
-    return { smsRecord, isSuccess: false, isRateLimit: false };
+    const errorMessage = error.message || 'Error occurred calling Twilio API.';
+    const updatedSmsRecord = { ...smsRecord, errorCode, errorMessage, statusCode };
+    return { smsRecord: updatedSmsRecord, isSuccess: false, isRateLimit: false };
   }
 };
 
@@ -228,19 +230,32 @@ class SmsBatchSender {
         const batchSendResults = await Promise.all(batchSmsRecords.map((r) => this.#sendFn(r)));
         this.#prevBatchFinishTime = Date.now();
 
-        const successIndices = batchSendResults
-          .map((res, idx) => (res.isSuccess ? idx : -1))
-          .filter((idx) => idx !== -1);
-        const successRecords = successIndices.map((idx) => batchSendResults[idx].smsRecord);
+        const successRecords = [];
+        const rateLimitRecords = [];
+        const failedRecords = [];
+
+        for (const result of batchSendResults) {
+          if (result.isSuccess) {
+            successRecords.push(result.smsRecord);
+            continue;
+          }
+
+          if (result.isRateLimit) {
+            rateLimitRecords.push(result.smsRecord);
+            continue;
+          }
+
+          failedRecords.push(result.smsRecord);
+        }
 
         if (successRecords.length > 0) {
           try {
             await this.#saveFn(successRecords);
-            for (const idx of successIndices) {
+            for (const record of successRecords) {
               this.#incrementCount(
                 this.#sentCounts,
-                batchSmsRecords[idx].notificationSpecificationsID,
-                batchSmsRecords[idx].language,
+                record.notificationSpecificationsID,
+                record.language,
               );
             }
           } catch (error) {
@@ -248,21 +263,20 @@ class SmsBatchSender {
           }
         }
 
-        const rateLimitIndices = batchSendResults
-          .map((res, idx) => (!res.isSuccess && res.isRateLimit ? idx : -1))
-          .filter((idx) => idx !== -1)
-          .reverse();
-        for (const idx of rateLimitIndices) {
-          const record = batchSmsRecords[idx];
+        for (const record of rateLimitRecords.reverse()) {
           const specId = record.notificationSpecificationsID;
           if (!this.#retryCounts[specId]) this.#retryCounts[specId] = {};
           this.#retryCounts[specId][record.id] = (this.#retryCounts[specId][record.id] || 0) + 1;
 
           if (this.#retryCounts[specId][record.id] > this.#maxRetries) {
+            failedRecords.push({
+              ...record,
+              errorCode: "RATE_LIMIT_RETRIES_EXHAUSTED",
+              errorMessage: `Message cannot be sent after ${this.#maxRetries} retries`,
+            });
             console.error(
-              `SMS rate limit retries exhausted (token: ${record.token}; spec ID: ${record.notificationSpecificationsID}).`,
+              `Message cannot be sent after ${this.#maxRetries} retries (id: ${record.id}; spec ID: ${record.notificationSpecificationsID}).`,
             );
-            this.#incrementCount(this.#failedCounts, record.notificationSpecificationsID, record.language);
             continue;
           }
 
@@ -274,16 +288,21 @@ class SmsBatchSender {
           this.#queue.unshift(...currItems);
         }
 
-        const failedIndices = batchSendResults
-          .map((res, idx) => (!res.isSuccess && !res.isRateLimit ? idx : -1))
-          .filter((idx) => idx !== -1);
-        for (const idx of failedIndices) {
-          this.#incrementCount(
-            this.#failedCounts,
-            batchSmsRecords[idx].notificationSpecificationsID,
-            batchSmsRecords[idx].language,
-          );
+        if (failedRecords.length > 0) {
+          try {
+            await this.#saveFn(failedRecords);
+            for (const record of failedRecords) {
+              this.#incrementCount(
+                this.#failedCounts,
+                record.notificationSpecificationsID,
+                record.language,
+              );
+            }
+          } catch (error) {
+            console.error('Error running saveNotificationBatch for failed records.', error);
+          }
         }
+
       }
 
       for (const specId of endMarkerSpecIdSet) {
