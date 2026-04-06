@@ -2661,6 +2661,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`,
             `d_${baselineMouthwashCollected} != ${yes} OR d_${baselineMouthwashCollected} IS NULL`, // Participant does not already have a mouthwash sample collected
+            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitRequestEligible} IS NULL` // Participant is not already eligible to request a kit
 
         ];
         let sortsArr = [];
@@ -3164,6 +3165,25 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
     // Because there are no sorts on biospecSnapshot, we don't need to care about order,
     // so just whatever order is returned here is fine
     return Object.keys(kitDict).map(key => kitDict[key]);
+}
+
+const queryKitsByShippedAndAssignedStatus = async () => {
+    // Find all kitAssemblies in shipped or assigned status,
+
+    const kitSnapshot = await db
+        .collection('kitAssembly')
+        .where(Filter.or(
+            Filter.where(`${fieldMapping.kitStatus}`, '==', fieldMapping.assigned),
+            Filter.where(`${fieldMapping.kitStatus}`, '==', fieldMapping.shipped)
+        ))
+        .get();
+    if (kitSnapshot.size === 0) {
+        return false;
+    }
+
+    const kitDocs = kitSnapshot.docs.map(doc => doc.data());
+
+    return kitDocs;
 }
 
 const eligibleParticipantsForKitAssignment = async () => {
@@ -5868,6 +5888,7 @@ module.exports = {
     processTwilioEvent,
     getSpecimenAndParticipant,
     queryKitsByReceivedDate,
+    queryKitsByShippedAndAssignedStatus,
     getParticipantCancerOccurrences,
     writeCancerOccurrences,
     writeBirthdayCard,
