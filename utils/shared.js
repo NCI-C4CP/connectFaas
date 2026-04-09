@@ -440,6 +440,7 @@ const kpSSOConfig = {
     email: 'userPrincipalName',
     siteManagerUser: 'CN=connect_study_manager_user',
     biospecimenUser: 'CN=connect_biospecimen_user',
+    ehrUploadUser: 'CN=connect_study_manager_dataOpts',
     kpco: {
         name: 'CN=connect_kpco_user',
         siteCode: 125001209,

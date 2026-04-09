@@ -796,6 +796,21 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
 
+    else if(api === 'getKitsShippedNotReceived') {
+        if(req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+        try {
+            const { queryKitsByShippedAndAssignedStatus } = require('./firestore');
+            const response = await queryKitsByShippedAndAssignedStatus();
+            return res.status(200).json({data: response, code:200});
+        }
+        catch(error) {
+            console.error('Error querying kits', error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+    }
+
     else if(api === 'kitStatusToParticipant') {
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
