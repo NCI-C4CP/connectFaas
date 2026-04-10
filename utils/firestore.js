@@ -939,6 +939,8 @@ const removeParticipantsDataDestruction = async () => {
             fieldMapping.participantMap.dateRequestedDataDestroy.toString();
         const destroyDataCategoricalCId =
             fieldMapping.participantMap.destroyDataCategorical.toString();
+        const dateTimeDataDestroyedCId =
+            fieldMapping.participantMap.dateTimeDataDestroyed.toString();
         const requestedAndSignCId =
             fieldMapping.participantMap.requestedAndSign;
 
@@ -1001,6 +1003,7 @@ const removeParticipantsDataDestruction = async () => {
                     if (errors.length === 0) {
                         try {
                             updatedData[dataHasBeenDestroyed] = fieldMapping.yes;
+                            updatedData[dateTimeDataDestroyedCId] = new Date().toISOString();
                             updatedData[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestroyedStatus;
                             await db.collection('participants').doc(participantId).update(updatedData);
                             count++;
