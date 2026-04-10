@@ -16,6 +16,9 @@ const destroyDataCId = () => fieldMapping.participantMap.destroyData.toString();
 const dataHasBeenDestroyedCId = () => fieldMapping.participantMap.dataHasBeenDestroyed.toString();
 const destroyDataCategoricalCId = () => fieldMapping.participantMap.destroyDataCategorical.toString();
 const dateRequestedDataDestroyCId = () => fieldMapping.participantMap.dateRequestedDataDestroy.toString();
+const dateTimeDataDestroyedCId = () => fieldMapping.participantMap.dateTimeDataDestroyed.toString();
+const concernedAboutInfoOnlineCId = () => fieldMapping.dataDestruction.concernedAboutInfoOnline.toString();
+const technicalProblemsCId = () => fieldMapping.dataDestruction.technicalProblems.toString();
 const requestedAndSignCId = () => fieldMapping.participantMap.requestedAndSign;
 const uninvitedRecruitsCId = () => fieldMapping.participantMap.uninvitedRecruits.toString();
 
@@ -319,26 +322,39 @@ describe('Participant Data Cleanup', () => {
     describe('removeParticipantsDataDestruction', () => {
         describe('happy path', () => {
             it('should process a participant who signed the destruction form', async () => {
-                const { data, doc } = createDestructionParticipant();
-                const { updateStubs } = setupFullDestructionMock([doc]);
+                const destructionTimestamp = new Date('2026-04-07T03:04:05.678Z');
+                vi.useFakeTimers();
+                vi.setSystemTime(destructionTimestamp);
 
-                await firestoreModule.removeParticipantsDataDestruction();
+                try {
+                    const { doc } = createDestructionParticipant();
+                    const { updateStubs } = setupFullDestructionMock([doc]);
 
-                // Participant doc should have been updated
-                expect(updateStubs[doc.id]).toHaveBeenCalledOnce();
-                const updateArg = updateStubs[doc.id].mock.calls[0][0];
+                    await firestoreModule.removeParticipantsDataDestruction();
 
-                // dataHasBeenDestroyed should be set to yes
-                expect(updateArg[dataHasBeenDestroyedCId()]).toBe(fieldMapping.yes);
+                    // Participant doc should have been updated
+                    expect(updateStubs[doc.id]).toHaveBeenCalledOnce();
+                    const updateArg = updateStubs[doc.id].mock.calls[0][0];
 
-                // participationStatus should be set to dataDestroyedStatus
-                expect(updateArg[fieldMapping.participationStatus]).toBe(
-                    fieldMapping.participantMap.dataDestroyedStatus
-                );
+                    // dataHasBeenDestroyed should be set to yes
+                    expect(updateArg[dataHasBeenDestroyedCId()]).toBe(fieldMapping.yes);
 
-                // Extra fields should be marked for deletion (FieldValue.delete())
-                expect(updateArg).toHaveProperty('123456789');
-                expect(updateArg).toHaveProperty('987654321');
+                    // participationStatus should be set to dataDestroyedStatus
+                    expect(updateArg[fieldMapping.participationStatus]).toBe(
+                        fieldMapping.participantMap.dataDestroyedStatus
+                    );
+
+                    // destruction timestamp should be written as an ISO string
+                    expect(updateArg[dateTimeDataDestroyedCId()]).toBe(
+                        destructionTimestamp.toISOString()
+                    );
+
+                    // Extra fields should be marked for deletion (FieldValue.delete())
+                    expect(updateArg).toHaveProperty('123456789');
+                    expect(updateArg).toHaveProperty('987654321');
+                } finally {
+                    vi.useRealTimers();
+                }
             });
 
             it('should process a participant past the 60-day waiting period', async () => {
@@ -380,6 +396,23 @@ describe('Participant Data Cleanup', () => {
                 expect(updateArg).not.toHaveProperty('pin');
 
                 // Extra non-stub fields SHOULD be present (marked for deletion)
+                expect(updateArg).toHaveProperty('123456789');
+                expect(updateArg).toHaveProperty('987654321');
+            });
+
+            it('should preserve Concerned About Info Online and Technical Problems in the stub record', async () => {
+                const { doc } = createDestructionParticipant({
+                    [concernedAboutInfoOnlineCId()]: fieldMapping.no,
+                    [technicalProblemsCId()]: fieldMapping.yes,
+                });
+                const { updateStubs } = setupFullDestructionMock([doc]);
+
+                await firestoreModule.removeParticipantsDataDestruction();
+
+                const updateArg = updateStubs[doc.id].mock.calls[0][0];
+
+                expect(updateArg).not.toHaveProperty(concernedAboutInfoOnlineCId());
+                expect(updateArg).not.toHaveProperty(technicalProblemsCId());
                 expect(updateArg).toHaveProperty('123456789');
                 expect(updateArg).toHaveProperty('987654321');
             });
@@ -1508,6 +1541,15 @@ describe('Participant Data Cleanup', () => {
 
             expect(dataDestructionValues).not.toContain(dhq3UsernameCid);
             expect(dataDestructionValues).not.toContain(dhq3StudyIdCid);
+        });
+
+        it('should include Concerned About Info Online and Technical Problems in the dataDestruction stub fields', () => {
+            const dataDestructionValues = Object.values(fieldMapping.dataDestruction).map((id) =>
+                id.toString()
+            );
+
+            expect(dataDestructionValues).toContain(concernedAboutInfoOnlineCId());
+            expect(dataDestructionValues).toContain(technicalProblemsCId());
         });
 
         it('should delete dhq3Username and dhq3StudyID fields during data destruction', async () => {
