@@ -2452,7 +2452,6 @@ const getBoxesPagination = async (siteCode, body) => {
     }
 };
 
-// make function to check duplicate tracking numbers
 /**
  * Checks Biospecimen BPTL's kitAssembly collection and Biospecimen Shipping dashboard boxes collection for duplicates tracking numbers
  * @param {Array} trackingIds Array of tracking IDs to check for duplicates
@@ -2460,34 +2459,24 @@ const getBoxesPagination = async (siteCode, body) => {
  * Ex. [{ trackingId: '12345', returnKitResult: 1, supplyKitResult: 0, shippingDashboardResult: 0 }]
  */
 const checkDuplicateTrackingId = async (trackingIds) => {
-    console.log("🚀 ~ checkDuplicateTrackingId ~ trackingIds:", trackingIds)
-    // Note: This may need optimization later using an "in" query
     try { 
         const duplicateTrackingIds = [];
-
-       // add exit if no tracking IDs are sent, might not be needed since we have a prior 
         if (trackingIds.length === 0) return duplicateTrackingIds;
 
-        // We need to make this iterable
         for (const trackingId of trackingIds) {
-
             const kitCollectionReturnKitTrackingIdCheck = db.collection('kitAssembly').where(`${fieldMapping.returnKitTrackingNum}`, '==', trackingId);
             const kitCollectionSupplyKitTrackingIdCheck = db.collection('kitAssembly').where(`${fieldMapping.supplyKitTrackingNum}`, '==', trackingId);
             const shippingDashboardTrackingIdCheck = db.collection('boxes').where(`${fieldMapping.boxTrackingNumberScan}`, '==', trackingId);
 
-            // Now make three checks concurrently
             const [returnKitResult, supplyKitResult, shippingDashboardResult] = await Promise.all([
                 kitCollectionReturnKitTrackingIdCheck.get(),
                 kitCollectionSupplyKitTrackingIdCheck.get(),
                 shippingDashboardTrackingIdCheck.get()
             ]);
 
-            // check if any has duplicates via count or size
             const hasDuplicates = returnKitResult.size > 0 || supplyKitResult.size > 0 || shippingDashboardResult.size > 0;
-            console.log("🚀 ~ checkDuplicateTrackingId ~ hasDuplicates:", hasDuplicates)
+
             if (hasDuplicates) {
-                // push object to duplicate tracking Ids, also will get the size if there are any
-                console.log("current Tracking ID has duplicates:", trackingId);
                 duplicateTrackingIds.push({
                     trackingId,
                     returnKitResult: returnKitResult.size,
@@ -2496,18 +2485,15 @@ const checkDuplicateTrackingId = async (trackingIds) => {
                 });
             }
         }
-        console.log("aggregate duplicate tracking IDs:", duplicateTrackingIds);
-        return duplicateTrackingIds;
 
-    }
-    catch (error) { 
+        return duplicateTrackingIds;
+    } catch (error) { 
         console.error(error);
         throw error;
     }
 };
 
 const getNumBoxesShipped = async (siteCode, body) => {
-    console.log("🚀 ~ getNumBoxesShipped ~ body:", body)
     const filters = body.filters ?? ``;
     const source = body.source ?? ``;
     const startDate = filters.startDate ?? ``;
@@ -2515,7 +2501,6 @@ const getNumBoxesShipped = async (siteCode, body) => {
     const endDate = filters.endDate ?? ``;
     try {
         let query = db.collection('boxes').where(`${fieldMapping.submitShipmentFlag}`, '==', fieldMapping.yes);
-        // console.log("🚀 ~ getNumBoxesShipped ~ query:", query)
         query = preQueryBuilder(filters, query, trackingId, endDate, startDate, source, siteCode);
         const snapshot = await query.count().get();
         return snapshot.data().count;
@@ -3480,7 +3465,7 @@ const assignKitToParticipant = async (data) => {
         const boxTrackingSnapshot = await transaction.get(
             db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', data[supplyKitTrackingNum])
         );
-        
+
         if(boxTrackingSnapshot.size > 0) {
             kitAssignmentResult = {
                 success: false,

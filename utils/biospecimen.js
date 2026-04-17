@@ -575,13 +575,13 @@ const biospecimenAPIs = async (req, res) => {
         const requestData = req.body;
         try {
             let response = await getNumBoxesShipped(siteCode, requestData);
-            console.log("🚀 ~ biospecimenAPIs ~ getNumBoxesShipped:", getNumBoxesShipped)
             return res.status(200).json({data:response, code:200});
         } catch (error) {
             console.error('Error in getNumBoxesShipped:', error);
             return res.status(500).json(getResponseJSON(error.message || `${error}`, 500));
         }
     }
+
     else if (api === 'addKitData'){
         if (req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -635,17 +635,17 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
     else if (api == 'checkDuplicateTrackingId') {
-        if(req.method !== 'POST') {
+        if (req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
         }
-        // access request body
-        const requestData = req.body; // should this be checked?
-        if(Object.keys(requestData).length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
+
+        const requestData = req.body;
+        if (Object.keys(requestData).length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
 
         const { checkDuplicateTrackingId } = require('./firestore');
         const response = await checkDuplicateTrackingId(requestData.trackingIds);
         try {
-            return res.status(200).json({data: response, code:200});
+            return res.status(200).json({ data: response, code:200 });
         } catch (error) {
             console.error(error);
             return res.status(500).json(getResponseJSON(error.message, 500));
