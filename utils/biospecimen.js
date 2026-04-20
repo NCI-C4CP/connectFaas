@@ -645,7 +645,7 @@ const biospecimenAPIs = async (req, res) => {
         }
 
         if (requestData.trackingIds.length > 15) { // setting 15 as limit for now
-            return res.status(400).json(getResponseJSON('trackingIds exceeds the maximum allowed length!', 15));
+            return res.status(400).json(getResponseJSON('trackingIds exceeds the maximum allowed length of 15!', 400));
         }
 
         try {
