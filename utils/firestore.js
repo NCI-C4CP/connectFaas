@@ -2458,8 +2458,17 @@ const getBoxesPagination = async (siteCode, body) => {
  * @returns {Array} Array of duplicate tracking IDs with their respective counts
  * Ex. [{ trackingId: '12345', returnKitResult: 1, supplyKitResult: 0, shippingDashboardResult: 0 }]
  */
-const checkDuplicateTrackingId = async (trackingIds) => {
+const checkDuplicateTrackingId = async (trackingIds = []) => {
     try { 
+        if (!Array.isArray(trackingIds)) {
+            throw new TypeError('trackingIds must be an array');
+        }
+
+        // Setting a limit
+        if (trackingIds.length > 15) {
+            throw new RangeError('trackingIds exceeds maximum allowed length of 15');
+        }   
+        
         const duplicateTrackingIds = [];
         if (trackingIds.length === 0) return duplicateTrackingIds;
 

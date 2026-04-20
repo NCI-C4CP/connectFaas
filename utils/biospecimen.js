@@ -641,10 +641,13 @@ const biospecimenAPIs = async (req, res) => {
 
         const requestData = req.body;
         if (Object.keys(requestData).length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
+        if (!Array.isArray(requestData.trackingIds)) {
+            return res.status(400).json(getResponseJSON('trackingIds must be an array!', 400));
+        }
 
-        const { checkDuplicateTrackingId } = require('./firestore');
-        const response = await checkDuplicateTrackingId(requestData.trackingIds);
         try {
+            const { checkDuplicateTrackingId } = require('./firestore');
+            const response = await checkDuplicateTrackingId(requestData.trackingIds);
             return res.status(200).json({ data: response, code:200 });
         } catch (error) {
             console.error(error);
