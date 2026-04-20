@@ -2454,16 +2454,12 @@ const getBoxesPagination = async (siteCode, body) => {
 
 /**
  * Checks Biospecimen BPTL's kitAssembly collection and Biospecimen Shipping dashboard boxes collection for duplicates tracking numbers
- * @param {Array} trackingIds Array of tracking IDs to check for duplicates
- * @returns {Array} Array of duplicate tracking IDs with their respective counts
+ * @param {Array<string>} trackingIds Array of tracking IDs to check for duplicates
+ * @returns {Array<object>} Array of duplicate tracking IDs with their respective counts
  * Ex. [{ trackingId: '12345', returnKitResult: 1, supplyKitResult: 0, shippingDashboardResult: 0 }]
  */
-const checkDuplicateTrackingId = async (trackingIds = []) => {
+const checkDuplicateTrackingId = async (trackingIds) => {
     try { 
-        if (!Array.isArray(trackingIds)) {
-            throw new TypeError('trackingIds must be an array');
-        }
-
         // Setting a limit
         if (trackingIds.length > 15) {
             throw new RangeError('trackingIds exceeds maximum allowed length of 15');
