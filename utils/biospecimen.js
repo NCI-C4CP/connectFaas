@@ -640,9 +640,12 @@ const biospecimenAPIs = async (req, res) => {
         }
 
         const requestData = req.body;
-        if (Object.keys(requestData).length === 0 ) return res.status(400).json(getResponseJSON('Request body is empty!', 400));
         if (!Array.isArray(requestData.trackingIds)) {
             return res.status(400).json(getResponseJSON('trackingIds must be an array!', 400));
+        }
+
+        if (requestData.trackingIds.length > 15) { // setting 15 as limit for now
+            return res.status(400).json(getResponseJSON('trackingIds exceeds the maximum allowed length!', 15));
         }
 
         try {
