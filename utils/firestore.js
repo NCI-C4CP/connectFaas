@@ -939,6 +939,8 @@ const removeParticipantsDataDestruction = async () => {
             fieldMapping.participantMap.dateRequestedDataDestroy.toString();
         const destroyDataCategoricalCId =
             fieldMapping.participantMap.destroyDataCategorical.toString();
+        const dateTimeDataDestroyedCId =
+            fieldMapping.participantMap.dateTimeDataDestroyed.toString();
         const requestedAndSignCId =
             fieldMapping.participantMap.requestedAndSign;
 
@@ -1001,6 +1003,7 @@ const removeParticipantsDataDestruction = async () => {
                     if (errors.length === 0) {
                         try {
                             updatedData[dataHasBeenDestroyed] = fieldMapping.yes;
+                            updatedData[dateTimeDataDestroyedCId] = new Date().toISOString();
                             updatedData[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestroyedStatus;
                             await db.collection('participants').doc(participantId).update(updatedData);
                             count++;
@@ -1101,23 +1104,25 @@ const verifyIdentity = async (type, token, siteCode) => {
         return new Error(`Verification status cannot be changed from ${existingValue} to ${newValue}`);
       }
 
-      //verify the dob is valid
-      const nintyYearsInMs = 2840125680000; // 90 years times 31556952000 ms per year
-      const eightteenYearsInMs = 568025136000; // 18 years times 31556952000 ms per year
-      if (docData[fieldMapping.dataDestruction.birthMonth.toString()] && docData[fieldMapping.dataDestruction.birthDay.toString()] && docData[fieldMapping.dataDestruction.birthYear.toString()]) {
-          let dobString = docData[fieldMapping.dataDestruction.birthMonth.toString()] + '/' + docData[fieldMapping.dataDestruction.birthDay.toString()]  + '/' + docData[fieldMapping.dataDestruction.birthYear.toString()];
-          let dobInMs = +new Date() - +new Date(dobString);
-          if  (dobInMs === NaN ||
-            dobInMs > nintyYearsInMs ||
-            dobInMs < eightteenYearsInMs) {
-            let error = new Error('Participant DOB ('+dobString+') is out of range');
+      //verify the dob is valid if the new value is verified
+      if (newValue === fieldMapping.verified) {
+          const nintyYearsInMs = 2840125680000; // 90 years times 31556952000 ms per year
+          const eightteenYearsInMs = 568025136000; // 18 years times 31556952000 ms per year
+          if (docData[fieldMapping.dataDestruction.birthMonth.toString()] && docData[fieldMapping.dataDestruction.birthDay.toString()] && docData[fieldMapping.dataDestruction.birthYear.toString()]) {
+              let dobString = docData[fieldMapping.dataDestruction.birthMonth.toString()] + '/' + docData[fieldMapping.dataDestruction.birthDay.toString()]  + '/' + docData[fieldMapping.dataDestruction.birthYear.toString()];
+              let dobInMs = +new Date() - +new Date(dobString);
+              if  (dobInMs === NaN ||
+                dobInMs > nintyYearsInMs ||
+                dobInMs < eightteenYearsInMs) {
+                let error = new Error('Participant DOB ('+dobString+') is out of range');
+                error.errorCode = 206;
+                return error;
+              }
+          } else {
+            let error = new Error('Participant DOB missing or incomplete');
             error.errorCode = 206;
             return error;
           }
-      } else {
-        let error = new Error('Participant DOB missing or incomplete');
-        error.errorCode = 206;
-        return error;
       }
 
       const data = {
@@ -2705,6 +2710,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`,
             `d_${baselineMouthwashCollected} != ${yes} OR d_${baselineMouthwashCollected} IS NULL`, // Participant does not already have a mouthwash sample collected
+            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitRequestEligible} IS NULL` // Participant is not already eligible to request a kit
 
         ];
         let sortsArr = [];
@@ -3218,6 +3224,25 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
     // Because there are no sorts on biospecSnapshot, we don't need to care about order,
     // so just whatever order is returned here is fine
     return Object.keys(kitDict).map(key => kitDict[key]);
+}
+
+const queryKitsByShippedAndAssignedStatus = async () => {
+    // Find all kitAssemblies in shipped or assigned status,
+
+    const kitSnapshot = await db
+        .collection('kitAssembly')
+        .where(Filter.or(
+            Filter.where(`${fieldMapping.kitStatus}`, '==', fieldMapping.assigned),
+            Filter.where(`${fieldMapping.kitStatus}`, '==', fieldMapping.shipped)
+        ))
+        .get();
+    if (kitSnapshot.size === 0) {
+        return false;
+    }
+
+    const kitDocs = kitSnapshot.docs.map(doc => doc.data());
+
+    return kitDocs;
 }
 
 const eligibleParticipantsForKitAssignment = async () => {
@@ -5936,6 +5961,7 @@ module.exports = {
     processTwilioEvent,
     getSpecimenAndParticipant,
     queryKitsByReceivedDate,
+    queryKitsByShippedAndAssignedStatus,
     getParticipantCancerOccurrences,
     writeCancerOccurrences,
     writeBirthdayCard,
