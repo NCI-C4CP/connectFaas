@@ -4591,11 +4591,12 @@ const receivedKitStatusParticipants = async (filters) => {
             for (const doc of snapshot.docs) { 
                 const data = doc.data();
 
+                const packageReceiptConditions = data[pkgReceiptConditions] ?? {};
                 // get only the package receipt conditions that are marked as "yes"
-                const filteredPackageConditions = Object.entries(data[pkgReceiptConditions])
+                const filteredPackageConditions = Object.entries(packageReceiptConditions)
                                                         .filter(([, value]) => value === yes)
                                                         .map(([key]) => Number(key));
-                                                        
+
                 const kitData = {
                     Connect_ID: data.Connect_ID,
                     [collectionCardId]: data[collectionCardId],
