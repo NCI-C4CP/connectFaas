@@ -11,10 +11,9 @@ beforeAll(() => {
     });
 
     const { incentiveCompleted, eligibleForIncentive } = require('../../utils/incentive');
-    const { getToken, validateUsersEmailPhone } = require('../../utils/validation');
+    const { getToken } = require('../../utils/validation');
     const { getFilteredParticipants, getParticipants, identifyParticipant } = require('../../utils/submission');
     const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('../../utils/sites');
-    const { getParticipantNotification } = require('../../utils/notifications');
     const { dashboard } = require('../../utils/dashboard');
     const { connectApp } = require('../../utils/connectApp');
     const { biospecimenAPIs } = require('../../utils/biospecimen');
@@ -26,14 +25,12 @@ beforeAll(() => {
         incentiveCompleted,
         participantsEligibleForIncentive: eligibleForIncentive,
         getParticipantToken: getToken,
-        validateUsersEmailPhone,
         getFilteredParticipants,
         getParticipants,
         identifyParticipant,
         submitParticipantsData,
         updateParticipantData,
         getBigQueryData,
-        getParticipantNotification,
         dashboard,
         app: connectApp,
         biospecimen: biospecimenAPIs,
@@ -77,7 +74,6 @@ describe('API Endpoint Method Guards', () => {
             ['submitParticipantsData', () => api.submitParticipantsData],
             ['updateParticipantData', () => api.updateParticipantData],
             ['getBigQueryData', () => api.getBigQueryData],
-            ['getParticipantNotification', () => api.getParticipantNotification],
             ['dashboard', () => api.dashboard],
             ['app', () => api.app],
             ['biospecimen', () => api.biospecimen],
@@ -99,14 +95,12 @@ describe('API Endpoint Method Guards', () => {
             ['incentiveCompleted', () => api.incentiveCompleted, 'GET', 'Only POST requests are accepted!'],
             ['participantsEligibleForIncentive', () => api.participantsEligibleForIncentive, 'POST', 'Only GET requests are accepted!'],
             ['getParticipantToken', () => api.getParticipantToken, 'GET', 'Only POST requests are accepted!'],
-            ['validateUsersEmailPhone', () => api.validateUsersEmailPhone, 'POST', 'Only GET requests are accepted!'],
             ['getFilteredParticipants', () => api.getFilteredParticipants, 'POST', 'Only GET requests are accepted!'],
             ['getParticipants', () => api.getParticipants, 'POST', 'Only GET requests are accepted!'],
             ['identifyParticipant', () => api.identifyParticipant, 'PUT', 'Only GET or POST requests are accepted!'],
             ['submitParticipantsData', () => api.submitParticipantsData, 'GET', 'Only POST requests are accepted!'],
             ['updateParticipantData', () => api.updateParticipantData, 'GET', 'Only POST requests are accepted!'],
             ['getBigQueryData', () => api.getBigQueryData, 'POST', 'Only GET requests are accepted!'],
-            ['getParticipantNotification', () => api.getParticipantNotification, 'POST', 'Only GET requests are accepted!'],
             ['webhook', () => api.webhook, 'GET', 'Only POST requests are accepted!'],
         ];
 
@@ -151,32 +145,6 @@ describe('API Endpoint Method Guards', () => {
                 expect(res.statusCode).toBe(401);
             });
         }
-    });
-
-    describe('validateUsersEmailPhone account lookup', () => {
-        it('should return accountExists true/false based on lookup result', async () => {
-            const verifyStub = vi.spyOn(firestore, 'verifyUsersEmailOrPhone');
-            verifyStub.mockResolvedValueOnce(false);
-            verifyStub.mockResolvedValueOnce(true);
-
-            const missingUserRes = await invoke(api.validateUsersEmailPhone, 'GET', {
-                query: {
-                    email: 'nonexistent@example.com',
-                },
-            });
-            expect(missingUserRes.statusCode).toBe(200);
-            expect(missingUserRes._getJSONData().code).toBe(200);
-            expect(missingUserRes._getJSONData().data.accountExists).toBe(false);
-
-            const existingUserRes = await invoke(api.validateUsersEmailPhone, 'GET', {
-                query: {
-                    email: 'existing@example.com',
-                },
-            });
-            expect(existingUserRes.statusCode).toBe(200);
-            expect(existingUserRes._getJSONData().code).toBe(200);
-            expect(existingUserRes._getJSONData().data.accountExists).toBe(true);
-        });
     });
 
     describe('heartbeat success path', () => {
