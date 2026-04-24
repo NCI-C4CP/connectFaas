@@ -939,6 +939,8 @@ const removeParticipantsDataDestruction = async () => {
             fieldMapping.participantMap.dateRequestedDataDestroy.toString();
         const destroyDataCategoricalCId =
             fieldMapping.participantMap.destroyDataCategorical.toString();
+        const dateTimeDataDestroyedCId =
+            fieldMapping.participantMap.dateTimeDataDestroyed.toString();
         const requestedAndSignCId =
             fieldMapping.participantMap.requestedAndSign;
 
@@ -1001,6 +1003,7 @@ const removeParticipantsDataDestruction = async () => {
                     if (errors.length === 0) {
                         try {
                             updatedData[dataHasBeenDestroyed] = fieldMapping.yes;
+                            updatedData[dateTimeDataDestroyedCId] = new Date().toISOString();
                             updatedData[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestroyedStatus;
                             await db.collection('participants').doc(participantId).update(updatedData);
                             count++;
@@ -2454,6 +2457,52 @@ const getBoxesPagination = async (siteCode, body) => {
     }
 };
 
+/**
+ * Checks Biospecimen BPTL's kitAssembly collection and Biospecimen Shipping dashboard boxes collection for duplicates tracking numbers
+ * @param {Array<string>} trackingIds Array of tracking IDs to check for duplicates
+ * @returns {Array<object>} Array of duplicate tracking IDs with their respective counts
+ * Ex. [{ trackingId: '12345', returnKitResult: 1, supplyKitResult: 0, shippingDashboardResult: 0 }]
+ */
+const checkDuplicateTrackingId = async (trackingIds) => {
+    try { 
+        // Setting a limit
+        if (trackingIds.length > 15) {
+            throw new RangeError('trackingIds exceeds maximum allowed length of 15');
+        }   
+        
+        const duplicateTrackingIds = [];
+        if (trackingIds.length === 0) return duplicateTrackingIds;
+
+        for (const trackingId of trackingIds) {
+            const kitCollectionReturnKitTrackingIdCheck = db.collection('kitAssembly').where(`${fieldMapping.returnKitTrackingNum}`, '==', trackingId);
+            const kitCollectionSupplyKitTrackingIdCheck = db.collection('kitAssembly').where(`${fieldMapping.supplyKitTrackingNum}`, '==', trackingId);
+            const shippingDashboardTrackingIdCheck = db.collection('boxes').where(`${fieldMapping.boxTrackingNumberScan}`, '==', trackingId);
+
+            const [returnKitResult, supplyKitResult, shippingDashboardResult] = await Promise.all([
+                kitCollectionReturnKitTrackingIdCheck.get(),
+                kitCollectionSupplyKitTrackingIdCheck.get(),
+                shippingDashboardTrackingIdCheck.get()
+            ]);
+
+            const hasDuplicates = returnKitResult.size > 0 || supplyKitResult.size > 0 || shippingDashboardResult.size > 0;
+
+            if (hasDuplicates) {
+                duplicateTrackingIds.push({
+                    trackingId,
+                    returnKitResult: returnKitResult.size,
+                    supplyKitResult: supplyKitResult.size,
+                    shippingDashboardResult: shippingDashboardResult.size
+                });
+            }
+        }
+
+        return duplicateTrackingIds;
+    } catch (error) { 
+        console.error(error);
+        throw error;
+    }
+};
+
 const getNumBoxesShipped = async (siteCode, body) => {
     const filters = body.filters ?? ``;
     const source = body.source ?? ``;
@@ -2661,6 +2710,7 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             // Participant initial kit status is pending or blank
             `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} = ${pending} OR d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitStatus} IS NULL`,
             `d_${baselineMouthwashCollected} != ${yes} OR d_${baselineMouthwashCollected} IS NULL`, // Participant does not already have a mouthwash sample collected
+            `d_${collectionDetails}.d_${baseline}.d_${bioKitMouthwash}.d_${kitRequestEligible} IS NULL` // Participant is not already eligible to request a kit
 
         ];
         let sortsArr = [];
@@ -2922,19 +2972,26 @@ const updateKitAssemblyData = async (data) => {
 
 const checkCollectionUniqueness = async (supplyId, collectionId, returnKitTrackingNumber, uniqueKitID) => {
     try {
-        const supplySnapShot = await db.collection('kitAssembly').where('690210658', '==', supplyId).get();
-        const collectionSnapShot = await db.collection('kitAssembly').where('259846815', '==', collectionId).get();
+        const supplySnapShot = await db.collection('kitAssembly').where(fieldMapping.supplyKitId.toString(), '==', supplyId).get();
+        const collectionSnapShot = await db.collection('kitAssembly').where(fieldMapping.collectionCupId.toString(), '==', collectionId).get();
+
         printDocsCount([supplySnapShot, collectionSnapShot], "checkCollectionUniqueness");
         let returnKitTrackingNumberSnapshot = {docs: []};
         let supplyKitTrackingNumberSnapshot = {docs: []};
+        let boxTrackingSnapshot = {docs: []};
+
         if(returnKitTrackingNumber) {
-            [returnKitTrackingNumberSnapshot, supplyKitTrackingNumberSnapshot] = await Promise.all([
+            [returnKitTrackingNumberSnapshot, supplyKitTrackingNumberSnapshot, boxTrackingSnapshot] = await Promise.all([
                 db.collection('kitAssembly').where(fieldMapping.returnKitTrackingNum.toString(), '==', returnKitTrackingNumber).get(),
-                db.collection('kitAssembly').where(fieldMapping.supplyKitTrackingNum.toString(), '==', returnKitTrackingNumber).get()
+                db.collection('kitAssembly').where(fieldMapping.supplyKitTrackingNum.toString(), '==', returnKitTrackingNumber).get(),
+                db.collection('boxes').where(fieldMapping.boxTrackingNumberScan.toString(), '==', returnKitTrackingNumber).get()
             ]);
         }
-        if (supplySnapShot.docs.length === 0 && collectionSnapShot.docs.length === 0
-            && returnKitTrackingNumberSnapshot.docs.length === 0 && supplyKitTrackingNumberSnapshot.docs.length === 0) {
+        if (supplySnapShot.docs.length === 0 && 
+            collectionSnapShot.docs.length === 0 && 
+            returnKitTrackingNumberSnapshot.docs.length === 0 && 
+            supplyKitTrackingNumberSnapshot.docs.length === 0 &&
+            boxTrackingSnapshot.docs.length === 0) {
             return true;
         }
 
@@ -2948,7 +3005,10 @@ const checkCollectionUniqueness = async (supplyId, collectionId, returnKitTracki
             return 'duplicate return kit tracking number';
         } else if (supplyKitTrackingNumberSnapshot.docs.filter(doc => doc.data()[fieldMapping.uniqueKitID] !== uniqueKitID).length > 0) {
             return 'return kit tracking number is for supply kit';
+        } else if (boxTrackingSnapshot.docs.length > 0) {
+            return 'duplicate box tracking number';
         }
+
         return true;
     } catch (error) {
         return new Error(error);
@@ -3164,6 +3224,25 @@ const queryKitsByReceivedDate = async (receivedDateTimestamp) => {
     // Because there are no sorts on biospecSnapshot, we don't need to care about order,
     // so just whatever order is returned here is fine
     return Object.keys(kitDict).map(key => kitDict[key]);
+}
+
+const queryKitsByShippedAndAssignedStatus = async () => {
+    // Find all kitAssemblies in shipped or assigned status,
+
+    const kitSnapshot = await db
+        .collection('kitAssembly')
+        .where(Filter.or(
+            Filter.where(`${fieldMapping.kitStatus}`, '==', fieldMapping.assigned),
+            Filter.where(`${fieldMapping.kitStatus}`, '==', fieldMapping.shipped)
+        ))
+        .get();
+    if (kitSnapshot.size === 0) {
+        return false;
+    }
+
+    const kitDocs = kitSnapshot.docs.map(doc => doc.data());
+
+    return kitDocs;
 }
 
 const eligibleParticipantsForKitAssignment = async () => {
@@ -3394,7 +3473,7 @@ const assignKitToParticipant = async (data) => {
         assigned, collectionRound, collectionDetails, baseline, bioKitMouthwash, bioKitMouthwashBL1, bioKitMouthwashBL2,
         kitType, mouthwashKit, dateKitRequested, kitLevel, initialKit, replacementKit1, replacementKit2, 
         withdrawConsent, destroyData, participantDeceased, participantDeceasedNORC,
-        activityParticipantRefusal, allFutureSamples, baselineMouthwashSample, refusedAllFutureActivities, yes } = fieldMapping;
+        activityParticipantRefusal, allFutureSamples, baselineMouthwashSample, refusedAllFutureActivities, yes, boxTrackingNumberScan } = fieldMapping;
 
     await db.runTransaction(async (transaction) => {
         // Check the supply kit tracking number and see if it matches the return kit tracking number
@@ -3408,6 +3487,19 @@ const assignKitToParticipant = async (data) => {
             kitAssignmentResult = {
                 success: false,
                 logText: "Duplicate return tracking number found: " + data[supplyKitTrackingNum],
+                message: "This tracking number has already been used."
+            };
+            return;
+        }
+
+        const boxTrackingSnapshot = await transaction.get(
+            db.collection("boxes").where(`${boxTrackingNumberScan}`, '==', data[supplyKitTrackingNum])
+        );
+
+        if(boxTrackingSnapshot.size > 0) {
+            kitAssignmentResult = {
+                success: false,
+                logText: "Duplicate box tracking number found: " + data[supplyKitTrackingNum],
                 message: "This tracking number has already been used."
             };
             return;
@@ -5852,6 +5944,7 @@ module.exports = {
     queryReplacementHomeCollectionAddressesToPrint,
     queryCountHomeCollectionAddressesToPrint,
     queryCountReplacementHomeCollectionAddressesToPrint,
+    checkDuplicateTrackingId,
     checkCollectionUniqueness,
     processVerifyScannedCode,
     assignKitToParticipant,
@@ -5868,6 +5961,7 @@ module.exports = {
     processTwilioEvent,
     getSpecimenAndParticipant,
     queryKitsByReceivedDate,
+    queryKitsByShippedAndAssignedStatus,
     getParticipantCancerOccurrences,
     writeCancerOccurrences,
     writeBirthdayCard,
