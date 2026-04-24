@@ -4,7 +4,7 @@ steps:
   args: [
     'functions', 
     'deploy', 
-    'physicalActivityROI', 
+    'physicalActivity', 
     '--trigger-http', 
     '--runtime=${_RUNTIME}', 
     '--timeout=${_TIMEOUT}', 
@@ -16,7 +16,7 @@ steps:
   args: [
     'functions', 
     'add-iam-policy-binding', 
-    'physicalActivityROI', 
+    'physicalActivity', 
     '--member=${_MEMBER}', 
     '--role=${_ROLE}'
   ]

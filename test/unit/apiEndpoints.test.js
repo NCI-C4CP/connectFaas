@@ -11,10 +11,9 @@ beforeAll(() => {
     });
 
     const { incentiveCompleted, eligibleForIncentive } = require('../../utils/incentive');
-    const { getToken, validateUsersEmailPhone } = require('../../utils/validation');
+    const { getToken } = require('../../utils/validation');
     const { getFilteredParticipants, getParticipants, identifyParticipant } = require('../../utils/submission');
     const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('../../utils/sites');
-    const { getParticipantNotification } = require('../../utils/notifications');
     const { dashboard } = require('../../utils/dashboard');
     const { connectApp } = require('../../utils/connectApp');
     const { biospecimenAPIs } = require('../../utils/biospecimen');
@@ -26,14 +25,12 @@ beforeAll(() => {
         incentiveCompleted,
         participantsEligibleForIncentive: eligibleForIncentive,
         getParticipantToken: getToken,
-        validateUsersEmailPhone,
         getFilteredParticipants,
         getParticipants,
         identifyParticipant,
         submitParticipantsData,
         updateParticipantData,
         getBigQueryData,
-        getParticipantNotification,
         dashboard,
         app: connectApp,
         biospecimen: biospecimenAPIs,
@@ -77,7 +74,6 @@ describe('API Endpoint Method Guards', () => {
             ['submitParticipantsData', () => api.submitParticipantsData],
             ['updateParticipantData', () => api.updateParticipantData],
             ['getBigQueryData', () => api.getBigQueryData],
-            ['getParticipantNotification', () => api.getParticipantNotification],
             ['dashboard', () => api.dashboard],
             ['app', () => api.app],
             ['biospecimen', () => api.biospecimen],
@@ -106,7 +102,6 @@ describe('API Endpoint Method Guards', () => {
             ['submitParticipantsData', () => api.submitParticipantsData, 'GET', 'Only POST requests are accepted!'],
             ['updateParticipantData', () => api.updateParticipantData, 'GET', 'Only POST requests are accepted!'],
             ['getBigQueryData', () => api.getBigQueryData, 'POST', 'Only GET requests are accepted!'],
-            ['getParticipantNotification', () => api.getParticipantNotification, 'POST', 'Only GET requests are accepted!'],
             ['webhook', () => api.webhook, 'GET', 'Only POST requests are accepted!'],
         ];
 
