@@ -634,7 +634,29 @@ const biospecimenAPIs = async (req, res) => {
             return res.status(500).json(getResponseJSON(error.message, 500));
         }
     }
+    else if (api == 'checkDuplicateTrackingId') {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
 
+        const requestData = req.body;
+        if (!Array.isArray(requestData.trackingIds)) {
+            return res.status(400).json(getResponseJSON('trackingIds must be an array!', 400));
+        }
+
+        if (requestData.trackingIds.length > 15) { // setting 15 as limit for now
+            return res.status(400).json(getResponseJSON('trackingIds exceeds the maximum allowed length of 15!', 400));
+        }
+
+        try {
+            const { checkDuplicateTrackingId } = require('./firestore');
+            const response = await checkDuplicateTrackingId(requestData.trackingIds);
+            return res.status(200).json({ data: response, code:200 });
+        } catch (error) {
+            console.error(error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+    }
     else if(api == 'assignKit'){
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -788,6 +810,21 @@ const biospecimenAPIs = async (req, res) => {
             if(queryReceivedDateTimestamp.length === 0) return res.status(404).json(getResponseJSON('Please include parameter to filter data.', 400));
             const { queryKitsByReceivedDate } = require('./firestore');
             const response = await queryKitsByReceivedDate(queryReceivedDateTimestamp);
+            return res.status(200).json({data: response, code:200});
+        }
+        catch(error) {
+            console.error('Error querying kits', error);
+            return res.status(500).json(getResponseJSON(error.message, 500));
+        }
+    }
+
+    else if(api === 'getKitsShippedNotReceived') {
+        if(req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+        try {
+            const { queryKitsByShippedAndAssignedStatus } = require('./firestore');
+            const response = await queryKitsByShippedAndAssignedStatus();
             return res.status(200).json({data: response, code:200});
         }
         catch(error) {
