@@ -5,7 +5,6 @@ steps:
     'functions',
     'deploy',
     '${_FUNCTION}',
-    '--gen2',
     '--trigger-http',
     '--runtime=${_RUNTIME}',
     '--source=${_SOURCE}',
