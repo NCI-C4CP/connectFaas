@@ -2,31 +2,34 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   args: [
-    'functions',
+    'run',
     'deploy',
-    '${_FUNCTION}',
-    '--trigger-http',
-    '--runtime=${_RUNTIME}',
-    '--source=${_SOURCE}',
-    '--entry-point=${_FUNCTION}',
+    '${_SERVICE}',
     '--region=${_REGION}',
+    '--source=${_SOURCE}',
+    '--function=${_FUNCTION}',
+    '--base-image=${_BASE_IMAGE}',
+    '--allow-unauthenticated',
     '--env-vars-file=${_VARIABLES}'
   ]
 
 - name: 'gcr.io/cloud-builders/gcloud'
   args: [
-    'functions',
+    'run',
+    'services',
     'add-iam-policy-binding',
-    '${_FUNCTION}',
+    '${_SERVICE}',
+    '--region=${_REGION}',
     '--member=${_MEMBER}',
     '--role=${_ROLE}'
   ]
 
 substitutions:
+  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
   _FUNCTION: getBigQueryData
   _MEMBER: allUsers
   _REGION: us-central1
+  _SERVICE: getbigquerydata
   _ROLE: roles/run.invoker
-  _RUNTIME: nodejs20
-  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
+  _SOURCE: .
   _VARIABLES: config/dev/.env.yaml
