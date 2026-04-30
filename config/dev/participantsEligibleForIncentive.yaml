@@ -30,7 +30,7 @@ substitutions:
   _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
   _FUNCTION: participantsEligibleForIncentive
   _MEMBER: allUsers
-  _MEMORY: 1024MB
+  _MEMORY: 1024Mi
   _REGION: us-central1
   _ROLE: roles/run.invoker
   _SERVICE: participantseligibleforincentive
