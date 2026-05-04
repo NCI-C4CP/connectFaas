@@ -44,7 +44,7 @@ exports.exportNotificationsToBucket = exportNotificationsToBucket;
 exports.importNotificationsToBigquery = importNotificationsToBigquery;
 
 // End-Points for Participant Data Cleaning
-exports.participantDataCleanup = participantDataCleanup;
+exports.participantDataCleanup = onRequest(participantDataCleanup);
 
 // End-Points for Event Webhook
 exports.webhook = webhook;
