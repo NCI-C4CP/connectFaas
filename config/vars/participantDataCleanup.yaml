@@ -21,4 +21,3 @@ substitutions:
   _SERVICE: participantdatacleanup
   _SOURCE: .
   _TIMEOUT: 480s
-  _VARIABLES: config/dev/.env.yaml
