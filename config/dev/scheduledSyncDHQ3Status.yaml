@@ -2,37 +2,25 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   args: [
-    'functions', 
+    'run',
     'deploy', 
-    '${_FUNCTION}',
-    '--gen2', 
-    '--trigger-http', 
-    '--runtime=${_RUNTIME}', 
-    '--memory=${_MEMORY}',
-    '--timeout=${_TIMEOUT}', 
-    '--source=${_SOURCE}',
-    '--entry-point=${_FUNCTION}',
+    '${_SERVICE}',
     '--region=${_REGION}',
-    '--ingress-settings=internal-only',
+    '--source=${_SOURCE}',
+    '--function=${_FUNCTION}',
+    '--base-image=${_BASE_IMAGE}',
+    '--memory=${_MEMORY}',
+    '--timeout=${_TIMEOUT}',
+    '--ingress=internal',
     '--env-vars-file=${_VARIABLES}'
   ]
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: [
-    'functions', 
-    'add-iam-policy-binding', 
-    '${_FUNCTION}', 
-    '--member=${_MEMBER}', 
-    '--role=${_ROLE}'
-  ]
-
 substitutions:
+  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
   _FUNCTION: scheduledSyncDHQ3Status
-  _MEMBER: allUsers
-  _MEMORY: 1024MB
+  _MEMORY: 1024Mi
   _REGION: us-central1
-  _ROLE: roles/cloudfunctions.invoker
-  _RUNTIME: nodejs20
-  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
+  _SERVICE: scheduledsyncdhq3status
+  _SOURCE: .
   _TIMEOUT: 540s
   _VARIABLES: config/dev/.env.yaml
