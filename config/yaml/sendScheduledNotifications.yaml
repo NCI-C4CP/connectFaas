@@ -12,7 +12,6 @@ steps:
     '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--ingress=internal',
-    '--allow-unauthenticated',
     '--env-vars-file=${_VARIABLES}'
   ]
 
