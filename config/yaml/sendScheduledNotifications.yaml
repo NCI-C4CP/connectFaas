@@ -12,14 +12,15 @@ steps:
     '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--ingress=internal',
+    '--allow-unauthenticated',
     '--env-vars-file=${_VARIABLES}'
   ]
 
 substitutions:
   _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
   _FUNCTION: sendScheduledNotifications
-  _MEMORY: 1024Mi
+  _MEMORY: 2048Mi
   _REGION: us-central1
   _SERVICE: sendschedulednotifications
   _SOURCE: .
-  _TIMEOUT: 600s
+  _TIMEOUT: 3600s
