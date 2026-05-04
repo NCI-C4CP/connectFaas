@@ -343,7 +343,7 @@ const getFilteredParticipants = async (req, res, authObj) => {
     "param narrows results to specific fields. Omit selectedFields to return all data. Use dot notation to query nested data with selectedFields. Ex: 'selectedFields=399159511,996038075,130371375.266600170' " +
     "returns firstName, lastName, and data nested in payment round -> baseline. Connect ID is always returned. Typos are ignored. | API notes & documentation: https://github.com/episphere/connect/issues/817#issuecomment-1883893946";
 
-    if (req.query.type) return res.status(404).json(getResponseJSON(`The 'type' parameter is not used in this API. ${helpMessage}`, 400));
+    if (req.query.type) return res.status(400).json(getResponseJSON(`The 'type' parameter is not used in this API. ${helpMessage}`, 400));
 
     const queries = req.query;
     const source = queries.source;
