@@ -1,10 +1,11 @@
 const firestore = require('@google-cloud/firestore');
 const {BigQuery} = require('@google-cloud/bigquery');
 const {Storage} = require('@google-cloud/storage');
+const { getResponseJSON } = require('./shared');
 
 const collectionNameArray = ['participants', 'biospecimen', 'boxes', 'module1_v1', 'module1_v2', 'module2_v1', 'module2_v2', 'module3_v1', 'module4_v1', 'bioSurvey_v1', 'menstrualSurvey_v1', 'clinicalBioSurvey_v1', 'covid19Survey_v1', 'kitAssembly', 'mouthwash_v1', 'cancerOccurrence', 'promis_v1', 'experience2024', 'birthdayCard', 'cancerScreeningHistorySurvey', 'dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers', 'preference2026'];
 
-const firestoreExport = async (eventData, context) => {
+const runFirestoreExport = async () => {
   await exportCollectionsToBucket(collectionNameArray);
 };
 
@@ -12,8 +13,46 @@ const importToBigQuery = async (eventData, context) => {
   await importCollectionsToBigQuery(eventData, collectionNameArray);
 };
 
-const exportNotificationsToBucket = async (eventData, context) => {
+const runExportNotificationsToBucket = async () => {
   await exportCollectionsToBucket(["notifications"]);
+};
+
+const firestoreExport = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return runFirestoreExport();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await runFirestoreExport();
+    return res.status(200).json(getResponseJSON('Firestore export triggered successfully.', 200));
+  } catch (error) {
+    console.error('Failed to trigger Firestore export.', error);
+    return res.status(500).json(getResponseJSON('Failed to trigger Firestore export.', 500));
+  }
+};
+
+const exportNotificationsToBucket = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return runExportNotificationsToBucket();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await runExportNotificationsToBucket();
+    return res.status(200).json(getResponseJSON('Notifications export triggered successfully.', 200));
+  } catch (error) {
+    console.error('Failed to trigger notifications export.', error);
+    return res.status(500).json(getResponseJSON('Failed to trigger notifications export.', 500));
+  }
 };
 
 const importNotificationsToBigquery = async (eventData, context) => {
@@ -95,7 +134,9 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
 
 module.exports = {
   importToBigQuery,
+  runFirestoreExport,
   firestoreExport,
+  runExportNotificationsToBucket,
   exportNotificationsToBucket,
   importNotificationsToBigquery,
 };

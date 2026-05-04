@@ -39,8 +39,8 @@ exports.sendScheduledNotifications = onRequest(sendScheduledNotifications);
 
 // End-Points for Exporting Firestore to Big Query
 exports.importToBigQuery = importToBigQuery; 
-exports.scheduleFirestoreDataExport = firestoreExport;
-exports.exportNotificationsToBucket = exportNotificationsToBucket;
+exports.scheduleFirestoreDataExport = onRequest(firestoreExport);
+exports.exportNotificationsToBucket = onRequest(exportNotificationsToBucket);
 exports.importNotificationsToBigquery = importNotificationsToBigquery;
 
 // End-Points for Participant Data Cleaning

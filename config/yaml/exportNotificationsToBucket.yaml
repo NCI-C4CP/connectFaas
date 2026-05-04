@@ -17,8 +17,8 @@ steps:
 
 substitutions:
   _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
-  _FUNCTION: scheduleFirestoreDataExport
+  _FUNCTION: exportNotificationsToBucket
   _REGION: us-central1
-  _SERVICE: schedulefirestoredataexport
+  _SERVICE: exportnotificationstobucket
   _SOURCE: .
   _TIMEOUT: 480s
