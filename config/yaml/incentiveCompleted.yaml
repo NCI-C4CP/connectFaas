@@ -9,6 +9,7 @@ steps:
     '--source=${_SOURCE}',
     '--function=${_FUNCTION}',
     '--base-image=${_BASE_IMAGE}',
+    '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--allow-unauthenticated',
     '--env-vars-file=${_VARIABLES}'
@@ -27,11 +28,11 @@ steps:
 
 substitutions:
   _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
-  _FUNCTION: getParticipantToken
+  _FUNCTION: incentiveCompleted
   _MEMBER: allUsers
+  _MEMORY: 1024Mi
   _REGION: us-central1
   _ROLE: roles/run.invoker
-  _SERVICE: getparticipanttoken
+  _SERVICE: incentivecompleted
   _SOURCE: .
-  _TIMEOUT: 120s
-  _VARIABLES: config/dev/.env.yaml
+  _TIMEOUT: 240s

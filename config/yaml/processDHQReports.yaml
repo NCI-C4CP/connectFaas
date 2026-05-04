@@ -17,10 +17,9 @@ steps:
 
 substitutions:
   _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
-  _FUNCTION: scheduledCountDHQ3Credentials
-  _MEMORY: 256Mi
+  _FUNCTION: processDHQReports
+  _MEMORY: 2048Mi
   _REGION: us-central1
-  _SERVICE: scheduledcountdhq3credentials
+  _SERVICE: processdhqreports
   _SOURCE: .
-  _TIMEOUT: 540s
-  _VARIABLES: config/dev/.env.yaml
+  _TIMEOUT: 1800s

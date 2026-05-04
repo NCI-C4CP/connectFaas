@@ -36,4 +36,3 @@ substitutions:
   _SERVICE: updateparticipantdata
   _SOURCE: .
   _TIMEOUT: 240s
-  _VARIABLES: config/dev/.env.yaml
