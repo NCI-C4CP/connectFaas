@@ -103,6 +103,12 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
     eventName = eventName.substring(gcsBucket.length + 1);
   }
 
+  const exportMetadataSuffix = '.export_metadata';
+  const exportMetadataIndex = eventName.indexOf(exportMetadataSuffix);
+  if (exportMetadataIndex !== -1) {
+    eventName = eventName.substring(0, exportMetadataIndex + exportMetadataSuffix.length);
+  }
+
   let tableName = "";
   for (const collectionName of collectionNameArray) {
     if (eventName.includes(collectionName)) {
