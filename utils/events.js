@@ -92,6 +92,7 @@ async function exportCollectionsToBucket(collectionNameArray) {
  * @param {string[]} collectionNameArray Array of collection names
  */
 async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
+  console.log(gcsEvent);
   if (!gcsEvent.name.includes(".export_metadata")) return;
 
   let tableName = "";
