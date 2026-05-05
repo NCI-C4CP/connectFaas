@@ -94,10 +94,13 @@ async function exportCollectionsToBucket(collectionNameArray) {
 async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
   const eventBody = gcsEvent?.body;
   const eventName = eventBody?.id;
+  const gcsBucket = process.env.GCLOUD_BUCKET;
 
   if (!eventName || !eventName.includes('.export_metadata')) return;
 
-  const gcsBucket = process.env.GCLOUD_BUCKET;
+  if (eventName.startsWith(`${gcsBucket}/`)) {
+    eventName = eventName.substring(gcsBucket.length + 1);
+  }
 
   let tableName = "";
   for (const collectionName of collectionNameArray) {
