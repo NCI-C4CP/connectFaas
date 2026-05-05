@@ -1375,27 +1375,19 @@ const retrieveUserNotifications = async (uid) => {
   return snapshot.docs.map((doc) => doc.data());
 };
 
-const retrieveSiteNotifications = async (siteId, isParent) => {
-    try {
-        let query = db.collection('siteNotifications');
-        if(!isParent) query = query.where('siteId', '==', siteId);
-        const snapshot = await query.orderBy('notification.time', 'desc')
-                                    .get();
-        printDocsCount(snapshot, "retrieveSiteNotifications");
-                            
-        if(snapshot.size > 0){
-            return snapshot.docs.map(document => {
-                let data = document.data();
-                return data;
-            });
-        }
-        else {
-            return [];
-        }
-    } catch (error) {
-        console.error(error);
-        return new Error(error);
+const retrieveSiteNotifications = async (siteCode, isParent) => {
+    let query = db.collection('siteNotifications');
+    if (!isParent) {
+        query = query.where('siteCode', '==', siteCode);
     }
+    const snapshot = await query.orderBy('notification.time', 'desc').select('id', 'email','notification', 'notificationType').get();
+    printDocsCount(snapshot, "retrieveSiteNotifications");
+                        
+    if (snapshot.size > 0) {
+        return snapshot.docs.map(doc => doc.data());
+    }
+
+    return [];
 }
 
 /**
@@ -2613,8 +2605,15 @@ const saveNotificationBatch = async (notificationRecordArray) => {
 const markNotificationAsRead = async (id, collection) => {
     const snapshot = await db.collection(collection).where('id', '==', id).get();
     printDocsCount(snapshot, "markNotificationAsRead");
-    const docId = snapshot.docs[0].id;
-    await db.collection(collection).doc(docId).update({read: true});
+    if (snapshot.size !== 1) {
+        throw new Error(`Expected one document for id ${id} in collection ${collection}, but found ${snapshot.size}`);
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    const docData = snapshot.docs[0].data();
+    if (docData.read !== true) {
+        await docRef.update({read: true});
+    }
 }
 
 const storeSSN = async (data) => {
