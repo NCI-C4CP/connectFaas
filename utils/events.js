@@ -88,16 +88,20 @@ async function exportCollectionsToBucket(collectionNameArray) {
 
 /**
  * Import collections from Bucket to BigQuery
- * @param {Event} gcsEvent 
+ * @param {Object} gcsEvent
  * @param {string[]} collectionNameArray Array of collection names
  */
 async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
-  console.log(gcsEvent);
-  if (!gcsEvent.name.includes(".export_metadata")) return;
+  const eventBody = JSON.parse(gcsEvent?.body);
+  const eventName = eventBody?.id;
+
+  if (!eventName || !eventName.includes('.export_metadata')) return;
+
+  const gcsBucket = process.env.GCLOUD_BUCKET;
 
   let tableName = "";
   for (const collectionName of collectionNameArray) {
-    if (gcsEvent.name.includes(collectionName)) {
+    if (eventName.includes(collectionName)) {
       tableName = collectionName;
       break;
     }
@@ -105,8 +109,7 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
 
   if (tableName === "") return;
 
-  console.log(`Processing file: ${gcsEvent.name}`);
-  const gcsBucket = process.env.GCLOUD_BUCKET;
+  console.log(`Processing file: ${eventName}`);
   const storage = new Storage();
   const bigquery = new BigQuery();
   const datasetName = "Connect";
@@ -121,7 +124,7 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
     const [job] = await bigquery
       .dataset(datasetName)
       .table(tableName)
-      .load(storage.bucket(gcsBucket).file(gcsEvent.name), metadata);
+      .load(storage.bucket(gcsBucket).file(eventName), metadata);
 
     if (job.status.errorResult) {
       console.error(`Failed to import '${tableName}' to BigQuery.`, job.status.errorResult);
