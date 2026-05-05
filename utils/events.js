@@ -9,8 +9,23 @@ const runFirestoreExport = async () => {
   await exportCollectionsToBucket(collectionNameArray);
 };
 
-const importToBigQuery = async (eventData, context) => {
-  await importCollectionsToBigQuery(eventData, collectionNameArray);
+const importToBigQuery = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return importCollectionsToBigQuery(req, collectionNameArray);
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await importCollectionsToBigQuery(req, collectionNameArray);
+    return res.status(200).json(getResponseJSON('Import to BigQuery handled successfully.', 200));
+  } catch (error) {
+    console.error('Failed to import collections to BigQuery.', error);
+    return res.status(500).json(getResponseJSON('Failed to import collections to BigQuery.', 500));
+  }
 };
 
 const runExportNotificationsToBucket = async () => {
@@ -55,8 +70,23 @@ const exportNotificationsToBucket = async (req, res) => {
   }
 };
 
-const importNotificationsToBigquery = async (eventData, context) => {
-  await importCollectionsToBigQuery(eventData, ["notifications"]);
+const importNotificationsToBigquery = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return importCollectionsToBigQuery(req, ["notifications"]);
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await importCollectionsToBigQuery(req, ["notifications"]);
+    return res.status(200).json(getResponseJSON('Notifications import to BigQuery handled successfully.', 200));
+  } catch (error) {
+    console.error('Failed to import notifications to BigQuery.', error);
+    return res.status(500).json(getResponseJSON('Failed to import notifications to BigQuery.', 500));
+  }
 };
 
 /**
@@ -136,12 +166,13 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
       .load(storage.bucket(gcsBucket).file(eventName), metadata);
 
     if (job.status.errorResult) {
-      console.error(`Failed to import '${tableName}' to BigQuery.`, job.status.errorResult);
+      throw new Error(`Failed to import '${tableName}' to BigQuery: ${JSON.stringify(job.status.errorResult)}`);
     }
 
     console.log(`Imported '${tableName}' to BigQuery.`);
   } catch (err) {
     console.error(`Error occured when importing to BigQuery:`, err);
+    throw err;
   }
 }
 

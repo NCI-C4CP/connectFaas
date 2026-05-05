@@ -38,10 +38,10 @@ exports.biospecimen = biospecimenAPIs;
 exports.sendScheduledNotifications = onRequest(sendScheduledNotifications);
 
 // End-Points for Exporting Firestore to Big Query
-exports.importToBigQuery = importToBigQuery; 
+exports.importToBigQuery = onRequest(importToBigQuery); 
 exports.scheduleFirestoreDataExport = onRequest(firestoreExport);
 exports.exportNotificationsToBucket = onRequest(exportNotificationsToBucket);
-exports.importNotificationsToBigquery = importNotificationsToBigquery;
+exports.importNotificationsToBigquery = onRequest(importNotificationsToBigquery);
 
 // End-Points for Participant Data Cleaning
 exports.participantDataCleanup = onRequest(participantDataCleanup);
