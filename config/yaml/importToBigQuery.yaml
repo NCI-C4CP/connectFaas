@@ -21,4 +21,4 @@ substitutions:
   _REGION: us-central1
   _SERVICE: importtobigquery
   _SOURCE: .
-  _TIMEOUT: 480s
+  _TIMEOUT: 600s

@@ -97,7 +97,6 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
   const gcsBucket = process.env.GCLOUD_BUCKET;
 
   if (!eventName || !eventName.includes('.export_metadata')) return;
-  console.log(`Received event for file: ${eventName}`);
 
   if (eventName.startsWith(`${gcsBucket}/`)) {
     eventName = eventName.substring(gcsBucket.length + 1);
