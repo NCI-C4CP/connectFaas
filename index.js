@@ -7,7 +7,7 @@ const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
 const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive');
 const { dashboard } = require('./utils/dashboard');
-const { importToBigQuery, firestoreExport, exportNotificationsToBucket, importNotificationsToBigquery } = require('./utils/events');
+const { importToBigQuery, firestoreExport, exportNotificationsToBucket } = require('./utils/events');
 const { participantDataCleanup } = require('./utils/participantDataCleanup');
 const { webhook } = require('./utils/webhook');
 const { heartbeat } = require('./utils/heartbeat');
@@ -41,7 +41,6 @@ exports.sendScheduledNotifications = onRequest(sendScheduledNotifications);
 exports.importToBigQuery = onRequest(importToBigQuery); 
 exports.scheduleFirestoreDataExport = onRequest(firestoreExport);
 exports.exportNotificationsToBucket = onRequest(exportNotificationsToBucket);
-exports.importNotificationsToBigquery = onRequest(importNotificationsToBigquery);
 
 // End-Points for Participant Data Cleaning
 exports.participantDataCleanup = onRequest(participantDataCleanup);

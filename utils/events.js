@@ -4,6 +4,7 @@ const {Storage} = require('@google-cloud/storage');
 const { getResponseJSON } = require('./shared');
 
 const collectionNameArray = ['participants', 'biospecimen', 'boxes', 'module1_v1', 'module1_v2', 'module2_v1', 'module2_v2', 'module3_v1', 'module4_v1', 'bioSurvey_v1', 'menstrualSurvey_v1', 'clinicalBioSurvey_v1', 'covid19Survey_v1', 'kitAssembly', 'mouthwash_v1', 'cancerOccurrence', 'promis_v1', 'experience2024', 'birthdayCard', 'cancerScreeningHistorySurvey', 'dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers', 'preference2026'];
+const importCollectionNameArray = [...collectionNameArray, 'notifications'];
 
 const runFirestoreExport = async () => {
   await exportCollectionsToBucket(collectionNameArray);
@@ -12,7 +13,7 @@ const runFirestoreExport = async () => {
 const importToBigQuery = async (req, res) => {
   // Preserve direct invocation compatibility for non-HTTP call sites.
   if (!req || !res) {
-    return importCollectionsToBigQuery(req, collectionNameArray);
+    return importCollectionsToBigQuery(req, importCollectionNameArray);
   }
 
   if (req.method !== 'POST') {
@@ -20,7 +21,7 @@ const importToBigQuery = async (req, res) => {
   }
 
   try {
-    await importCollectionsToBigQuery(req, collectionNameArray);
+    await importCollectionsToBigQuery(req, importCollectionNameArray);
     return res.status(200).json(getResponseJSON('Import to BigQuery handled successfully.', 200));
   } catch (error) {
     console.error('Failed to import collections to BigQuery.', error);
@@ -67,25 +68,6 @@ const exportNotificationsToBucket = async (req, res) => {
   } catch (error) {
     console.error('Failed to trigger notifications export.', error);
     return res.status(500).json(getResponseJSON('Failed to trigger notifications export.', 500));
-  }
-};
-
-const importNotificationsToBigquery = async (req, res) => {
-  // Preserve direct invocation compatibility for non-HTTP call sites.
-  if (!req || !res) {
-    return importCollectionsToBigQuery(req, ["notifications"]);
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
-  }
-
-  try {
-    await importCollectionsToBigQuery(req, ["notifications"]);
-    return res.status(200).json(getResponseJSON('Notifications import to BigQuery handled successfully.', 200));
-  } catch (error) {
-    console.error('Failed to import notifications to BigQuery.', error);
-    return res.status(500).json(getResponseJSON('Failed to import notifications to BigQuery.', 500));
   }
 };
 
@@ -182,5 +164,4 @@ module.exports = {
   firestoreExport,
   runExportNotificationsToBucket,
   exportNotificationsToBucket,
-  importNotificationsToBigquery,
 };
