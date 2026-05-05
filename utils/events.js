@@ -92,8 +92,7 @@ async function exportCollectionsToBucket(collectionNameArray) {
  * @param {string[]} collectionNameArray Array of collection names
  */
 async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
-  console.log(gcsEvent?.body);
-  const eventBody = JSON.parse(gcsEvent?.body);
+  const eventBody = gcsEvent?.body;
   const eventName = eventBody?.id;
 
   if (!eventName || !eventName.includes('.export_metadata')) return;
