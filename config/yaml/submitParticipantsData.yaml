@@ -12,6 +12,7 @@ steps:
     '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--allow-unauthenticated',
+    '--async',
     '--env-vars-file=${_VARIABLES}'
   ]
 

@@ -10,6 +10,7 @@ steps:
     '--function=${_FUNCTION}',
     '--base-image=${_BASE_IMAGE}',
     '--allow-unauthenticated',
+    '--async',
     '--env-vars-file=${_VARIABLES}'
   ]
 

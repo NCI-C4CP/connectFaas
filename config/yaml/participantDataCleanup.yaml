@@ -12,6 +12,7 @@ steps:
     '--timeout=${_TIMEOUT}',
     '--ingress=internal',
     '--allow-unauthenticated',
+    '--async',
     '--env-vars-file=${_VARIABLES}'
   ]
 
