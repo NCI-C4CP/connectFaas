@@ -1,5 +1,14 @@
 steps:
 
+- name: 'bash'
+  args:
+  - '-c'
+  - |
+    # Random sleep between 1 and 45 seconds
+    SLEEP_TIME=$(( ( RANDOM % 45 ) + 1 ))
+    echo "Staggering start by $SLEEP_TIME seconds..."
+    sleep $SLEEP_TIME
+
 - name: 'gcr.io/cloud-builders/gcloud'
   args: [
     'run',
@@ -12,7 +21,6 @@ steps:
     '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--allow-unauthenticated',
-    '--async',
     '--env-vars-file=${_VARIABLES}'
   ]
 
