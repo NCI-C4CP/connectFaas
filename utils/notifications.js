@@ -358,14 +358,17 @@ const subscribeToNotification = async (req, res) => {
     res.status(200).json({message: 'Success!', code:200})
 }
 
-const markAllNotificationsAsAlreadyRead = (notification, collection) => {
-    for(let id of notification) {
-        if(id) {
-            const {markNotificationAsRead} = require('./firestore');
-            markNotificationAsRead(id, collection);
-        }
+const markAllNotificationsAsAlreadyRead = async (ids, collection) => {
+  const { markNotificationAsRead } = require('./firestore');
+
+  const promises = ids.filter(id => id).map((id) => markNotificationAsRead(id, collection));
+  const results = await Promise.allSettled(promises);
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error(`Error marking notification as read in ${collection} collection:`, result.reason);
     }
-}
+  }
+};
 
 const retrieveNotifications = async (req, res, uid) => {
   if (req.method !== "GET") {
@@ -376,7 +379,7 @@ const retrieveNotifications = async (req, res, uid) => {
   try {
     const notificationArray = await retrieveUserNotifications(uid);
     if (notificationArray.length > 0 && req.query.markasread === 'true') {
-      markAllNotificationsAsAlreadyRead(
+      await markAllNotificationsAsAlreadyRead(
         notificationArray.map((notification) => notification.id),
         "notifications"
       );
@@ -874,14 +877,13 @@ const getSiteNotification = async (req, res, authObj) => {
         obj = await isParentEntity(authorized);
     }
 
-    const isParent = obj.isParent;
-    const siteId = obj.id;
     const { retrieveSiteNotifications } = require('./firestore');
-    const data = await retrieveSiteNotifications(siteId, isParent);
-    if(data !== false){
-        markAllNotificationsAsAlreadyRead(data.map(dt => dt.id), 'siteNotifications');
+    const siteNotifications = await retrieveSiteNotifications(obj.siteCode, obj.isParent);
+    if (siteNotifications.length > 0 ) {
+        await markAllNotificationsAsAlreadyRead(siteNotifications.map(dt => dt.id), 'siteNotifications');
     }
-    return res.status(200).json({data, code: 200})
+    
+    return res.status(200).json({data: siteNotifications, code: 200})
 }
 
 const resolveAuthErrorDetails = ({ status, errorCode, providerErrorCode = "" } = {}) => {
