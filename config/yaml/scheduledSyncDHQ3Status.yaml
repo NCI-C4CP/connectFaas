@@ -12,7 +12,7 @@ steps:
     '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--ingress=internal',
-    '--async',
+    '--no-wait',
     '--env-vars-file=${_VARIABLES}'
   ]
 
