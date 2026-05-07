@@ -11,7 +11,7 @@ steps:
     '--base-image=${_BASE_IMAGE}',
     '--timeout=${_TIMEOUT}',
     '--allow-unauthenticated',
-    '--no-wait',
+    '--async',
     '--ingress=internal',
     '--env-vars-file=${_VARIABLES}'
   ]
