@@ -4515,6 +4515,8 @@ const receivedKitStatusParticipants = async (filters) => {
             received,
             kitStatus,
             kitLevel,
+            pkgReceiptConditions,
+            yes
         } = fieldMapping;
 
         const toReturn = [];
@@ -4556,7 +4558,8 @@ const receivedKitStatusParticipants = async (filters) => {
                         `${collectionCardId}`,
                         `${receivedDateTime}`,
                         `${returnKitTrackingNum}`,
-                        `${kitLevel}`
+                        `${kitLevel}`,
+                        `${pkgReceiptConditions}`
                         )
                 .get();
 
@@ -4575,7 +4578,8 @@ const receivedKitStatusParticipants = async (filters) => {
                                 `${collectionCardId}`,
                                 `${receivedDateTime}`,
                                 `${returnKitTrackingNum}`,
-                                `${kitLevel}`
+                                `${kitLevel}`,
+                                `${pkgReceiptConditions}`
                             )
                             .get();
         }
@@ -4585,12 +4589,20 @@ const receivedKitStatusParticipants = async (filters) => {
             printDocsCount(snapshot, "receivedKitStatusParticipants");
             for (const doc of snapshot.docs) { 
                 const data = doc.data();
+
+                const packageReceiptConditions = data[pkgReceiptConditions] ?? {};
+                // get only the package receipt conditions that are marked as "yes"
+                const filteredPackageConditions = Object.entries(packageReceiptConditions)
+                                                        .filter(([, value]) => value === yes)
+                                                        .map(([key]) => Number(key));
+
                 const kitData = {
                     Connect_ID: data.Connect_ID,
                     [collectionCardId]: data[collectionCardId],
                     [receivedDateTime]: data[receivedDateTime],
                     [returnKitTrackingNum]: data[returnKitTrackingNum],
-                    [kitLevel]: data[kitLevel]
+                    [kitLevel]: data[kitLevel],
+                    [pkgReceiptConditions]: filteredPackageConditions
                 };
                 toReturn.push(kitData);
             };   

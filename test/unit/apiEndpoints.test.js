@@ -433,7 +433,7 @@ describe('Index onRequest Wrapper Handlers', () => {
         const { indexExports, notificationStubs, dhqStubs, restore } = loadIndexWithOnRequestMocks();
 
         try {
-            const scheduledNotificationsRes = await invoke(indexExports.sendScheduledNotificationsGen2, 'POST', {
+            const scheduledNotificationsRes = await invoke(indexExports.sendScheduledNotifications, 'POST', {
                 body: {
                     scheduleAt: '2026-01-01T00:00:00.000Z',
                 },

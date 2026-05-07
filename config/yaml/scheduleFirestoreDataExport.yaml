@@ -1,0 +1,25 @@
+steps:
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'run',
+    'deploy',
+    '${_SERVICE}',
+    '--region=${_REGION}',
+    '--source=${_SOURCE}',
+    '--function=${_FUNCTION}',
+    '--base-image=${_BASE_IMAGE}',
+    '--timeout=${_TIMEOUT}',
+    '--allow-unauthenticated',
+    '--async',
+    '--ingress=internal',
+    '--env-vars-file=${_VARIABLES}'
+  ]
+
+substitutions:
+  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
+  _FUNCTION: scheduleFirestoreDataExport
+  _REGION: us-central1
+  _SERVICE: schedulefirestoredataexport
+  _SOURCE: .
+  _TIMEOUT: 480s

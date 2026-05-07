@@ -1,0 +1,39 @@
+steps:
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'run',
+    'deploy',
+    '${_SERVICE}',
+    '--region=${_REGION}',
+    '--source=${_SOURCE}',
+    '--function=${_FUNCTION}',
+    '--base-image=${_BASE_IMAGE}',
+    '--memory=${_MEMORY}',
+    '--timeout=${_TIMEOUT}',
+    '--allow-unauthenticated',
+    '--async',
+    '--env-vars-file=${_VARIABLES}'
+  ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: [
+    'run',
+    'services',
+    'add-iam-policy-binding',
+    '${_SERVICE}',
+    '--region=${_REGION}',
+    '--member=${_MEMBER}',
+    '--role=${_ROLE}'
+  ]
+
+substitutions:
+  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
+  _FUNCTION: getFilteredParticipants
+  _MEMBER: allUsers
+  _MEMORY: 1024Mi
+  _REGION: us-central1
+  _ROLE: roles/run.invoker
+  _SERVICE: getfilteredparticipants
+  _SOURCE: .
+  _TIMEOUT: 120s
