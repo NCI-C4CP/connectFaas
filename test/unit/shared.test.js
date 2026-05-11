@@ -1,5 +1,5 @@
 const fieldMapping = require('../../utils/fieldToConceptIdMapping');
-const { checkSurveyStatusesWhenVerified } = require('../../utils/shared');
+const { checkSurveyStatusesWhenVerified, htmlToPlaintext } = require('../../utils/shared');
 
 const { verificationStatus, verified, notVerified, cannotBeVerified, notStarted, cancerScreeningHistorySurveyStatus, dhq3SurveyStatus } = fieldMapping;
 
@@ -41,4 +41,51 @@ describe('checkSurveyStatusesWhenVerified', () => {
         expect(result[dhq3SurveyStatus]).toBe(notStarted);
     });
 
+});
+
+describe('htmlToPlaintext', () => {
+    it('should strip HTML tags', () => {
+        expect(htmlToPlaintext('<p>Hello <strong>world</strong></p>')).toBe('Hello world');
+    });
+
+    it('should convert <br> to newlines', () => {
+        expect(htmlToPlaintext('line one<br>line two<br/>line three<BR />line four')).toBe(
+            'line one\nline two\nline three\nline four'
+        );
+    });
+
+    it('should convert </p> to double newlines', () => {
+        expect(htmlToPlaintext('<p>Para one</p><p>Para two</p>')).toBe('Para one\n\nPara two');
+    });
+
+    it('should convert </li> to newlines', () => {
+        expect(htmlToPlaintext('<ul><li>Item A</li><li>Item B</li></ul>')).toBe('Item A\nItem B');
+    });
+
+    it('should convert </h1> through </h6> to double newlines', () => {
+        expect(htmlToPlaintext('<h1>Title</h1><p>Body</p>')).toBe('Title\n\nBody');
+        expect(htmlToPlaintext('<h3>Heading</h3>text')).toBe('Heading\n\ntext');
+    });
+
+    it('should decode common HTML entities', () => {
+        expect(htmlToPlaintext('&amp; &lt; &gt; &nbsp; &#39; &quot;')).toBe('& < >   \' "');
+    });
+
+    it('should collapse 3+ consecutive newlines to 2', () => {
+        expect(htmlToPlaintext('<p>A</p><p></p><p>B</p>')).toBe('A\n\nB');
+    });
+
+    it('should return empty string for null/undefined/empty input', () => {
+        expect(htmlToPlaintext(null)).toBe('');
+        expect(htmlToPlaintext(undefined)).toBe('');
+        expect(htmlToPlaintext('')).toBe('');
+    });
+
+    it('should return plain text unchanged', () => {
+        expect(htmlToPlaintext('Just plain text')).toBe('Just plain text');
+    });
+
+    it('should trim leading and trailing whitespace', () => {
+        expect(htmlToPlaintext('  <p>content</p>  ')).toBe('content');
+    });
 });

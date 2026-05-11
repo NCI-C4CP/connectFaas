@@ -288,6 +288,7 @@ const listOfCollectionsRelatedToDataDestruction = [
     "module3_v1",
     "module4_v1",
     "notifications",
+    "emailAddressStatus",
     "promis_v1",
     "mouthwash_v1",
     "ssn",
@@ -2402,6 +2403,19 @@ const getAdjustedTime = (inputTime, days = 0, hours = 0, minutes = 0) => {
   return adjustedTime;
 };
 
+// Returns YYYY-MM-DD in US Eastern time. Used as the run-date key for `notificationBulkRuns/{runId}`.
+// Multiple scheduler invocations on the same calendar day (US Eastern) reuse the same plan.
+// Cloud Scheduler is configured to fire at a consistent ET time well clear of the midnight boundary.
+const getEasternDateKey = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(date);
+};
+
 const safeJSONParse = (str) => {
     try {
         return JSON.parse(str);
@@ -2462,6 +2476,39 @@ const sanitizeObject = (obj) => {
         }
         return sanitized;
     }, {});
+};
+
+/**
+ * Converts HTML to plaintext by stripping tags and converting line breaks to newlines.
+ * This is a quality signal for mailbox providers and some recipients may prefer plaintext.
+ *
+ * NOTE: This is a regex-only converter and does not handle every HTML
+ * construct (table layout, anchor href extraction, numeric/hex character
+ * entities beyond the listed shortlist, etc.). SendGrid will auto-generate
+ * a plaintext alternative if the `text` field is omitted from the message
+ * payload — that auto-generation is generally higher fidelity. Future work:
+ * benchmark deliverability with the `text` field omitted and remove this
+ * helper if SendGrid's output is acceptable.
+ *
+ * @param {string} html - The HTML string to convert to plaintext.
+ * @returns {string} The plaintext string.
+ */
+const htmlToPlaintext = (html) => {
+    if (!html) return "";
+    return html
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n\n")
+        .replace(/<\/li>/gi, "\n")
+        .replace(/<\/h[1-6]>/gi, "\n\n")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 };
 
 const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
@@ -2549,11 +2596,13 @@ module.exports = {
     delay,
     backoffMs,
     getAdjustedTime,
+    getEasternDateKey,
     handleNorcBirthdayCard,
     safeJSONParse,
     parseResponseJson,
     parseRequestBody,
     uspsUrl,
     sanitizeObject,
-    developmentTier
+    developmentTier,
+    htmlToPlaintext
 };

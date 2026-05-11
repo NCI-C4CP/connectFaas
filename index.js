@@ -1,8 +1,9 @@
 const {onRequest} = require("firebase-functions/v2/https");
+const { onTaskDispatched } = require("firebase-functions/v2/tasks");
 const { getToken, validateUsersEmailPhone } = require('./utils/validation');
 const { getFilteredParticipants, getParticipants, identifyParticipant } = require('./utils/submission');
 const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('./utils/sites');
-const { getParticipantNotification, sendScheduledNotifications } = require('./utils/notifications');
+const { getParticipantNotification, sendScheduledNotifications, processNotificationBatchBulkDefault, processNotificationBatchBulkMicrosoft } = require('./utils/notifications');
 const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
 const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive');
@@ -57,6 +58,11 @@ exports.biospecimen = biospecimenAPIs;
 // End-Point for Scheduled Notifications Handler
 
 exports.sendScheduledNotificationsGen2 = onRequest(sendScheduledNotifications);
+
+// Cloud Task handlers for bulk notification batch processing.
+// Retry policy and rate limits are managed in the Cloud Tasks queue.
+exports.processNotificationBatchBulkDefault = onTaskDispatched(processNotificationBatchBulkDefault);
+exports.processNotificationBatchBulkMicrosoft = onTaskDispatched(processNotificationBatchBulkMicrosoft);
 
 // End-Points for Exporting Firestore to Big Query
 

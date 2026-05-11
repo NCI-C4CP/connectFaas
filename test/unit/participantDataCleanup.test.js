@@ -1117,7 +1117,7 @@ describe('Participant Data Cleanup', () => {
         });
 
         describe('token-based collections', () => {
-            it('should query notifications and ssn by token instead of Connect_ID', async () => {
+            it('should query notifications, ssn, and emailAddressStatus by token instead of Connect_ID', async () => {
                 const { data, doc } = createDestructionParticipant({ token: 'my-special-token' });
 
                 const whereArgs = {};
@@ -1177,7 +1177,7 @@ describe('Participant Data Cleanup', () => {
 
                 await firestoreModule.removeParticipantsDataDestruction();
 
-                // notifications and ssn should be queried by "token"
+                // notifications, ssn, and emailAddressStatus should be queried by "token"
                 expect(whereArgs['notifications']).toBeDefined();
                 expect(whereArgs['notifications'].field).toBe('token');
                 expect(whereArgs['notifications'].value).toBe('my-special-token');
@@ -1185,6 +1185,10 @@ describe('Participant Data Cleanup', () => {
                 expect(whereArgs['ssn']).toBeDefined();
                 expect(whereArgs['ssn'].field).toBe('token');
                 expect(whereArgs['ssn'].value).toBe('my-special-token');
+
+                expect(whereArgs['emailAddressStatus']).toBeDefined();
+                expect(whereArgs['emailAddressStatus'].field).toBe('token');
+                expect(whereArgs['emailAddressStatus'].value).toBe('my-special-token');
 
                 // Other collections should be queried by "Connect_ID"
                 expect(whereArgs['bioSurvey_v1']).toBeDefined();

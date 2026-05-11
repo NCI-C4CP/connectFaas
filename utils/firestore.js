@@ -4,10 +4,12 @@ admin.initializeApp();
 const storage = admin.storage();
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Skip keys with undefined values instead of erroring
-const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort, delay, defaultFlags, checkSurveyStatusesWhenVerified } = require('./shared');
+const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit, listOfCollectionsRelatedToDataDestruction, createChunkArray, twilioErrorMessages, cidToLangMapper, printDocsCount, getFiveDaysAgoDateISO, getHomeMWKitData, processParticipantHomeMouthwashKitData, sanitizeObject, replacementKitSort, manualRequestSort, standardHomeKitSort, delay, defaultFlags, checkSurveyStatusesWhenVerified, getEasternDateKey } = require('./shared');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { isIsoDate } = require('./validation');
 const {getParticipantTokensByPhoneNumber} = require('./bigquery');
+const { normalizeEmailAddress, getEmailSuppressionPolicyForSendGridEvent, buildEmailSuppressionDoc } = require('./emailSuppressionPolicy');
+const { isProviderSendStartedState } = require('./notificationState');
 
 const nciCode = 13;
 const nciConceptId = `517700004`;
@@ -772,7 +774,7 @@ const getCursorDocument = async (collection, cursor) => {
 
 const removeDocumentFromCollection = async (connectID, token, dhq3Username = null) => {
     // Collection query mappings. All remaining collections default to Connect_ID.
-    const tokenCollections = new Set(['notifications', 'ssn']);
+    const tokenCollections = new Set(['notifications', 'ssn', 'emailAddressStatus']);
     const dhqCollections = new Set(['dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers']);
     const errors = [];
     let totalDeleted = 0;
@@ -1283,7 +1285,7 @@ const sanityCheckPIN = async (pin) => {
     try{
         const snapshot = await db.collection('participants').where('pin', '==', pin).get();
         printDocsCount(snapshot, "sanityCheckPIN");
-        
+
         return snapshot.size === 0;
     }
     catch(error){
@@ -1372,7 +1374,9 @@ const retrieveUserNotifications = async (uid) => {
     .get();
   printDocsCount(snapshot, "retrieveUserNotifications");
 
-  return snapshot.docs.map((doc) => doc.data());
+  return snapshot.docs
+    .map((doc) => doc.data())
+    .filter((doc) => isSentNotificationRecord(doc));
 };
 
 const retrieveSiteNotifications = async (siteId, isParent) => {
@@ -2513,33 +2517,78 @@ const sendClientEmail = async (data) => {
 
     await storeNotification(reminder);
 
-    sendEmail(data.email, data.subject, data.message);
+    await sendEmail(data.email, data.subject, data.message);
     return true;
 };
 
+/**
+ * Persist a single notification record.
+ * If the record already has a deterministic id, preserve it as the Firestore
+ * document id; otherwise create a new document id.
+ * @param {object} notificationData Notification record to save.
+ * @returns {Promise<void|Error>}
+ */
 const storeNotification = async (notificationData) => {
     try {
-        await db.collection('notifications').add(notificationData);
+        const docRef = notificationData?.id ?
+            db.collection('notifications').doc(notificationData.id) :
+            db.collection('notifications').doc();
+        await docRef.set(notificationData);
     } catch (error) {
         console.error(error);
         return new Error(error);
     }
 }
 
+const isSentNotificationRecord = (notificationData = {}) => (
+  notificationData?.isSent !== false &&
+  notificationData?.processingState !== "reserved" &&
+  notificationData?.processingState !== "send_failed" &&
+  !isProviderSendStartedState(notificationData?.processingState)
+);
+
+const shouldBlockNotificationSend = (notificationData = {}) => (
+  isSentNotificationRecord(notificationData) ||
+  isProviderSendStartedState(notificationData?.processingState)
+);
+
+const getProviderAttemptOwner = (notificationData = {}) =>
+  notificationData.providerAttemptOwner || "";
+
+const getReservationExpiresAtMs = (notificationData = {}) => {
+  const reservationExpiresAt = notificationData.reservationExpiresAt;
+  if (!reservationExpiresAt) return 0;
+
+  const parsed = new Date(reservationExpiresAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const clearProviderReservationFields = () => ({
+  reservationExpiresAt: FieldValue.delete(),
+});
+
+const clearProviderAttemptFields = () => ({
+  providerAttemptOwner: FieldValue.delete(),
+  ...clearProviderReservationFields(),
+});
+
 /**
- * 
+ * Check whether a participant has any notification doc for the given spec that should block a new send
+ * e.g. (already sent, or a provider attempt is in-flight / has ambiguous acceptance).
+ *
  * @param {string} userToken User token
  * @param {string} specId Notification Specifications ID
+ * @returns {Promise<boolean>}
  */
 const checkIsNotificationSent = async (userToken, specId) => {
   const snapshot = await db
     .collection("notifications")
     .where("token", "==", userToken)
     .where("notificationSpecificationsID", "==", specId)
-    .count()
+    .select("processingState", "isSent")
     .get();
 
-  return snapshot.data().count > 0;
+  return snapshot.docs.some((doc) => shouldBlockNotificationSend(doc.data()));
 };
 
 /**
@@ -2552,9 +2601,12 @@ const saveNotificationBatch = async (notificationRecordArray) => {
   for (const recordChunk of chunkArray) {
     const batch = db.batch();
     try {
-        for (const record of recordChunk) {
-        const docRef = db.collection("notifications").doc();
-        batch.set(docRef, record);
+      for (const record of recordChunk) {
+        if (!record || typeof record.id !== "string" || !record.id) {
+          throw new Error(`saveNotificationBatch() requires record.id; got ${JSON.stringify(record?.id)}.`);
+        }
+        const docRef = db.collection("notifications").doc(record.id);
+        batch.set(docRef, record, { merge: true });
       }
 
       await batch.commit();
@@ -2562,6 +2614,421 @@ const saveNotificationBatch = async (notificationRecordArray) => {
       throw new Error("saveNotificationBatch() error.", {cause: error});
     }
   }
+};
+
+/**
+ * Build the deterministic notification record id used for notification history
+ * and real-time send-state documents.
+ * @param {object} notificationRecord Notification record payload.
+ * @returns {string} Deterministic record id.
+ */
+const getNotificationRecordId = (notificationRecord = {}) => {
+  const keyParts = [
+    notificationRecord.notificationSpecificationsID || "",
+    notificationRecord.notificationType || "",
+    notificationRecord.token || "",
+  ];
+  return keyParts.map((val) => encodeURIComponent(String(val))).join("__");
+};
+
+/**
+ * Reserve notification records for delivery on deterministic notifications
+ * docs, skipping records with active reservations or already-sent state.
+ * @param {object[]} notificationRecordArray Notification records to reserve.
+ * @param {string} providerAttemptOwner Provider attempt owner identifier.
+ * @param {number} reservationDurationMs Reservation duration in milliseconds.
+ * @returns {Promise<{recordsToSend: object[]}>}
+ */
+const reserveNotificationBatch = async (
+  notificationRecordArray,
+  providerAttemptOwner,
+  reservationDurationMs = 30 * 60 * 1000,
+) => {
+  if (!Array.isArray(notificationRecordArray) || notificationRecordArray.length === 0) {
+    return { recordsToSend: [] };
+  }
+  if (!providerAttemptOwner) {
+    throw new Error("reserveNotificationBatch() requires providerAttemptOwner.");
+  }
+
+  const recordsToSend = [];
+  const blockedRecords = [];
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const reservationExpiresAt = new Date(now + reservationDurationMs).toISOString();
+  const recordChunkArray = createChunkArray(notificationRecordArray, 250);
+
+  for (const recordChunk of recordChunkArray) {
+    await db.runTransaction(async (transaction) => {
+      const docRefArray = recordChunk.map((record) => db.collection("notifications").doc(record.id));
+      const snapshotArray = await transaction.getAll(...docRefArray);
+
+      for (let i = 0; i < recordChunk.length; i++) {
+        const record = recordChunk[i];
+        const docRef = docRefArray[i];
+        const snapshot = snapshotArray[i];
+        const docData = snapshot.exists ? (snapshot.data() || {}) : {};
+
+        if (snapshot.exists && shouldBlockNotificationSend(docData)) {
+          blockedRecords.push({
+            ...record,
+            _existingProcessingState: docData.processingState || "",
+            _existingIsSent: docData.isSent,
+          });
+          continue;
+        }
+
+        const currentProviderAttemptOwner = getProviderAttemptOwner(docData);
+        const reservationExpiresAtMs = getReservationExpiresAtMs(docData);
+        const hasActiveForeignReservation =
+          docData.processingState === "reserved" &&
+          currentProviderAttemptOwner &&
+          currentProviderAttemptOwner !== providerAttemptOwner &&
+          reservationExpiresAtMs > now;
+        if (hasActiveForeignReservation) {
+          continue;
+        }
+
+        // Persist the full record payload on the first reservation (id, token, Connect_ID, spec metadata, email/phone, notification body).
+        // Only state-machine fields are written on re-reservation of an existing doc, otherwise we would overwrite payload fields that may have been
+        // mutated by webhook events or by a later spec change.
+        const reservationStateUpdate = {
+          processingState: "reserved",
+          isSent: false,
+          providerAttemptOwner,
+          reservationExpiresAt,
+          reservedAt: nowIso,
+          lastSendAttemptAt: nowIso,
+          updatedAt: nowIso,
+          sendAttemptCount: (Number(docData.sendAttemptCount) || Number(docData.sendAttempts) || 0) + 1,
+          providerAcceptedAt: FieldValue.delete(),
+          lastProviderErrorCode: FieldValue.delete(),
+          lastProviderErrorMessage: FieldValue.delete(),
+          lastProviderErrorStatus: FieldValue.delete(),
+        };
+        const docUpdate = snapshot.exists
+          ? reservationStateUpdate
+          : { ...record, ...reservationStateUpdate };
+
+        transaction.set(docRef, docUpdate, { merge: true });
+        recordsToSend.push(record);
+      }
+    });
+  }
+
+  return { recordsToSend, blockedRecords };
+};
+
+/**
+ * Mark reserved notification docs as having started a provider send attempt.
+ * Once this state is written, expired reservations do not automatically retry
+ * the record. That avoids duplicate provider sends when a worker is slow or
+ * its acceptance write fails after the provider may have accepted the message.
+ * @param {object[]} notificationRecordArray Notification records to update.
+ * @param {string} providerAttemptOwner Provider attempt owner identifier.
+ * @param {string} startedAt ISO timestamp for provider attempt start.
+ * @returns {Promise<{recordsToSend: object[], updatedCount: number}>}
+ */
+const markNotificationBatchProviderSendStarted = async (
+  notificationRecordArray,
+  providerAttemptOwner,
+  startedAt = new Date().toISOString(),
+) => {
+  if (!Array.isArray(notificationRecordArray) || notificationRecordArray.length === 0) {
+    return { recordsToSend: [], updatedCount: 0 };
+  }
+  if (!providerAttemptOwner) {
+    throw new Error("markNotificationBatchProviderSendStarted() requires providerAttemptOwner.");
+  }
+
+  let updatedCount = 0;
+  const recordsToSend = [];
+  const recordChunkArray = createChunkArray(notificationRecordArray, 250);
+
+  for (const recordChunk of recordChunkArray) {
+    await db.runTransaction(async (transaction) => {
+      const docRefArray = recordChunk.map((record) => db.collection("notifications").doc(record.id));
+      const snapshotArray = await transaction.getAll(...docRefArray);
+
+      for (let i = 0; i < recordChunk.length; i++) {
+        const record = recordChunk[i];
+        const docRef = docRefArray[i];
+        const snapshot = snapshotArray[i];
+        if (!snapshot.exists) continue;
+
+        const docData = snapshot.data() || {};
+        if (docData.processingState !== "reserved" || getProviderAttemptOwner(docData) !== providerAttemptOwner) {
+          continue;
+        }
+
+        transaction.set(
+          docRef,
+          {
+            processingState: "provider_send_in_flight",
+            isSent: false,
+            providerAttemptOwner,
+            providerAttemptStartedAt: startedAt,
+            updatedAt: startedAt,
+            ...clearProviderReservationFields(),
+          },
+          { merge: true },
+        );
+        recordsToSend.push(record);
+        updatedCount++;
+      }
+    });
+  }
+
+  return { recordsToSend, updatedCount };
+};
+
+/**
+ * Mark records where the provider may have accepted the message but Firestore
+ * cannot safely confirm final acceptance. These records are intentionally not
+ * auto-retried. Webhook catch-up or manual repair should resolve them.
+ *
+ * Precondition: each record must currently be in `provider_send_in_flight`
+ * with the matching providerAttemptOwner. Records in any other state are
+ * silently skipped (and counted in the returned skippedCount summary), since
+ * "acceptance unknown" only applies to records the provider may already have
+ * processed. Callers receiving a non-zero skippedCount should treat it as a
+ * state-machine drift signal worth investigating.
+ *
+ * @param {object[]} notificationRecordArray Notification records to update.
+ * @param {string} providerAttemptOwner Provider attempt owner identifier.
+ * @param {Error|object} error Provider or state-write error payload.
+ * @param {string} unknownAt ISO timestamp for unknown state.
+ * @returns {Promise<number>} Number of notification docs updated.
+ */
+const markNotificationBatchProviderAcceptanceUnknown = async (
+  notificationRecordArray,
+  providerAttemptOwner,
+  error = {},
+  unknownAt = new Date().toISOString(),
+) => {
+  if (!Array.isArray(notificationRecordArray) || notificationRecordArray.length === 0) return 0;
+
+  let updatedCount = 0;
+  const skippedReasons = { missing: 0, alreadyAccepted: 0, ownerMismatch: 0, wrongState: 0 };
+  const recordChunkArray = createChunkArray(notificationRecordArray, 250);
+  const lastProviderErrorCode = error?.code != null || error?.cause?.code != null
+    ? String(error.code ?? error.cause.code)
+    : FieldValue.delete();
+  const lastProviderErrorMessage = error?.message || error?.cause?.message || FieldValue.delete();
+  const lastProviderErrorStatus =
+    error?.statusCode != null || error?.status != null || error?.cause?.statusCode != null || error?.cause?.status != null
+      ? String(error.statusCode ?? error.status ?? error.cause.statusCode ?? error.cause.status)
+      : FieldValue.delete();
+
+  for (const recordChunk of recordChunkArray) {
+    await db.runTransaction(async (transaction) => {
+      const docRefArray = recordChunk.map((record) => db.collection("notifications").doc(record.id));
+      const snapshotArray = await transaction.getAll(...docRefArray);
+
+      for (let i = 0; i < recordChunk.length; i++) {
+        const record = recordChunk[i];
+        const docRef = docRefArray[i];
+        const snapshot = snapshotArray[i];
+        if (!snapshot.exists) {
+          skippedReasons.missing++;
+          continue;
+        }
+
+        const docData = snapshot.data() || {};
+        if (docData.processingState === "provider_accepted" && docData.isSent === true) {
+          skippedReasons.alreadyAccepted++;
+          continue;
+        }
+        if (providerAttemptOwner && getProviderAttemptOwner(docData) !== providerAttemptOwner) {
+          skippedReasons.ownerMismatch++;
+          continue;
+        }
+        if (docData.processingState !== "provider_send_in_flight") {
+          skippedReasons.wrongState++;
+          continue;
+        }
+
+        transaction.set(
+          docRef,
+          {
+            processingState: "provider_acceptance_unknown",
+            isSent: false,
+            providerAcceptanceUnknownAt: unknownAt,
+            providerAttemptOwner,
+            updatedAt: unknownAt,
+            ...clearProviderReservationFields(),
+            lastProviderErrorCode,
+            lastProviderErrorMessage,
+            lastProviderErrorStatus,
+          },
+          { merge: true },
+        );
+        updatedCount++;
+      }
+    });
+  }
+
+  const totalSkipped = skippedReasons.missing + skippedReasons.alreadyAccepted
+    + skippedReasons.ownerMismatch + skippedReasons.wrongState;
+  if (totalSkipped > 0) {
+    console.warn(
+      `markNotificationBatchProviderAcceptanceUnknown skipped ${totalSkipped}/${notificationRecordArray.length} record(s) for owner ${providerAttemptOwner}.`,
+      skippedReasons,
+    );
+  }
+
+  return updatedCount;
+};
+
+/**
+ * Mark reserved notification docs as accepted by the provider.
+ *
+ * Precondition: each record must currently be in `reserved` or `provider_send_in_flight` with the matching providerAttemptOwner.
+ * Records already in `provider_accepted`/`isSent` are idempotently skipped.
+ * Records in `send_failed`, `provider_acceptance_unknown`, or any other state are
+ * silently skipped for duplicate-prevention. Once a record passes through reservation, only the matching attempt may finalize it.
+ * The skippedReasons summary is logged so unexpected drift is visible.
+ *
+ * @param {object[]} notificationRecordArray Notification records to update.
+ * @param {string} providerAttemptOwner Provider attempt owner identifier.
+ * @param {string} acceptedAt ISO timestamp for acceptance.
+ * @returns {Promise<number>} Number of notification docs updated.
+ */
+const markNotificationBatchAccepted = async (notificationRecordArray, providerAttemptOwner, acceptedAt = new Date().toISOString()) => {
+  if (!Array.isArray(notificationRecordArray) || notificationRecordArray.length === 0) return 0;
+
+  let updatedCount = 0;
+  const skippedReasons = { missing: 0, alreadyAccepted: 0, ownerMismatch: 0, wrongState: 0 };
+  const recordChunkArray = createChunkArray(notificationRecordArray, 250);
+  for (const recordChunk of recordChunkArray) {
+    await db.runTransaction(async (transaction) => {
+      const docRefArray = recordChunk.map((record) => db.collection("notifications").doc(record.id));
+      const snapshotArray = await transaction.getAll(...docRefArray);
+
+      for (let i = 0; i < recordChunk.length; i++) {
+        const record = recordChunk[i];
+        const docRef = docRefArray[i];
+        const snapshot = snapshotArray[i];
+        if (!snapshot.exists) {
+          skippedReasons.missing++;
+          continue;
+        }
+
+        const docData = snapshot.data() || {};
+        if (docData.processingState === "provider_accepted" && docData.isSent === true) {
+          skippedReasons.alreadyAccepted++;
+          continue;
+        }
+        if (providerAttemptOwner && getProviderAttemptOwner(docData) !== providerAttemptOwner) {
+          skippedReasons.ownerMismatch++;
+          continue;
+        }
+        if (docData.processingState !== "reserved" && docData.processingState !== "provider_send_in_flight") {
+          skippedReasons.wrongState++;
+          continue;
+        }
+
+        transaction.set(
+          docRef,
+          {
+            ...record,
+            processingState: "provider_accepted",
+            isSent: true,
+            providerAcceptedAt: acceptedAt,
+            updatedAt: acceptedAt,
+            ...clearProviderAttemptFields(),
+            lastProviderErrorCode: FieldValue.delete(),
+            lastProviderErrorMessage: FieldValue.delete(),
+            lastProviderErrorStatus: FieldValue.delete(),
+          },
+          { merge: true },
+        );
+        updatedCount++;
+      }
+    });
+  }
+
+  const totalSkipped = skippedReasons.missing + skippedReasons.ownerMismatch + skippedReasons.wrongState;
+  if (totalSkipped > 0) {
+    console.warn(
+      `markNotificationBatchAccepted skipped ${totalSkipped}/${notificationRecordArray.length} record(s) for owner ${providerAttemptOwner}.`,
+      skippedReasons,
+    );
+  }
+
+  return updatedCount;
+};
+
+/**
+ * Mark notification docs as failed and clear the provider attempt owner only when the provider
+ * definitively rejected without acceptance, or before any provider call was
+ * attempted. Ambiguous provider results must move to provider_acceptance_unknown.
+ * @param {object[]} notificationRecordArray Notification records to update.
+ * @param {string} providerAttemptOwner Provider attempt owner identifier.
+ * @param {Error|object} error Provider error payload.
+ * @param {string} failedAt ISO timestamp for failure.
+ * @returns {Promise<number>} Number of notification docs updated.
+ */
+const markNotificationBatchFailed = async (
+  notificationRecordArray,
+  providerAttemptOwner,
+  error = {},
+  failedAt = new Date().toISOString(),
+) => {
+  if (!Array.isArray(notificationRecordArray) || notificationRecordArray.length === 0) return 0;
+
+  let updatedCount = 0;
+  const recordChunkArray = createChunkArray(notificationRecordArray, 250);
+  const lastProviderErrorCode = error?.code != null ? String(error.code) : FieldValue.delete();
+  const lastProviderErrorMessage = error?.message || error?.cause?.message || FieldValue.delete();
+  const lastProviderErrorStatus =
+    error?.statusCode != null || error?.status != null
+      ? String(error.statusCode ?? error.status)
+      : FieldValue.delete();
+
+  for (const recordChunk of recordChunkArray) {
+    await db.runTransaction(async (transaction) => {
+      const docRefArray = recordChunk.map((record) => db.collection("notifications").doc(record.id));
+      const snapshotArray = await transaction.getAll(...docRefArray);
+
+      for (let i = 0; i < recordChunk.length; i++) {
+        const record = recordChunk[i];
+        const docRef = docRefArray[i];
+        const snapshot = snapshotArray[i];
+        if (!snapshot.exists) continue;
+
+        const docData = snapshot.data() || {};
+        if (docData.processingState === "provider_accepted" && docData.isSent === true) {
+          continue;
+        }
+        if (providerAttemptOwner && getProviderAttemptOwner(docData) !== providerAttemptOwner) {
+          continue;
+        }
+        if (!["reserved", "provider_send_in_flight"].includes(docData.processingState)) {
+          continue;
+        }
+
+        transaction.set(
+          docRef,
+          {
+            ...record,
+            processingState: "send_failed",
+            isSent: false,
+            updatedAt: failedAt,
+            lastSendAttemptAt: failedAt,
+            ...clearProviderAttemptFields(),
+            lastProviderErrorCode,
+            lastProviderErrorMessage,
+            lastProviderErrorStatus,
+          },
+          { merge: true },
+        );
+        updatedCount++;
+      }
+    });
+  }
+
+  return updatedCount;
 };
 
 const markNotificationAsRead = async (id, collection) => {
@@ -2771,7 +3238,9 @@ const getNotificationHistoryByParticipant = async (token, siteCode, isParent) =>
                                     .get();
         printDocsCount(snapshot, "getNotificationHistoryByParticipant; collection: notifications");
 
-        return snapshot.docs.map(dt => dt.data());
+        return snapshot.docs
+          .map(dt => dt.data())
+          .filter((dt) => isSentNotificationRecord(dt));
     }
     else return false;
 }
@@ -2821,11 +3290,7 @@ const getNotificationSpecsBySchedule = async (scheduleAt) => {
  * @returns
  */
 const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
-  const eastTimeZone = { timeZone: "America/New_York" };
-  const currTime = new Date();
-  const currDate = currTime.toLocaleDateString("en-US", eastTimeZone);
-  const currTimeIsoStr = currTime.toISOString();
-  const batch = db.batch();
+  const currDateKey = getEasternDateKey();
   const snapshot = await db
     .collection("notificationSpecifications")
     .where("scheduleAt", "==", scheduleAt)
@@ -2836,15 +3301,533 @@ const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
   for (const doc of snapshot.docs) {
     const docData = doc.data();
     const lastRunTime = docData.lastRunTime || "2020-01-01";
-    const lastRunDate = new Date(lastRunTime).toLocaleDateString("en-US", eastTimeZone);
-    if (docData.id && currDate !== lastRunDate) {
+    const lastRunDateKey = docData.lastRunDateKey || getEasternDateKey(new Date(lastRunTime));
+    const queuedBulkRunDateKey = docData.queuedBulkRunDateKey || "";
+    // Keep queued bulk runs out of the scheduler's daily selection. The bulk
+    // task chain owns completion, so re-queueing here would cause
+    // duplicate-work risk while a prior run is still in flight.
+    if (docData.id && currDateKey !== lastRunDateKey && currDateKey !== queuedBulkRunDateKey) {
       notificationSpecArray.push(docData);
-      batch.update(doc.ref, { lastRunTime: currTimeIsoStr });
     }
   }
 
-  await batch.commit(); // batch limit: 500
   return notificationSpecArray;
+};
+
+const NOTIFICATION_SPEC_QUERY_CHUNK_SIZE = 30;
+
+const updateNotificationSpecsById = async (specIdArray = [], getUpdateData = () => null) => {
+  if (!Array.isArray(specIdArray) || specIdArray.length === 0) return 0;
+
+  let updatedCount = 0;
+  const uniqueSpecIds = [...new Set(specIdArray.filter(Boolean))];
+  for (let i = 0; i < uniqueSpecIds.length; i += NOTIFICATION_SPEC_QUERY_CHUNK_SIZE) {
+    const batch = db.batch();
+    const currIds = uniqueSpecIds.slice(i, i + NOTIFICATION_SPEC_QUERY_CHUNK_SIZE);
+    const snapshot = await db.collection("notificationSpecifications").where("id", "in", currIds).get();
+    let chunkUpdates = 0;
+
+    for (const doc of snapshot.docs) {
+      const updateData = getUpdateData(doc.data());
+      if (!updateData) continue;
+
+      batch.update(doc.ref, updateData);
+      updatedCount++;
+      chunkUpdates++;
+    }
+
+    if (chunkUpdates > 0) {
+      await batch.commit();
+    }
+  }
+
+  return updatedCount;
+};
+
+const markNotificationSpecsQueuedForRun = async (
+  specIdArray = [],
+  runDateKey = getEasternDateKey(),
+  queuedAt = new Date().toISOString(),
+  runSequenceBySpecId = {},
+  { commitRunSequence = true } = {},
+) => {
+  return updateNotificationSpecsById(specIdArray, (docData) => {
+    const runSequence = Number(runSequenceBySpecId[docData.id]);
+    return {
+      queuedBulkRunDateKey: runDateKey,
+      queuedBulkRunUpdatedAt: queuedAt,
+      ...(Number.isFinite(runSequence) && runSequence > 0
+        ? {
+          queuedBulkRunSequence: runSequence,
+          ...(commitRunSequence ? { bulkRunSequence: runSequence } : {}),
+        }
+        : {}),
+    };
+  });
+};
+
+const shouldSkipQueuedRunUpdate = (docData = {}, runDateKey = "", runSequence = NaN) => {
+  if (runDateKey && docData.queuedBulkRunDateKey && docData.queuedBulkRunDateKey !== runDateKey) {
+    return true;
+  }
+
+  const queuedRunSequence = Number(docData.queuedBulkRunSequence);
+  return Number.isFinite(runSequence) &&
+    runSequence > 0 &&
+    Number.isFinite(queuedRunSequence) &&
+    queuedRunSequence > 0 &&
+    queuedRunSequence !== runSequence;
+};
+
+const getQueuedBulkRunClearFields = () => ({
+  queuedBulkRunDateKey: FieldValue.delete(),
+  queuedBulkRunUpdatedAt: FieldValue.delete(),
+  queuedBulkRunSequence: FieldValue.delete(),
+});
+
+const clearNotificationSpecsQueuedRun = async (specIdArray = [], runDateKey = "", runSequenceBySpecId = {}) => {
+  return updateNotificationSpecsById(specIdArray, (docData) => {
+    const runSequence = Number(runSequenceBySpecId[docData.id]);
+    if (shouldSkipQueuedRunUpdate(docData, runDateKey, runSequence)) {
+      return null;
+    }
+
+    const shouldUpdateRunSequence =
+      Number.isFinite(runSequence) &&
+      runSequence > 0 &&
+      runSequence > (Number(docData.bulkRunSequence) || 0);
+
+    return {
+      ...getQueuedBulkRunClearFields(),
+      ...(shouldUpdateRunSequence ? { bulkRunSequence: runSequence } : {}),
+    };
+  });
+};
+
+const markNotificationSpecsLastRun = async (
+  specIdArray = [],
+  lastRunTime = new Date().toISOString(),
+  lastRunDateKey = getEasternDateKey(new Date(lastRunTime)),
+) => {
+  return updateNotificationSpecsById(specIdArray, () => ({
+    lastRunTime,
+    lastRunDateKey,
+  }));
+};
+
+const completeNotificationSpecsQueuedRun = async (
+  specIdArray = [],
+  runDateKey = "",
+  lastRunTime = new Date().toISOString(),
+  runSequenceBySpecId = {},
+) => {
+  return updateNotificationSpecsById(specIdArray, (docData) => {
+    const runSequence = Number(runSequenceBySpecId[docData.id]);
+    if (shouldSkipQueuedRunUpdate(docData, runDateKey, runSequence)) {
+      return null;
+    }
+
+    return {
+      lastRunTime,
+      lastRunDateKey: runDateKey || getEasternDateKey(new Date(lastRunTime)),
+      ...getQueuedBulkRunClearFields(),
+    };
+  });
+};
+
+const BULK_RUN_COLLECTION = "notificationBulkRuns";
+const BULK_RUN_BATCH_COLLECTION = "batches";
+// Batches and runs share the same terminal status set ("complete" | "failed").
+const BULK_RUN_TERMINAL_STATUSES = new Set(["complete", "failed"]);
+const DEFAULT_BULK_BATCH_ATTEMPT_DURATION_MS = 30 * 60 * 1000;
+
+const getBulkRunRef = (runId) => db.collection(BULK_RUN_COLLECTION).doc(runId);
+const getBulkRunBatchRef = (runId, batchId) =>
+  getBulkRunRef(runId).collection(BULK_RUN_BATCH_COLLECTION).doc(batchId);
+
+const getIsoTimestampMs = (value = "") => {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getBulkBatchAttemptExpiresAtMs = (
+  batchData = {},
+  attemptDurationMs = DEFAULT_BULK_BATCH_ATTEMPT_DURATION_MS,
+) => {
+  const explicitExpiryMs = getIsoTimestampMs(batchData.taskAttemptExpiresAt);
+  if (explicitExpiryMs > 0) return explicitExpiryMs;
+
+  const startedAtMs = getIsoTimestampMs(batchData.startedAt);
+  if (startedAtMs <= 0) return 0;
+
+  return startedAtMs + Math.max(1, Number(attemptDurationMs) || DEFAULT_BULK_BATCH_ATTEMPT_DURATION_MS);
+};
+
+// The batch within the bulk run.
+const isTerminalBulkBatch = (batchData = {}) => BULK_RUN_TERMINAL_STATUSES.has(batchData.status);
+// The entire notification bulk run.
+const isTerminalBulkRun = (runData = {}) => BULK_RUN_TERMINAL_STATUSES.has(runData.status);
+
+const shouldSkipBulkBatchTransition = (batchData = {}, runData = {}) =>
+  isTerminalBulkBatch(batchData) || isTerminalBulkRun(runData);
+
+const hasMismatchedBulkTaskAttemptOwner = (batchData = {}, taskAttemptOwner = "") =>
+  Boolean(taskAttemptOwner && batchData.taskAttemptOwner && batchData.taskAttemptOwner !== taskAttemptOwner);
+
+// Format: `${taskId}-attempt-${retryCount}`.
+// Extract the retry count so a Cloud Tasks retry can take over a batch whose prior attempt crashed without writing a terminal state.
+// Cloud Tasks only delivers the next attempt after the prior attempt has logically ended (HTTP response or dispatch-deadline timeout),
+// so a strictly-higher retry count proves the prior owner is dead even if its lock has not yet expired.
+const parseBulkTaskAttemptRetryCount = (taskAttemptOwner = "") => {
+  if (typeof taskAttemptOwner !== "string") return null;
+  const match = taskAttemptOwner.match(/-attempt-(\d+)$/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const isNewerBulkTaskAttempt = (existingOwner = "", incomingOwner = "") => {
+  const existing = parseBulkTaskAttemptRetryCount(existingOwner);
+  const incoming = parseBulkTaskAttemptRetryCount(incomingOwner);
+  if (existing === null || incoming === null) return false;
+  // Strict inequality: same retry count means same logical attempt (a duplicate dispatch). Only a higher count is a genuine retry.
+  return incoming > existing;
+};
+
+const getBulkRunTransactionContext = async (transaction, runId = "") => {
+  const runRef = getBulkRunRef(runId);
+  const runSnapshot = await transaction.get(runRef);
+  return {
+    runRef,
+    runData: runSnapshot.exists ? (runSnapshot.data() || {}) : {},
+  };
+};
+
+const getBulkBatchTransactionContext = async (transaction, runId = "", batchId = "") => {
+  const batchRef = getBulkRunBatchRef(runId, batchId);
+  const { runRef, runData } = await getBulkRunTransactionContext(transaction, runId);
+  const batchSnapshot = await transaction.get(batchRef);
+  return {
+    batchRef,
+    runRef,
+    batchData: batchSnapshot.exists ? (batchSnapshot.data() || {}) : {},
+    runData,
+  };
+};
+
+const getBulkBatchFailureErrorFields = (error = {}) => ({
+  lastErrorMessage: error?.message || String(error || ""),
+  lastErrorCode: error?.code != null ? String(error.code) : FieldValue.delete(),
+  lastErrorStatus: error?.statusCode != null || error?.status != null
+    ? String(error.statusCode ?? error.status)
+    : FieldValue.delete(),
+});
+
+const getBulkNotificationRun = async (runId = "") => {
+  if (!runId) return null;
+  const snapshot = await getBulkRunRef(runId).get();
+  return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
+};
+
+const getBulkNotificationBatch = async (runId = "", batchId = "") => {
+  if (!runId || !batchId) return null;
+  const [runSnapshot, batchSnapshot] = await Promise.all([
+    getBulkRunRef(runId).get(),
+    getBulkRunBatchRef(runId, batchId).get(),
+  ]);
+  if (!runSnapshot.exists || !batchSnapshot.exists) return null;
+
+  return {
+    run: { id: runSnapshot.id, ...runSnapshot.data() },
+    batch: { id: batchSnapshot.id, ...batchSnapshot.data() },
+  };
+};
+
+const getBulkNotificationRunBatches = async (runId = "") => {
+  if (!runId) return [];
+  const snapshot = await getBulkRunRef(runId).collection(BULK_RUN_BATCH_COLLECTION).get();
+  return snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .sort((a, b) => {
+      const laneCompare = String(a.lane || "").localeCompare(String(b.lane || ""));
+      return laneCompare || ((Number(a.batchNumber) || 0) - (Number(b.batchNumber) || 0));
+    });
+};
+
+const saveBulkNotificationRunPlan = async ({
+  runDoc = {},
+  batchDocs = [],
+} = {}) => {
+  if (!runDoc.id) {
+    throw new Error("saveBulkNotificationRunPlan() requires runDoc.id.");
+  }
+
+  const now = new Date().toISOString();
+  const runRef = getBulkRunRef(runDoc.id);
+  const batchIds = batchDocs.map((batchDoc) => batchDoc.id).filter(Boolean);
+  const batchIdsByLane = batchDocs.reduce((acc, batchDoc) => {
+    if (!batchDoc.lane || !batchDoc.id) return acc;
+    if (!acc[batchDoc.lane]) acc[batchDoc.lane] = [];
+    acc[batchDoc.lane].push(batchDoc.id);
+    return acc;
+  }, {});
+
+  // Write the run doc first so finalizeBulkNotificationRunIfTerminal can never observe a missing batchCount.
+  // If this write fails, no batch docs are written and the next scheduler invocation rebuilds the same plan from scratch.
+  // If the run doc write succeeds but batch-doc writes partially fail, the run doc carries an authoritative batchCount and
+  // recovery resumes batch-doc materialization (set+merge is idempotent).
+  await runRef.set({
+    ...runDoc,
+    batchIds,
+    batchIdsByLane,
+    batchCount: batchIds.length,
+    status: runDoc.status || "planned",
+    updatedAt: now,
+  }, { merge: true });
+
+  for (let i = 0; i < batchDocs.length; i += 450) {
+    const batch = db.batch();
+    const chunk = batchDocs.slice(i, i + 450);
+    for (const batchDoc of chunk) {
+      if (!batchDoc.id) continue;
+      const batchRef = getBulkRunBatchRef(runDoc.id, batchDoc.id);
+      batch.set(batchRef, {
+        ...batchDoc,
+        runId: runDoc.id,
+        status: batchDoc.status || "planned",
+        updatedAt: now,
+      }, { merge: true });
+    }
+    await batch.commit();
+  }
+
+  return { runId: runDoc.id, batchCount: batchIds.length, batchIdsByLane };
+};
+
+const markBulkNotificationBatchEnqueued = async ({
+  runId = "",
+  batchId = "",
+  taskId = "",
+  queueName = "",
+  scheduleDelaySeconds = 0,
+  scheduledFor,
+  enqueuedAt = new Date().toISOString(),
+} = {}) => {
+  if (!runId || !batchId) return false;
+  return db.runTransaction(async (transaction) => {
+    const { batchRef, batchData, runData } = await getBulkBatchTransactionContext(transaction, runId, batchId);
+    if (shouldSkipBulkBatchTransition(batchData, runData)) return false;
+
+    // Only write scheduledFor when the caller passes one. On a Cloud Tasks resume (task already existed) the caller omits this,
+    // so the existing batch doc's scheduledFor is preserved as the authoritative value.
+    transaction.set(batchRef, {
+      status: "enqueued",
+      taskId,
+      queueName,
+      scheduleDelaySeconds,
+      ...(scheduledFor ? { scheduledFor } : {}),
+      enqueuedAt,
+      updatedAt: enqueuedAt,
+    }, { merge: true });
+    return true;
+  });
+};
+
+const markBulkNotificationRunEnqueueFailed = async (
+  runId = "",
+  error = {},
+  failedAt = new Date().toISOString(),
+) => {
+  if (!runId) return false;
+  return db.runTransaction(async (transaction) => {
+    const { runRef, runData } = await getBulkRunTransactionContext(transaction, runId);
+    if (isTerminalBulkRun(runData)) return false;
+
+    transaction.set(runRef, {
+      status: "enqueue_failed",
+      enqueueFailedAt: failedAt,
+      lastErrorMessage: error?.message || String(error || ""),
+      updatedAt: failedAt,
+    }, { merge: true });
+    return true;
+  });
+};
+
+const markBulkNotificationRunQueued = async (
+  runId = "",
+  queuedAt = new Date().toISOString(),
+) => {
+  if (!runId) return false;
+  return db.runTransaction(async (transaction) => {
+    const { runRef, runData } = await getBulkRunTransactionContext(transaction, runId);
+    if (isTerminalBulkRun(runData)) return false;
+
+    transaction.set(runRef, {
+      status: "queued",
+      queuedAt,
+      updatedAt: queuedAt,
+    }, { merge: true });
+    return true;
+  });
+};
+
+const markBulkNotificationBatchRunning = async ({
+  runId = "",
+  batchId = "",
+  taskAttemptOwner = "",
+  startedAt = new Date().toISOString(),
+  attemptDurationMs = DEFAULT_BULK_BATCH_ATTEMPT_DURATION_MS,
+} = {}) => {
+  if (!runId || !batchId) return false;
+  const nowMs = Date.now();
+  const startedAtMs = getIsoTimestampMs(startedAt) || nowMs;
+  const normalizedAttemptDurationMs = Math.max(
+    1,
+    Number(attemptDurationMs) || DEFAULT_BULK_BATCH_ATTEMPT_DURATION_MS,
+  );
+  const taskAttemptExpiresAt = new Date(startedAtMs + normalizedAttemptDurationMs).toISOString();
+
+  return db.runTransaction(async (transaction) => {
+    const { batchRef, runRef, batchData, runData } = await getBulkBatchTransactionContext(transaction, runId, batchId);
+    if (shouldSkipBulkBatchTransition(batchData, runData)) return false;
+    // Only one Cloud Tasks attempt owns a planned batch at a time. A retry may claim the batch after the prior attempt expires
+    // OR when the incoming attempt's retry count is higher than the prior owner's.
+    // Cloud Tasks does not deliver the next attempt until the prior attempt has logically ended,
+    // so a higher retry count proves the prior owner cannot still be sending).
+    if (
+      batchData.status === "running" &&
+      getBulkBatchAttemptExpiresAtMs(batchData, normalizedAttemptDurationMs) > nowMs &&
+      !isNewerBulkTaskAttempt(batchData.taskAttemptOwner, taskAttemptOwner)
+    ) {
+      return false;
+    }
+
+    transaction.set(batchRef, {
+      status: "running",
+      startedAt,
+      ...(taskAttemptOwner ? { taskAttemptOwner } : {}),
+      taskAttemptExpiresAt,
+      updatedAt: startedAt,
+    }, { merge: true });
+    transaction.set(runRef, {
+      status: "running",
+      updatedAt: startedAt,
+    }, { merge: true });
+    return true;
+  });
+};
+
+const markBulkNotificationBatchComplete = async ({
+  runId = "",
+  batchId = "",
+  taskAttemptOwner = "",
+  counts = {},
+  unsuccessful = {},
+  completedAt = new Date().toISOString(),
+} = {}) => {
+  if (!runId || !batchId) return false;
+  return db.runTransaction(async (transaction) => {
+    const { batchRef, batchData, runData } = await getBulkBatchTransactionContext(transaction, runId, batchId);
+    if (shouldSkipBulkBatchTransition(batchData, runData)) return false;
+    if (hasMismatchedBulkTaskAttemptOwner(batchData, taskAttemptOwner)) return false;
+
+    transaction.set(batchRef, {
+      status: "complete",
+      completedAt,
+      updatedAt: completedAt,
+      counts,
+      unsuccessful,
+      taskAttemptExpiresAt: FieldValue.delete(),
+    }, { merge: true });
+    return true;
+  });
+};
+
+const markBulkNotificationBatchFailed = async ({
+  runId = "",
+  batchId = "",
+  taskAttemptOwner = "",
+  counts = {},
+  unsuccessful = {},
+  error = {},
+  failedAt = new Date().toISOString(),
+} = {}) => {
+  if (!runId || !batchId) return false;
+  return db.runTransaction(async (transaction) => {
+    const { batchRef, batchData, runData } = await getBulkBatchTransactionContext(transaction, runId, batchId);
+    if (shouldSkipBulkBatchTransition(batchData, runData)) return false;
+    if (hasMismatchedBulkTaskAttemptOwner(batchData, taskAttemptOwner)) return false;
+
+    transaction.set(batchRef, {
+      status: "failed",
+      failedAt,
+      updatedAt: failedAt,
+      counts,
+      unsuccessful,
+      ...getBulkBatchFailureErrorFields(error),
+      taskAttemptExpiresAt: FieldValue.delete(),
+    }, { merge: true });
+    return true;
+  });
+};
+
+const finalizeBulkNotificationRunIfTerminal = async (
+  runId = "",
+  completedAt = new Date().toISOString(),
+) => {
+  if (!runId) return { finalized: false };
+  const runRef = getBulkRunRef(runId);
+  const runSnapshot = await runRef.get();
+  if (!runSnapshot.exists) return { finalized: false };
+
+  const runData = runSnapshot.data() || {};
+  const batchSnapshot = await runRef.collection(BULK_RUN_BATCH_COLLECTION).get();
+  const batches = batchSnapshot.docs.map((doc) => doc.data() || {});
+  // batchCount is written by saveBulkNotificationRunPlan before any batch docs.
+  // If it's missing, the run doc was written by an older code path or partially recovered.
+  // Refuse to finalize so we never declare a run "complete" based on an undercounted set of batch docs.
+  // The next scheduler invocation will rewrite the plan with batchCount set.
+  if (!Number.isFinite(Number(runData.batchCount))) {
+    console.warn(`finalizeBulkNotificationRunIfTerminal: run ${runId} is missing batchCount; refusing to finalize.`);
+    return { finalized: false, reason: "missing_batch_count" };
+  }
+  const expectedBatchCount = Number(runData.batchCount);
+  if (expectedBatchCount === 0) {
+    await runRef.set({ status: "complete", completedAt, updatedAt: completedAt }, { merge: true });
+    await completeNotificationSpecsQueuedRun(
+      [runData.specId],
+      runData.runDateKey,
+      completedAt,
+      { [runData.specId]: runData.runSequence },
+    );
+    return { finalized: true, status: "complete" };
+  }
+
+  if (batches.length < expectedBatchCount) {
+    return { finalized: false };
+  }
+
+  const terminalBatches = batches.filter((batch) => BULK_RUN_TERMINAL_STATUSES.has(batch.status));
+  if (terminalBatches.length < expectedBatchCount) {
+    return { finalized: false };
+  }
+
+  const hasFailedBatch = terminalBatches.some((batch) => batch.status === "failed");
+  if (hasFailedBatch) {
+    await runRef.set({ status: "failed", completedAt, updatedAt: completedAt }, { merge: true });
+    await clearNotificationSpecsQueuedRun([runData.specId], runData.runDateKey, { [runData.specId]: runData.runSequence });
+    return { finalized: true, status: "failed" };
+  }
+
+  await runRef.set({ status: "complete", completedAt, updatedAt: completedAt }, { merge: true });
+  await completeNotificationSpecsQueuedRun(
+    [runData.specId],
+    runData.runDateKey,
+    completedAt,
+    { [runData.specId]: runData.runSequence },
+  );
+  return { finalized: true, status: "complete" };
 };
 
 const getNotificationSpecById = async (id) => {
@@ -5071,15 +6054,26 @@ const getSpecimensByCollectionIds = async (collectionIdsArray, siteCode, isBPTL 
  * @param {object} event - SendGrid event webhook payload
  * @returns {Promise<void>}
  */
+const getNotificationDocForSendGridEvent = async (notificationId = "") => {
+  const notificationCollection = db.collection("notifications");
+  const directSnapshot = await notificationCollection.doc(notificationId).get();
+  if (directSnapshot.exists) return directSnapshot;
+
+  // Compatibility fallback for notification documents written before the
+  // deterministic notification id became the Firestore document id.
+  const legacySnapshot = await notificationCollection.where("id", "==", notificationId).get();
+  return legacySnapshot.size > 0 ? legacySnapshot.docs[0] : null;
+};
+
 const processSendGridEvent = async (event) => {
   if (!event.notification_id || event.gcloud_project !== process.env.GCLOUD_PROJECT) return;
 
   const maxAttempts = 4;
   let isRecordFound = false;
   for (let attempt = 1; attempt <= maxAttempts && !isRecordFound; attempt++) {
-    let snapshot;
+    let doc;
     try {
-      snapshot = await db.collection("notifications").where("id", "==", event.notification_id).get();
+      doc = await getNotificationDocForSendGridEvent(event.notification_id);
     } catch (error) {
       if (attempt < maxAttempts) {
         await delay(attempt * 500);
@@ -5090,17 +6084,73 @@ const processSendGridEvent = async (event) => {
       }
     }
 
-    if (snapshot.size > 0) {
+    if (doc) {
       isRecordFound = true;
-      const doc = snapshot.docs[0];
-      const eventRecord = {
-        [`${event.event}Status`]: true,
-        [`${event.event}Date`]: new Date(event.timestamp * 1000).toISOString(),
-      };
-      if (["bounce", "dropped"].includes(event.event)) {
-        eventRecord[`${event.event}Reason`] = event.reason;
+      const existingData = doc.data();
+
+      // First-wins idempotency for the per-event-type doc fields:
+      // Once an event of this type has recorded any sg_event_id, skip rewriting the doc fields.
+      // This prevents duplicate webhook deliveries and distinct per-recipient events of the same type from flapping the doc state.
+      // Suppression side effects still run on every delivery to recover from partial-failure scenarios where the doc-fields write succeeded
+      // but the suppression write did not.
+      // 
+      // addEmailSuppression is monotonic (see emailSuppressionPolicy / addEmailSuppression), so re-running it does not clobber stronger prior reasons or refresh metadata.
+      const eventTypeAlreadyRecorded = Boolean(existingData[`${event.event}SgEventId`]);
+      if (!eventTypeAlreadyRecorded) {
+        const eventDate = new Date(event.timestamp * 1000).toISOString();
+        // Provider-side state transitions only run for non-terminal states.
+        // A `dropped` event proves SendGrid never accepted the message for SMTP delivery, so it flips an in-flight record to send_failed (not provider_accepted).
+        // All other event types confirm SendGrid accepted the handoff (delivered/bounce/spamreport/unsubscribe/arrive only after acceptance).
+        // Terminal docs (provider_accepted, send_failed) do not transition further.
+        const isInFlight = isProviderSendStartedState(existingData.processingState);
+        let providerStateUpdate = {};
+        if (isInFlight) {
+          if (event.event === "dropped") {
+            providerStateUpdate = {
+              processingState: "send_failed",
+              isSent: false,
+              ...clearProviderAttemptFields(),
+            };
+          } else {
+            providerStateUpdate = {
+              processingState: "provider_accepted",
+              isSent: true,
+              providerAcceptedAt: existingData.providerAcceptedAt || eventDate,
+              ...clearProviderAttemptFields(),
+            };
+          }
+        }
+        const eventRecord = {
+          [`${event.event}Status`]: true,
+          [`${event.event}Date`]: eventDate,
+          ...providerStateUpdate,
+          ...(event.reason && { [`${event.event}Reason`]: event.reason }),
+          ...(event.response && { [`${event.event}Response`]: event.response }),
+          ...(event.status && { [`${event.event}StatusCode`]: event.status }),
+          ...(event.type && { [`${event.event}Type`]: event.type }),
+          ...(event.attempt && { [`${event.event}Attempt`]: event.attempt }),
+          ...(event.sg_event_id && { [`${event.event}SgEventId`]: event.sg_event_id }),
+          ...(event.sg_message_id && { [`${event.event}SgMessageId`]: event.sg_message_id }),
+        };
+        await doc.ref.update(eventRecord);
       }
-      await doc.ref.update(eventRecord);
+
+      if (existingData.email) {
+        const suppressionPolicy = getEmailSuppressionPolicyForSendGridEvent(event);
+        if (suppressionPolicy) {
+          await addEmailSuppression(
+            existingData.email,
+            suppressionPolicy.reason,
+            event.notification_id,
+            suppressionPolicy.suppressBulk,
+            suppressionPolicy.suppressOperational,
+            {
+              token: existingData.token || event.token,
+              eventTimestamp: event.timestamp,
+            },
+          );
+        }
+      }
     }
 
     if (!isRecordFound && attempt < maxAttempts) {
@@ -5760,6 +6810,134 @@ const updateMySamples = async (payload, action, email) => {
   await doc.ref.update(updatedData);
 };
 
+/**
+ * Email Suppressions
+ * The suppression store is the source of truth for send eligibility.
+ *
+ * Monotonicity guarantees:
+ *  - suppressBulk / suppressOperational only ever flip false→true (true wins)
+ *  - manualOverride: true is sticky and is never reverted by webhook events
+ *  - reason is preserved when the existing reason already carries stronger suppress flags than the incoming one
+ *    (e.g., a hard_bounce is not overwritten by a later unsubscribed)
+ *  - lastEventAt advances only when the incoming event's timestamp is newer
+ *  - lastNotificationId is preserved when the incoming event would not advance reason (avoids losing the original reason's notification link)
+ *
+ * Re-running this with the same event is idempotent and will not flap state.
+ *
+ * @param {string} email - Email address to suppress.
+ * @param {string} reason - Reason for suppression.
+ * @param {string} notificationId - Notification ID linked to the event.
+ * @param {boolean} suppressBulk - Whether to suppress bulk mail.
+ * @param {boolean} suppressOperational - Whether to suppress operational mail.
+ * @param {object} [params] - Optional parameters.
+ * @param {string} [params.token] - Participant token to link for data destruction.
+ * @param {number} [params.eventTimestamp] - SendGrid event timestamp in seconds.
+ * @returns {Promise<void>}
+ */
+const addEmailSuppression = async (
+  email,
+  reason,
+  notificationId,
+  suppressBulk,
+  suppressOperational,
+  { token = "", eventTimestamp = null } = {},
+) => {
+  const incoming = buildEmailSuppressionDoc({
+    email,
+    reason,
+    notificationId,
+    token,
+    suppressBulk,
+    suppressOperational,
+  });
+  if (!incoming) return;
+
+  const docRef = db.collection("emailAddressStatus").doc(incoming.normalizedEmail);
+  const eventIso = Number.isFinite(eventTimestamp)
+    ? new Date(eventTimestamp * 1000).toISOString()
+    : incoming.lastEventAt;
+
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(docRef);
+    const existing = snapshot.exists ? (snapshot.data() || {}) : {};
+
+    const incomingStrength = (incoming.suppressBulk ? 1 : 0) + (incoming.suppressOperational ? 1 : 0);
+    const existingStrength = (existing.suppressBulk ? 1 : 0) + (existing.suppressOperational ? 1 : 0);
+
+    const update = {
+      normalizedEmail: incoming.normalizedEmail,
+      status: incoming.status,
+    };
+
+    if (incoming.suppressBulk) update.suppressBulk = true;
+    if (incoming.suppressOperational) update.suppressOperational = true;
+
+    if (existing.manualOverride !== true && incoming.manualOverride === true) {
+      update.manualOverride = true;
+    }
+
+    const existingEventAtMs = Date.parse(existing.lastEventAt || "");
+    const incomingEventAtMs = Date.parse(eventIso || "");
+    const incomingEventIsNewer = !Number.isFinite(existingEventAtMs)
+      || (Number.isFinite(incomingEventAtMs) && incomingEventAtMs > existingEventAtMs);
+
+    if (!existing.reason || incomingStrength > existingStrength) {
+      update.reason = incoming.reason;
+      if (incoming.lastNotificationId) update.lastNotificationId = incoming.lastNotificationId;
+    }
+
+    if (incomingEventIsNewer) {
+      update.lastEventAt = eventIso;
+    }
+
+    if (incoming.token && !existing.token) {
+      update.token = incoming.token;
+    }
+
+    transaction.set(docRef, update, { merge: true });
+  });
+};
+
+const isEmailSuppressed = async (email, mailStream) => {
+  if (!email) return false;
+  const normalizedEmail = normalizeEmailAddress(email);
+  const doc = await db.collection("emailAddressStatus").doc(normalizedEmail).get();
+  if (!doc.exists) return false;
+  const data = doc.data();
+  return mailStream === "bulk" ? !!data.suppressBulk : !!data.suppressOperational;
+};
+
+const getEmailSuppressions = async (emailArray, mailStream) => {
+  if (!emailArray || emailArray.length === 0) return new Set();
+
+  const suppressField = mailStream === "bulk" ? "suppressBulk" : "suppressOperational";
+
+  // Firestore getAll limit is 100 refs per call. Issue chunks in parallel so a 5,000-recipient batch makes ~50 round-trips concurrently.
+  const chunkSize = 100;
+  const refChunks = [];
+  for (let i = 0; i < emailArray.length; i += chunkSize) {
+    const refs = emailArray
+      .slice(i, i + chunkSize)
+      .map((email) => normalizeEmailAddress(email))
+      .filter(Boolean)
+      .map((normalizedEmail) => db.collection("emailAddressStatus").doc(normalizedEmail));
+    if (refs.length > 0) refChunks.push(refs);
+  }
+
+  const docChunks = await Promise.all(refChunks.map((refs) => db.getAll(...refs)));
+
+  const suppressedSet = new Set();
+  for (const docs of docChunks) {
+    for (const doc of docs) {
+      if (doc.exists && doc.data()[suppressField]) {
+        suppressedSet.add(doc.id);
+      }
+    }
+  }
+
+  return suppressedSet;
+};
+
 module.exports = {
     db,
     storage,
@@ -5841,6 +7019,21 @@ module.exports = {
     getEmailNotifications,
     getNotificationSpecsBySchedule,
     getNotificationSpecsByScheduleOncePerDay,
+    markNotificationSpecsQueuedForRun,
+    clearNotificationSpecsQueuedRun,
+    markNotificationSpecsLastRun,
+    completeNotificationSpecsQueuedRun,
+    getBulkNotificationRun,
+    saveBulkNotificationRunPlan,
+    getBulkNotificationBatch,
+    getBulkNotificationRunBatches,
+    markBulkNotificationBatchEnqueued,
+    markBulkNotificationRunEnqueueFailed,
+    markBulkNotificationRunQueued,
+    markBulkNotificationBatchRunning,
+    markBulkNotificationBatchComplete,
+    markBulkNotificationBatchFailed,
+    finalizeBulkNotificationRunIfTerminal,
     getKitAssemblyData,
     storeSiteNotifications,
     getCoordinatingCenterEmail,
@@ -5863,6 +7056,12 @@ module.exports = {
     updateUsersCurrentLogin,
     queryDailyReportParticipants,
     saveNotificationBatch,
+    getNotificationRecordId,
+    reserveNotificationBatch,
+    markNotificationBatchProviderSendStarted,
+    markNotificationBatchProviderAcceptanceUnknown,
+    markNotificationBatchAccepted,
+    markNotificationBatchFailed,
     getSpecimensByReceivedDate,
     getSpecimensByCollectionIds,
     getBoxesByBoxId,
@@ -5901,6 +7100,9 @@ module.exports = {
     generateSignInWithEmailLink,
     getAppSettings,
     updateSmsPermission,
+    addEmailSuppression,
+    isEmailSuppressed,
+    getEmailSuppressions,
     updateParticipantIncentiveEligibility,
     processPhysicalActivity,
     savePathologyReportNamesToFirestore,

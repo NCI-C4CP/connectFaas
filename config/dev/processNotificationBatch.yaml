@@ -1,0 +1,43 @@
+steps:
+- name: 'google/cloud-sdk:slim'
+  entrypoint: 'bash'
+  args:
+    - '-lc'
+    - |
+      set -euo pipefail
+      for QUEUE_NAME in "${_QUEUE_NAME}" "${_QUEUE_NAME_MICROSOFT}"; do
+        if ! gcloud tasks queues describe "${QUEUE_NAME}" --location="${_LOCATION}" >/dev/null 2>&1; then
+          gcloud tasks queues create "${QUEUE_NAME}" \
+            --location="${_LOCATION}" \
+            --max-concurrent-dispatches="${_MAX_CONCURRENT_DISPATCHES}" \
+            --max-dispatches-per-second="${_MAX_DISPATCHES_PER_SECOND}" \
+            --max-attempts="${_MAX_ATTEMPTS}" \
+            --min-backoff="${_MIN_BACKOFF}" \
+            --quiet
+        fi
+        gcloud tasks queues update "${QUEUE_NAME}" \
+          --location="${_LOCATION}" \
+          --max-concurrent-dispatches="${_MAX_CONCURRENT_DISPATCHES}" \
+          --max-dispatches-per-second="${_MAX_DISPATCHES_PER_SECOND}" \
+          --max-attempts="${_MAX_ATTEMPTS}" \
+          --min-backoff="${_MIN_BACKOFF}" \
+          --quiet
+      done
+- name: 'google/cloud-sdk:slim'
+  entrypoint: 'gcloud'
+  args: ['functions', 'deploy', 'processNotificationBatchBulkDefault', '--gen2', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=1800s', '--memory=1024MB', '--ingress-settings=internal-only', '--region=us-central1', '--env-vars-file=${_ENV_FILE}']
+- name: 'google/cloud-sdk:slim'
+  entrypoint: 'gcloud'
+  args: ['functions', 'deploy', 'processNotificationBatchBulkMicrosoft', '--gen2', '--trigger-http', '--runtime=${_RUNTIME}', '--timeout=1800s', '--memory=1024MB', '--ingress-settings=internal-only', '--region=us-central1', '--env-vars-file=${_ENV_FILE}']
+substitutions:
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_nci-c4cp_connectfaas/moveable-aliases/dev
+  _RUNTIME: nodejs24
+  _ROLE: roles/cloudfunctions.invoker
+  _ENV_FILE: config/dev/.env.yaml
+  _QUEUE_NAME: processNotificationBatchBulkDefault
+  _QUEUE_NAME_MICROSOFT: processNotificationBatchBulkMicrosoft
+  _LOCATION: us-central1
+  _MAX_CONCURRENT_DISPATCHES: '1'
+  _MAX_DISPATCHES_PER_SECOND: '1'
+  _MAX_ATTEMPTS: '5'
+  _MIN_BACKOFF: 60s
