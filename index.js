@@ -8,7 +8,7 @@ const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
 const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive');
 const { dashboard } = require('./utils/dashboard');
-const { importToBigQuery, firestoreExport, exportNotificationsToBucket, importNotificationsToBigquery } = require('./utils/events');
+const { importToBigQuery, firestoreExport, exportNotificationsToBucket } = require('./utils/events');
 const { participantDataCleanup } = require('./utils/participantDataCleanup');
 const { webhook } = require('./utils/webhook');
 const { heartbeat } = require('./utils/heartbeat');
@@ -16,48 +16,27 @@ const { physicalActivity } = require('./utils/reports');
 const { generateDHQReports, processDHQReports, scheduledCountDHQ3Credentials, scheduledSyncDHQ3Status } = require('./utils/dhq');
 
 // API End-Points for Sites
-
 exports.incentiveCompleted = incentiveCompleted;
-
 exports.participantsEligibleForIncentive = eligibleForIncentive;
-
 exports.getParticipantToken = getToken;
-
-exports.validateUsersEmailPhone = validateUsersEmailPhone;
-
 exports.getFilteredParticipants = getFilteredParticipants;
-
 exports.getParticipants = getParticipants;
-
 exports.identifyParticipant = identifyParticipant;
-
 exports.submitParticipantsData = submitParticipantsData;
-
 exports.updateParticipantData = updateParticipantData;
-
 exports.getBigQueryData = getBigQueryData;
 
-exports.getParticipantNotification = getParticipantNotification;
-
-
 // End-Point for Site Manager Dashboard
-
 exports.dashboard = dashboard;
 
-
 // End-Point for Connect PWA
-
 exports.app = connectApp;
 
-
 // End-Point for Biospecimen Dashboard
-
 exports.biospecimen = biospecimenAPIs;
 
-
 // End-Point for Scheduled Notifications Handler
-
-exports.sendScheduledNotificationsGen2 = onRequest(sendScheduledNotifications);
+exports.sendScheduledNotifications = onRequest(sendScheduledNotifications);
 
 // Cloud Task handlers for bulk notification batch processing.
 // Retry policy and rate limits are managed in the Cloud Tasks queue.
@@ -65,29 +44,20 @@ exports.processNotificationBatchBulkDefault = onTaskDispatched(processNotificati
 exports.processNotificationBatchBulkMicrosoft = onTaskDispatched(processNotificationBatchBulkMicrosoft);
 
 // End-Points for Exporting Firestore to Big Query
-
-exports.importToBigQuery = importToBigQuery; 
-
-exports.scheduleFirestoreDataExport = firestoreExport;
-
-exports.exportNotificationsToBucket = exportNotificationsToBucket;
-
-exports.importNotificationsToBigquery = importNotificationsToBigquery;
+exports.importToBigQuery = onRequest(importToBigQuery); 
+exports.scheduleFirestoreDataExport = onRequest(firestoreExport);
+exports.exportNotificationsToBucket = onRequest(exportNotificationsToBucket);
 
 // End-Points for Participant Data Cleaning
-
-exports.participantDataCleanup = participantDataCleanup;
+exports.participantDataCleanup = onRequest(participantDataCleanup);
 
 // End-Points for Event Webhook
-
 exports.webhook = webhook;
 
 // End-Points for Public Heartbeat
-
 exports.heartbeat = heartbeat;
 
 // End-Points for Return of Information
-
 exports.physicalActivity = physicalActivity;
 
 // End-Points for Nightly DHQ processes.

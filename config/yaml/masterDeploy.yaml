@@ -1,0 +1,65 @@
+steps:
+  - id: deploy-batch-1
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        for cfg in \
+          config/yaml/getParticipantToken.yaml \
+          config/yaml/identifyParticipant.yaml \
+          config/yaml/getParticipants.yaml \
+          config/yaml/getFilteredParticipants.yaml \
+          config/yaml/submitParticipantsData.yaml \
+          config/yaml/updateParticipantData.yaml \
+          config/yaml/app.yaml \
+          config/yaml/biospecimen.yaml \
+          config/yaml/dashboard.yaml \
+          config/yaml/getBigQueryData.yaml \
+          config/yaml/heartbeat.yaml \
+          config/yaml/webhook.yaml \
+          config/yaml/incentiveCompleted.yaml \
+          config/yaml/participantsEligibleForIncentive.yaml \
+          config/yaml/physicalActivity.yaml \
+          config/yaml/participantDataCleanup.yaml; do
+          echo "Submitting ${cfg}"
+          gcloud builds submit ${_SOURCE} \
+            --config="${cfg}" \
+            --substitutions="_VARIABLES=${_VARIABLES}"
+        done
+
+  - id: pause-between-batches
+    name: bash
+    waitFor: ['deploy-batch-1']
+    args: ['-c', 'sleep 90']
+
+  - id: deploy-batch-2
+    name: gcr.io/cloud-builders/gcloud
+    waitFor: ['pause-between-batches']
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        for cfg in \
+          config/yaml/notificationBatchQueues.yaml \
+          config/yaml/processNotificationBatchBulkDefault.yaml \
+          config/yaml/processNotificationBatchBulkMicrosoft.yaml \
+          config/yaml/sendScheduledNotifications.yaml \
+          config/yaml/scheduleFirestoreDataExport.yaml \
+          config/yaml/exportNotificationsToBucket.yaml \
+          config/yaml/importToBigQuery.yaml \
+          config/yaml/generateDHQReports.yaml \
+          config/yaml/processDHQReports.yaml \
+          config/yaml/scheduledCountDHQ3Credentials.yaml \
+          config/yaml/scheduledSyncDHQ3Status.yaml; do
+          echo "Submitting ${cfg}"
+          gcloud builds submit ${_SOURCE} \
+            --config="${cfg}" \
+            --substitutions="_VARIABLES=${_VARIABLES}"
+        done
+
+substitutions:
+  _SOURCE: .
+  _VARIABLES: config/dev/.env.yaml
+
+timeout: 7200s

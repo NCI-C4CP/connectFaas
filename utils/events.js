@@ -1,23 +1,74 @@
 const firestore = require('@google-cloud/firestore');
 const {BigQuery} = require('@google-cloud/bigquery');
 const {Storage} = require('@google-cloud/storage');
+const { getResponseJSON } = require('./shared');
 
 const collectionNameArray = ['participants', 'biospecimen', 'boxes', 'module1_v1', 'module1_v2', 'module2_v1', 'module2_v2', 'module3_v1', 'module4_v1', 'bioSurvey_v1', 'menstrualSurvey_v1', 'clinicalBioSurvey_v1', 'covid19Survey_v1', 'kitAssembly', 'mouthwash_v1', 'cancerOccurrence', 'promis_v1', 'experience2024', 'birthdayCard', 'cancerScreeningHistorySurvey', 'dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers', 'preference2026'];
+const importCollectionNameArray = [...collectionNameArray, 'notifications'];
 
-const firestoreExport = async (eventData, context) => {
+const runFirestoreExport = async () => {
   await exportCollectionsToBucket(collectionNameArray);
 };
 
-const importToBigQuery = async (eventData, context) => {
-  await importCollectionsToBigQuery(eventData, collectionNameArray);
+const importToBigQuery = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return importCollectionsToBigQuery(req, importCollectionNameArray);
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await importCollectionsToBigQuery(req, importCollectionNameArray);
+    return res.status(200).json(getResponseJSON('Import to BigQuery handled successfully.', 200));
+  } catch (error) {
+    console.error('Failed to import collections to BigQuery.', error);
+    return res.status(500).json(getResponseJSON('Failed to import collections to BigQuery.', 500));
+  }
 };
 
-const exportNotificationsToBucket = async (eventData, context) => {
+const runExportNotificationsToBucket = async () => {
   await exportCollectionsToBucket(["notifications"]);
 };
 
-const importNotificationsToBigquery = async (eventData, context) => {
-  await importCollectionsToBigQuery(eventData, ["notifications"]);
+const firestoreExport = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return runFirestoreExport();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await runFirestoreExport();
+    return res.status(200).json(getResponseJSON('Firestore export triggered successfully.', 200));
+  } catch (error) {
+    console.error('Failed to trigger Firestore export.', error);
+    return res.status(500).json(getResponseJSON('Failed to trigger Firestore export.', 500));
+  }
+};
+
+const exportNotificationsToBucket = async (req, res) => {
+  // Preserve direct invocation compatibility for non-HTTP call sites.
+  if (!req || !res) {
+    return runExportNotificationsToBucket();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json(getResponseJSON('Method not allowed. Use POST.', 405));
+  }
+
+  try {
+    await runExportNotificationsToBucket();
+    return res.status(200).json(getResponseJSON('Notifications export triggered successfully.', 200));
+  } catch (error) {
+    console.error('Failed to trigger notifications export.', error);
+    return res.status(500).json(getResponseJSON('Failed to trigger notifications export.', 500));
+  }
 };
 
 /**
@@ -49,15 +100,29 @@ async function exportCollectionsToBucket(collectionNameArray) {
 
 /**
  * Import collections from Bucket to BigQuery
- * @param {Event} gcsEvent 
+ * @param {Object} gcsEvent
  * @param {string[]} collectionNameArray Array of collection names
  */
 async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
-  if (!gcsEvent.name.includes(".export_metadata")) return;
+  const eventBody = gcsEvent?.body;
+  let eventName = eventBody?.id;
+  const gcsBucket = process.env.GCLOUD_BUCKET;
+
+  if (!eventName || !eventName.includes('.export_metadata')) return;
+
+  if (eventName.startsWith(`${gcsBucket}/`)) {
+    eventName = eventName.substring(gcsBucket.length + 1);
+  }
+
+  const exportMetadataSuffix = '.export_metadata';
+  const exportMetadataIndex = eventName.indexOf(exportMetadataSuffix);
+  if (exportMetadataIndex !== -1) {
+    eventName = eventName.substring(0, exportMetadataIndex + exportMetadataSuffix.length);
+  }
 
   let tableName = "";
   for (const collectionName of collectionNameArray) {
-    if (gcsEvent.name.includes(collectionName)) {
+    if (eventName.includes(collectionName)) {
       tableName = collectionName;
       break;
     }
@@ -65,8 +130,7 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
 
   if (tableName === "") return;
 
-  console.log(`Processing file: ${gcsEvent.name}`);
-  const gcsBucket = process.env.GCLOUD_BUCKET;
+  console.log(`Processing file: ${eventName}`);
   const storage = new Storage();
   const bigquery = new BigQuery();
   const datasetName = "Connect";
@@ -81,21 +145,23 @@ async function importCollectionsToBigQuery(gcsEvent, collectionNameArray) {
     const [job] = await bigquery
       .dataset(datasetName)
       .table(tableName)
-      .load(storage.bucket(gcsBucket).file(gcsEvent.name), metadata);
+      .load(storage.bucket(gcsBucket).file(eventName), metadata);
 
     if (job.status.errorResult) {
-      console.error(`Failed to import '${tableName}' to BigQuery.`, job.status.errorResult);
+      throw new Error(`Failed to import '${tableName}' to BigQuery: ${JSON.stringify(job.status.errorResult)}`);
     }
 
     console.log(`Imported '${tableName}' to BigQuery.`);
   } catch (err) {
     console.error(`Error occured when importing to BigQuery:`, err);
+    throw err;
   }
 }
 
 module.exports = {
   importToBigQuery,
+  runFirestoreExport,
   firestoreExport,
+  runExportNotificationsToBucket,
   exportNotificationsToBucket,
-  importNotificationsToBigquery,
 };

@@ -14,7 +14,7 @@ beforeAll(() => {
     });
 
     const { incentiveCompleted, eligibleForIncentive } = require('../../utils/incentive');
-    const { getToken, validateUsersEmailPhone } = require('../../utils/validation');
+    const { getToken } = require('../../utils/validation');
     const { getFilteredParticipants, getParticipants, identifyParticipant } = require('../../utils/submission');
     const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('../../utils/sites');
     const { dashboard } = require('../../utils/dashboard');
@@ -30,7 +30,6 @@ beforeAll(() => {
         incentiveCompleted,
         participantsEligibleForIncentive: eligibleForIncentive,
         getParticipantToken: getToken,
-        validateUsersEmailPhone,
         getFilteredParticipants,
         getParticipants,
         identifyParticipant,
@@ -87,7 +86,6 @@ describe('API Endpoint Method Guards', () => {
             ['submitParticipantsData', () => api.submitParticipantsData],
             ['updateParticipantData', () => api.updateParticipantData],
             ['getBigQueryData', () => api.getBigQueryData],
-            ['getParticipantNotification', () => api.getParticipantNotification],
             ['dashboard', () => api.dashboard],
             ['app', () => api.app],
             ['biospecimen', () => api.biospecimen],
@@ -109,14 +107,12 @@ describe('API Endpoint Method Guards', () => {
             ['incentiveCompleted', () => api.incentiveCompleted, 'GET', 'Only POST requests are accepted!'],
             ['participantsEligibleForIncentive', () => api.participantsEligibleForIncentive, 'POST', 'Only GET requests are accepted!'],
             ['getParticipantToken', () => api.getParticipantToken, 'GET', 'Only POST requests are accepted!'],
-            ['validateUsersEmailPhone', () => api.validateUsersEmailPhone, 'POST', 'Only GET requests are accepted!'],
             ['getFilteredParticipants', () => api.getFilteredParticipants, 'POST', 'Only GET requests are accepted!'],
             ['getParticipants', () => api.getParticipants, 'POST', 'Only GET requests are accepted!'],
             ['identifyParticipant', () => api.identifyParticipant, 'PUT', 'Only GET or POST requests are accepted!'],
             ['submitParticipantsData', () => api.submitParticipantsData, 'GET', 'Only POST requests are accepted!'],
             ['updateParticipantData', () => api.updateParticipantData, 'GET', 'Only POST requests are accepted!'],
             ['getBigQueryData', () => api.getBigQueryData, 'POST', 'Only GET requests are accepted!'],
-            ['getParticipantNotification', () => api.getParticipantNotification, 'POST', 'Only GET requests are accepted!'],
             ['webhook', () => api.webhook, 'GET', 'Only POST requests are accepted!'],
         ];
 
@@ -161,32 +157,6 @@ describe('API Endpoint Method Guards', () => {
                 expect(res.statusCode).toBe(401);
             });
         }
-    });
-
-    describe('validateUsersEmailPhone account lookup', () => {
-        it('should return accountExists true/false based on lookup result', async () => {
-            const verifyStub = vi.spyOn(firestore, 'verifyUsersEmailOrPhone');
-            verifyStub.mockResolvedValueOnce(false);
-            verifyStub.mockResolvedValueOnce(true);
-
-            const missingUserRes = await invoke(api.validateUsersEmailPhone, 'GET', {
-                query: {
-                    email: 'nonexistent@example.com',
-                },
-            });
-            expect(missingUserRes.statusCode).toBe(200);
-            expect(missingUserRes._getJSONData().code).toBe(200);
-            expect(missingUserRes._getJSONData().data.accountExists).toBe(false);
-
-            const existingUserRes = await invoke(api.validateUsersEmailPhone, 'GET', {
-                query: {
-                    email: 'existing@example.com',
-                },
-            });
-            expect(existingUserRes.statusCode).toBe(200);
-            expect(existingUserRes._getJSONData().code).toBe(200);
-            expect(existingUserRes._getJSONData().data.accountExists).toBe(true);
-        });
     });
 
     describe('heartbeat success path', () => {
@@ -742,6 +712,8 @@ describe('Index onRequest Wrapper Handlers', () => {
     const httpsPath = require.resolve('firebase-functions/v2/https');
     const tasksPath = require.resolve('firebase-functions/v2/tasks');
     const notificationsPath = require.resolve('../../utils/notifications.js');
+    const eventsPath = require.resolve('../../utils/events.js');
+    const participantDataCleanupPath = require.resolve('../../utils/participantDataCleanup.js');
     const dhqPath = require.resolve('../../utils/dhq.js');
 
     const loadIndexWithOnRequestMocks = () => {
@@ -749,6 +721,8 @@ describe('Index onRequest Wrapper Handlers', () => {
         const originalHttps = require.cache[httpsPath];
         const originalTasks = require.cache[tasksPath];
         const originalNotifications = require.cache[notificationsPath];
+        const originalEvents = require.cache[eventsPath];
+        const originalParticipantDataCleanup = require.cache[participantDataCleanupPath];
         const originalDhq = require.cache[dhqPath];
 
         const onRequestSpy = vi.fn((handler) => handler);
@@ -758,12 +732,12 @@ describe('Index onRequest Wrapper Handlers', () => {
 
         const notificationStubs = {
             getParticipantNotification: vi.fn(),
-            sendScheduledNotifications: vi.fn(async (req, res) => {
-                return res.status(210).json({
-                    code: 210,
+            sendScheduledNotifications: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
                     handler: 'sendScheduledNotifications',
                     method: req.method,
-                });
+                }));
             }),
             processNotificationBatchBulkDefault: vi.fn(async (req) => ({
                 code: 216,
@@ -777,34 +751,68 @@ describe('Index onRequest Wrapper Handlers', () => {
             })),
         };
 
+        const eventStubs = {
+            importToBigQuery: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
+                    handler: 'importToBigQuery',
+                    method: req.method,
+                }));
+            }),
+            firestoreExport: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
+                    handler: 'firestoreExport',
+                    method: req.method,
+                }));
+            }),
+            exportNotificationsToBucket: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
+                    handler: 'exportNotificationsToBucket',
+                    method: req.method,
+                }));
+            }),
+        };
+
+        const participantDataCleanupStubs = {
+            participantDataCleanup: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
+                    handler: 'participantDataCleanup',
+                    method: req.method,
+                }));
+            }),
+        };
+
         const dhqStubs = {
-            generateDHQReports: vi.fn(async (req, res) => {
-                return res.status(211).json({
-                    code: 211,
+            generateDHQReports: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
                     handler: 'generateDHQReports',
                     method: req.method,
-                });
+                }));
             }),
-            processDHQReports: vi.fn(async (req, res) => {
-                return res.status(212).json({
-                    code: 212,
+            processDHQReports: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
                     handler: 'processDHQReports',
                     method: req.method,
-                });
+                }));
             }),
-            scheduledSyncDHQ3Status: vi.fn(async (req, res) => {
-                return res.status(213).json({
-                    code: 213,
+            scheduledSyncDHQ3Status: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
                     handler: 'scheduledSyncDHQ3Status',
                     method: req.method,
-                });
+                }));
             }),
-            scheduledCountDHQ3Credentials: vi.fn(async (req, res) => {
-                return res.status(214).json({
-                    code: 214,
+            scheduledCountDHQ3Credentials: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
                     handler: 'scheduledCountDHQ3Credentials',
                     method: req.method,
-                });
+                }));
             }),
         };
 
@@ -831,6 +839,20 @@ describe('Index onRequest Wrapper Handlers', () => {
             filename: notificationsPath,
             loaded: true,
             exports: notificationStubs,
+        };
+
+        require.cache[eventsPath] = {
+            id: eventsPath,
+            filename: eventsPath,
+            loaded: true,
+            exports: eventStubs,
+        };
+
+        require.cache[participantDataCleanupPath] = {
+            id: participantDataCleanupPath,
+            filename: participantDataCleanupPath,
+            loaded: true,
+            exports: participantDataCleanupStubs,
         };
 
         require.cache[dhqPath] = {
@@ -868,6 +890,18 @@ describe('Index onRequest Wrapper Handlers', () => {
                 delete require.cache[notificationsPath];
             }
 
+            if (originalEvents) {
+                require.cache[eventsPath] = originalEvents;
+            } else {
+                delete require.cache[eventsPath];
+            }
+
+            if (originalParticipantDataCleanup) {
+                require.cache[participantDataCleanupPath] = originalParticipantDataCleanup;
+            } else {
+                delete require.cache[participantDataCleanupPath];
+            }
+
             if (originalDhq) {
                 require.cache[dhqPath] = originalDhq;
             } else {
@@ -880,21 +914,42 @@ describe('Index onRequest Wrapper Handlers', () => {
             onRequestSpy,
             onTaskDispatchedSpy,
             notificationStubs,
+            eventStubs,
+            participantDataCleanupStubs,
             dhqStubs,
             restore,
         };
     };
 
-    it('should register scheduled handlers via onRequest in index.js', () => {
-        const { onRequestSpy, onTaskDispatchedSpy, notificationStubs, dhqStubs, restore } = loadIndexWithOnRequestMocks();
+    it('should register wrapped handlers via onRequest and task handlers via onTaskDispatched in index.js', () => {
+        const {
+            onRequestSpy,
+            onTaskDispatchedSpy,
+            notificationStubs,
+            eventStubs,
+            participantDataCleanupStubs,
+            dhqStubs,
+            restore,
+        } = loadIndexWithOnRequestMocks();
 
         try {
-            expect(onRequestSpy).toHaveBeenCalledTimes(5);
-            expect(onRequestSpy).toHaveBeenCalledWith(notificationStubs.sendScheduledNotifications);
-            expect(onRequestSpy).toHaveBeenCalledWith(dhqStubs.generateDHQReports);
-            expect(onRequestSpy).toHaveBeenCalledWith(dhqStubs.processDHQReports);
-            expect(onRequestSpy).toHaveBeenCalledWith(dhqStubs.scheduledSyncDHQ3Status);
-            expect(onRequestSpy).toHaveBeenCalledWith(dhqStubs.scheduledCountDHQ3Credentials);
+            const expectedOnRequestHandlers = [
+                notificationStubs.sendScheduledNotifications,
+                eventStubs.importToBigQuery,
+                eventStubs.firestoreExport,
+                eventStubs.exportNotificationsToBucket,
+                participantDataCleanupStubs.participantDataCleanup,
+                dhqStubs.generateDHQReports,
+                dhqStubs.processDHQReports,
+                dhqStubs.scheduledSyncDHQ3Status,
+                dhqStubs.scheduledCountDHQ3Credentials,
+            ];
+
+            expect(onRequestSpy).toHaveBeenCalledTimes(expectedOnRequestHandlers.length);
+            for (const handler of expectedOnRequestHandlers) {
+                expect(onRequestSpy).toHaveBeenCalledWith(handler);
+            }
+
             expect(onTaskDispatchedSpy).toHaveBeenCalledTimes(2);
             expect(onTaskDispatchedSpy).toHaveBeenCalledWith(notificationStubs.processNotificationBatchBulkDefault);
             expect(onTaskDispatchedSpy).toHaveBeenCalledWith(notificationStubs.processNotificationBatchBulkMicrosoft);
@@ -903,37 +958,64 @@ describe('Index onRequest Wrapper Handlers', () => {
         }
     });
 
-    it('should invoke wrapped scheduled handlers exported from index.js', async () => {
-        const { indexExports, notificationStubs, dhqStubs, restore } = loadIndexWithOnRequestMocks();
+    it('should invoke wrapped handlers exported from index.js', async () => {
+        const {
+            indexExports,
+            notificationStubs,
+            eventStubs,
+            participantDataCleanupStubs,
+            dhqStubs,
+            restore,
+        } = loadIndexWithOnRequestMocks();
 
         try {
-            const scheduledNotificationsRes = await invoke(indexExports.sendScheduledNotificationsGen2, 'POST', {
+            const scheduledNotificationsRes = await invoke(indexExports.sendScheduledNotifications, 'POST', {
                 body: {
                     scheduleAt: '2026-01-01T00:00:00.000Z',
                 },
             });
             expect(notificationStubs.sendScheduledNotifications).toHaveBeenCalledTimes(1);
-            expect(scheduledNotificationsRes.statusCode).toBe(210);
+            expect(scheduledNotificationsRes.statusCode).toBe(200);
             expect(scheduledNotificationsRes._getJSONData().handler).toBe('sendScheduledNotifications');
+
+            const importToBigQueryRes = await invoke(indexExports.importToBigQuery, 'POST');
+            expect(eventStubs.importToBigQuery).toHaveBeenCalledTimes(1);
+            expect(importToBigQueryRes.statusCode).toBe(200);
+            expect(importToBigQueryRes._getJSONData().handler).toBe('importToBigQuery');
+
+            const firestoreExportRes = await invoke(indexExports.scheduleFirestoreDataExport, 'POST');
+            expect(eventStubs.firestoreExport).toHaveBeenCalledTimes(1);
+            expect(firestoreExportRes.statusCode).toBe(200);
+            expect(firestoreExportRes._getJSONData().handler).toBe('firestoreExport');
+
+            const exportNotificationsRes = await invoke(indexExports.exportNotificationsToBucket, 'POST');
+            expect(eventStubs.exportNotificationsToBucket).toHaveBeenCalledTimes(1);
+            expect(exportNotificationsRes.statusCode).toBe(200);
+            expect(exportNotificationsRes._getJSONData().handler).toBe('exportNotificationsToBucket');
+
+            const participantDataCleanupRes = await invoke(indexExports.participantDataCleanup, 'POST');
+            expect(participantDataCleanupStubs.participantDataCleanup).toHaveBeenCalledTimes(1);
+            expect(participantDataCleanupRes.statusCode).toBe(200);
+            expect(participantDataCleanupRes._getJSONData().handler).toBe('participantDataCleanup');
 
             const generateReportsRes = await invoke(indexExports.generateDHQReports, 'POST');
             expect(dhqStubs.generateDHQReports).toHaveBeenCalledTimes(1);
-            expect(generateReportsRes.statusCode).toBe(211);
+            expect(generateReportsRes.statusCode).toBe(200);
             expect(generateReportsRes._getJSONData().handler).toBe('generateDHQReports');
 
             const processReportsRes = await invoke(indexExports.processDHQReports, 'POST');
             expect(dhqStubs.processDHQReports).toHaveBeenCalledTimes(1);
-            expect(processReportsRes.statusCode).toBe(212);
+            expect(processReportsRes.statusCode).toBe(200);
             expect(processReportsRes._getJSONData().handler).toBe('processDHQReports');
 
             const syncStatusRes = await invoke(indexExports.scheduledSyncDHQ3Status, 'POST');
             expect(dhqStubs.scheduledSyncDHQ3Status).toHaveBeenCalledTimes(1);
-            expect(syncStatusRes.statusCode).toBe(213);
+            expect(syncStatusRes.statusCode).toBe(200);
             expect(syncStatusRes._getJSONData().handler).toBe('scheduledSyncDHQ3Status');
 
             const countCredentialsRes = await invoke(indexExports.scheduledCountDHQ3Credentials, 'POST');
             expect(dhqStubs.scheduledCountDHQ3Credentials).toHaveBeenCalledTimes(1);
-            expect(countCredentialsRes.statusCode).toBe(214);
+            expect(countCredentialsRes.statusCode).toBe(200);
             expect(countCredentialsRes._getJSONData().handler).toBe('scheduledCountDHQ3Credentials');
 
             const defaultTaskResult = await indexExports.processNotificationBatchBulkDefault({ data: { runId: 'run-1', batchId: 'default-batch-1' } });
