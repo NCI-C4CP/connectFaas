@@ -140,13 +140,13 @@ const handleEmailUnsubscribeRoute = async (req, res) => {
     try {
         // This route is a bulk-only unsubscribe action.
         // It should stay in place until the future SendGrid `asm.group_id` implementation handles fine-grained suppression
-        // E.g., bulk vs operational email suppression policy.
+        // E.g., bulk vs transactional email suppression policy.
         await firestoreUtils.addEmailSuppression(
             normalizedEmail,
             unsubscribePolicy.reason,
             null,
             unsubscribePolicy.suppressBulk,
-            unsubscribePolicy.suppressOperational,
+            unsubscribePolicy.suppressTransactional,
             { token },
         );
         return res.status(200).json({ code: 200 });

@@ -61,7 +61,7 @@ const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
   targetRecipientsPerHourMicrosoft: 1500,   // Target recipients per hour for Microsoft email domains.
   microsoftBulkDomains: Object.freeze(["outlook.com", "hotmail.com", "live.com", "msn.com"]),
   sendRetryMax: 5,                          // Maximum number of retries for send operations.
-  emailBatchDelayMs: 1000,                  // Delay between email batches to avoid overwhelming the API. Used for operational mail stream.
+  emailBatchDelayMs: 1000,                  // Delay between email batches to avoid overwhelming the API. Used for transactional mail stream.
 });
 // HMAC signature for unsubscribe URLs prevents unauthorized suppression of arbitrary emails.
 // Secret is resolved from Secret Manager via resolveUnsubscribeSecret() before use.
@@ -626,7 +626,7 @@ const sendReservedNotificationEmailBatch = async ({
   // Only 429 is retried in-process: the rate-limit response proves SendGrid
   // did NOT accept the message, so re-sending is safe.
   // Transient 5xx is treated as ambiguous-acceptance and moves to provider_acceptance_unknown.
-  // Cloud Tasks handles broader retry for bulk; instant operational sends do not retry to avoid duplicate-send risk.
+  // Cloud Tasks handles broader retry for bulk; instant transactional sends do not retry to avoid duplicate-send risk.
   // Non-429 4xx is permanent rejection.
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -1308,7 +1308,7 @@ const classifyNotificationSpec = async (
       notificationSpec,
       timeParams: null,
       conditions: [],
-      mailStream: isBulkMailCategory(notificationSpec.category, notificationSettings) ? "bulk" : "operational",
+      mailStream: isBulkMailCategory(notificationSpec.category, notificationSettings) ? "bulk" : "transactional",
       totalRecipientCount: 0,
       skip: true,
     };
@@ -1316,7 +1316,7 @@ const classifyNotificationSpec = async (
 
   const conditions = parseNotificationConditions(notificationSpec);
   const categoryIsBulk = isBulkMailCategory(notificationSpec.category, notificationSettings);
-  let mailStream = categoryIsBulk ? "bulk" : "operational";
+  let mailStream = categoryIsBulk ? "bulk" : "transactional";
   let totalRecipientCount = 0;
 
   if (specHasEmailChannel(notificationSpec)) {
@@ -1636,7 +1636,7 @@ async function sendScheduledNotifications(req, res) {
     const failures = [];
     const successfulSpecIds = [];
     const inlineBulkPlans = [];
-    const inlineOperationalPlans = [];
+    const inlineTransactionalPlans = [];
     const queuedBulkPlans = [];
 
     for (let i = 0; i < planResults.length; i++) {
@@ -1662,7 +1662,7 @@ async function sendScheduledNotifications(req, res) {
       if (plan.mailStream === "bulk") {
         inlineBulkPlans.push(plan);
       } else {
-        inlineOperationalPlans.push(plan);
+        inlineTransactionalPlans.push(plan);
       }
     }
 
@@ -1733,8 +1733,8 @@ async function sendScheduledNotifications(req, res) {
       notificationSettings,
     });
 
-    if (inlineBulkPlans.length > 0 || inlineOperationalPlans.length > 0) {
-      const inlinePlans = [...inlineBulkPlans, ...inlineOperationalPlans];
+    if (inlineBulkPlans.length > 0 || inlineTransactionalPlans.length > 0) {
+      const inlinePlans = [...inlineBulkPlans, ...inlineTransactionalPlans];
       if (
         getSendGridDeliveryMode(notificationSettings) !== "noop" &&
         inlinePlans.some((plan) => specHasEmailChannel(plan.notificationSpec))
@@ -1752,7 +1752,7 @@ async function sendScheduledNotifications(req, res) {
     // Keep delivery serialized for now. Pacing is the primary throttle, and a
     // single in-flight spec at a time is easier to reason about operationally.
     const bulkResults = await runSequentiallyAndCollect(inlineBulkPlans, runInlinePlan);
-    const opResults = await runSequentiallyAndCollect(inlineOperationalPlans, runInlinePlan);
+    const opResults = await runSequentiallyAndCollect(inlineTransactionalPlans, runInlinePlan);
 
     for (let i = 0; i < bulkResults.length; i++) {
       const result = bulkResults[i];
@@ -1766,9 +1766,9 @@ async function sendScheduledNotifications(req, res) {
     for (let i = 0; i < opResults.length; i++) {
       const result = opResults[i];
       if (result instanceof Error) {
-        failures.push(new Error(`Failed sending operational notification spec ${inlineOperationalPlans[i].notificationSpec.id}`, { cause: result }));
+        failures.push(new Error(`Failed sending transactional notification spec ${inlineTransactionalPlans[i].notificationSpec.id}`, { cause: result }));
       } else {
-        successfulSpecIds.push(inlineOperationalPlans[i].notificationSpec.id);
+        successfulSpecIds.push(inlineTransactionalPlans[i].notificationSpec.id);
       }
     }
 
@@ -1845,7 +1845,7 @@ async function handleNotificationSpec(notificationSpec, options = {}) {
     ? options.totalRecipientCount
     : null;
 
-  let mailStream = options.mailStream || (isBulkMailCategory(notificationSpec.category, notificationSettings) ? "bulk" : "operational");
+  let mailStream = options.mailStream || (isBulkMailCategory(notificationSpec.category, notificationSettings) ? "bulk" : "transactional");
   let estimatedTotalRecipientCount = providedCount;
   let hasAuthoritativeRecipientCount = providedCount != null;
   let observedRecipientCount = 0;
@@ -1898,7 +1898,7 @@ async function handleNotificationSpec(notificationSpec, options = {}) {
     smsCount[lang] = 0;
   }
 
-  if (!plannedRecipients && estimatedTotalRecipientCount == null && mailStream === "operational" && specHasEmailChannel(notificationSpec)) {
+  if (!plannedRecipients && estimatedTotalRecipientCount == null && mailStream === "transactional" && specHasEmailChannel(notificationSpec)) {
     const preCount = await countParticipantsForNotificationsBQ({
       notificationSpecId: notificationSpec.id,
       startTimeStr: timeParams.startTimeStr,
@@ -1951,7 +1951,7 @@ async function handleNotificationSpec(notificationSpec, options = {}) {
       hasAuthoritativeRecipientCount = false;
     }
 
-    if (mailStream === "operational" && observedRecipientCount >= bulkThreshold) {
+    if (mailStream === "transactional" && observedRecipientCount >= bulkThreshold) {
       mailStream = "bulk";
       console.log(
         `Spec ${notificationSpec.id} upgraded to bulk after observing ${observedRecipientCount} recipient(s) (threshold: ${bulkThreshold})`,
@@ -2876,7 +2876,7 @@ const sendInstantNotification = async (requestData) => {
     console.log(`Instant notification filtered for ${normalizedEmail}`);
     return;
   }
-  if (normalizedEmail && await isEmailSuppressed(normalizedEmail, "operational")) {
+  if (normalizedEmail && await isEmailSuppressed(normalizedEmail, "transactional")) {
     console.log(`Instant notification suppressed for ${normalizedEmail}`);
     return;
   }
@@ -2909,7 +2909,7 @@ const sendInstantNotification = async (requestData) => {
           token: requestData.token,
           notification_id: notificationId,
           gcloud_project: process.env.GCLOUD_PROJECT,
-          mail_stream: "operational",
+          mail_stream: "transactional",
         },
       },
     ],

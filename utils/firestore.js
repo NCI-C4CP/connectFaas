@@ -6223,7 +6223,7 @@ const processSendGridEvent = async (event) => {
             suppressionPolicy.reason,
             event.notification_id,
             suppressionPolicy.suppressBulk,
-            suppressionPolicy.suppressOperational,
+            suppressionPolicy.suppressTransactional,
             {
               token: existingData.token || event.token,
               eventTimestamp: event.timestamp,
@@ -6895,7 +6895,7 @@ const updateMySamples = async (payload, action, email) => {
  * The suppression store is the source of truth for send eligibility.
  *
  * Monotonicity guarantees:
- *  - suppressBulk / suppressOperational only ever flip false→true (true wins)
+ *  - suppressBulk / suppressTransactional only ever flip false→true (true wins)
  *  - manualOverride: true is sticky and is never reverted by webhook events
  *  - reason is preserved when the existing reason already carries stronger suppress flags than the incoming one
  *    (e.g., a hard_bounce is not overwritten by a later unsubscribed)
@@ -6908,7 +6908,7 @@ const updateMySamples = async (payload, action, email) => {
  * @param {string} reason - Reason for suppression.
  * @param {string} notificationId - Notification ID linked to the event.
  * @param {boolean} suppressBulk - Whether to suppress bulk mail.
- * @param {boolean} suppressOperational - Whether to suppress operational mail.
+ * @param {boolean} suppressTransactional - Whether to suppress transactional mail.
  * @param {object} [params] - Optional parameters.
  * @param {string} [params.token] - Participant token to link for data destruction.
  * @param {number} [params.eventTimestamp] - SendGrid event timestamp in seconds.
@@ -6919,7 +6919,7 @@ const addEmailSuppression = async (
   reason,
   notificationId,
   suppressBulk,
-  suppressOperational,
+  suppressTransactional,
   { token = "", eventTimestamp = null } = {},
 ) => {
   const incoming = buildEmailSuppressionDoc({
@@ -6928,7 +6928,7 @@ const addEmailSuppression = async (
     notificationId,
     token,
     suppressBulk,
-    suppressOperational,
+    suppressTransactional,
   });
   if (!incoming) return;
 
@@ -6941,8 +6941,8 @@ const addEmailSuppression = async (
     const snapshot = await transaction.get(docRef);
     const existing = snapshot.exists ? (snapshot.data() || {}) : {};
 
-    const incomingStrength = (incoming.suppressBulk ? 1 : 0) + (incoming.suppressOperational ? 1 : 0);
-    const existingStrength = (existing.suppressBulk ? 1 : 0) + (existing.suppressOperational ? 1 : 0);
+    const incomingStrength = (incoming.suppressBulk ? 1 : 0) + (incoming.suppressTransactional ? 1 : 0);
+    const existingStrength = (existing.suppressBulk ? 1 : 0) + (existing.suppressTransactional ? 1 : 0);
 
     const update = {
       normalizedEmail: incoming.normalizedEmail,
@@ -6950,7 +6950,7 @@ const addEmailSuppression = async (
     };
 
     if (incoming.suppressBulk) update.suppressBulk = true;
-    if (incoming.suppressOperational) update.suppressOperational = true;
+    if (incoming.suppressTransactional) update.suppressTransactional = true;
 
     if (existing.manualOverride !== true && incoming.manualOverride === true) {
       update.manualOverride = true;
@@ -6984,13 +6984,13 @@ const isEmailSuppressed = async (email, mailStream) => {
   const doc = await db.collection("emailAddressStatus").doc(normalizedEmail).get();
   if (!doc.exists) return false;
   const data = doc.data();
-  return mailStream === "bulk" ? !!data.suppressBulk : !!data.suppressOperational;
+  return mailStream === "bulk" ? !!data.suppressBulk : !!data.suppressTransactional;
 };
 
 const getEmailSuppressions = async (emailArray, mailStream) => {
   if (!emailArray || emailArray.length === 0) return new Set();
 
-  const suppressField = mailStream === "bulk" ? "suppressBulk" : "suppressOperational";
+  const suppressField = mailStream === "bulk" ? "suppressBulk" : "suppressTransactional";
 
   // Firestore getAll limit is 100 refs per call. Issue chunks in parallel so a 5,000-recipient batch makes ~50 round-trips concurrently.
   const chunkSize = 100;

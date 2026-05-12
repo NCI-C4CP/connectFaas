@@ -264,23 +264,23 @@ describe("backfillEmailSuppressions", () => {
   });
 
   describe("classifySuppressionRow", () => {
-    it("should classify hard bounce as suppressBulk:true, suppressOperational:true", () => {
+    it("should classify hard bounce as suppressBulk:true, suppressTransactional:true", () => {
       const result = classifySuppressionRow({ email: "a@b.com", type: "bounces" });
       expect(result).toEqual({
         email: "a@b.com",
         reason: "hard_bounce",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
     });
 
-    it("should classify spam_report as suppressBulk:true, suppressOperational:true", () => {
+    it("should classify spam_report as suppressBulk:true, suppressTransactional:true", () => {
       const result = classifySuppressionRow({ email: "a@b.com", type: "spam_reports" });
       expect(result).toEqual({
         email: "a@b.com",
         reason: "spam_report",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
     });
 
@@ -289,51 +289,51 @@ describe("backfillEmailSuppressions", () => {
         email: "a@b.com",
         reason: "spam_report",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(classifySuppressionRow({ email: "a@b.com", type: "invalid_emails" })).toEqual({
         email: "a@b.com",
         reason: "invalid_email",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(classifySuppressionRow({ email: "a@b.com", type: "global_unsubscribes" })).toEqual({
         email: "a@b.com",
         reason: "global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(classifySuppressionRow({ email: "a@b.com", type: "legacy_global_unsubscribes" })).toEqual({
         email: "a@b.com",
         reason: "legacy_global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(classifySuppressionRow({ email: "a@b.com", type: "group_unsubscribes" })).toEqual({
         email: "a@b.com",
         reason: "unsubscribed",
         suppressBulk: true,
-        suppressOperational: false,
+        suppressTransactional: false,
       });
     });
 
-    it("should classify invalid as suppressBulk:true, suppressOperational:true", () => {
+    it("should classify invalid as suppressBulk:true, suppressTransactional:true", () => {
       const result = classifySuppressionRow({ email: "a@b.com", type: "invalid_emails" });
       expect(result).toEqual({
         email: "a@b.com",
         reason: "invalid_email",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
     });
 
-    it("should classify unsubscribe as suppressBulk:true, suppressOperational:true", () => {
+    it("should classify unsubscribe as suppressBulk:true, suppressTransactional:true", () => {
       const result = classifySuppressionRow({ email: "a@b.com", type: "global_unsubscribes" });
       expect(result).toEqual({
         email: "a@b.com",
         reason: "global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
     });
 
@@ -369,13 +369,13 @@ describe("backfillEmailSuppressions", () => {
             email: "user@example.com",
             reason: "hard_bounce",
             suppressBulk: true,
-            suppressOperational: true,
+            suppressTransactional: true,
           },
           {
             email: "second@example.com",
             reason: "hard_bounce",
             suppressBulk: true,
-            suppressOperational: true,
+            suppressTransactional: true,
           },
         ],
         skipped: 2,
@@ -393,8 +393,8 @@ describe("backfillEmailSuppressions", () => {
   describe("buildSuppressionDocs", () => {
     it("should build Firestore doc data from classified rows", () => {
       const rows = [
-        { email: "a@b.com", reason: "hard_bounce", suppressBulk: true, suppressOperational: true },
-        { email: "c@d.com", reason: "global_unsubscribe", suppressBulk: true, suppressOperational: true },
+        { email: "a@b.com", reason: "hard_bounce", suppressBulk: true, suppressTransactional: true },
+        { email: "c@d.com", reason: "global_unsubscribe", suppressBulk: true, suppressTransactional: true },
       ];
       const docs = buildSuppressionDocs(rows);
       expect(docs).toHaveLength(2);
@@ -403,17 +403,17 @@ describe("backfillEmailSuppressions", () => {
         status: "suppressed",
         reason: "hard_bounce",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
         manualOverride: false,
       });
       expect(docs[0].lastEventAt).toBeDefined();
       expect(docs[1].normalizedEmail).toBe("c@d.com");
-      expect(docs[1].suppressOperational).toBe(true);
+      expect(docs[1].suppressTransactional).toBe(true);
     });
 
     it("should include linked participant tokens when provided", () => {
       const rows = [
-        { email: "a@b.com", reason: "hard_bounce", suppressBulk: true, suppressOperational: true },
+        { email: "a@b.com", reason: "hard_bounce", suppressBulk: true, suppressTransactional: true },
       ];
       const docs = buildSuppressionDocs(rows, new Map([["a@b.com", "tok-123"]]));
 
@@ -422,8 +422,8 @@ describe("backfillEmailSuppressions", () => {
 
     it("should deduplicate by email, keeping last occurrence", () => {
       const rows = [
-        { email: "a@b.com", reason: "telemetry_only", suppressBulk: false, suppressOperational: false },
-        { email: "a@b.com", reason: "hard_bounce", suppressBulk: true, suppressOperational: true },
+        { email: "a@b.com", reason: "telemetry_only", suppressBulk: false, suppressTransactional: false },
+        { email: "a@b.com", reason: "hard_bounce", suppressBulk: true, suppressTransactional: true },
       ];
       const docs = buildSuppressionDocs(rows);
       expect(docs).toHaveLength(1);
@@ -432,11 +432,11 @@ describe("backfillEmailSuppressions", () => {
 
     it("should omit false suppression flags so backfills cannot clear an earlier suppression", () => {
       const rows = [
-        { email: "a@b.com", reason: "telemetry_only", suppressBulk: false, suppressOperational: false },
+        { email: "a@b.com", reason: "telemetry_only", suppressBulk: false, suppressTransactional: false },
       ];
       const docs = buildSuppressionDocs(rows);
       expect(docs[0]).not.toHaveProperty("suppressBulk");
-      expect(docs[0]).not.toHaveProperty("suppressOperational");
+      expect(docs[0]).not.toHaveProperty("suppressTransactional");
     });
 
     it("should return empty array for empty input", () => {
@@ -445,8 +445,8 @@ describe("backfillEmailSuppressions", () => {
 
     it("should drop filtered internal or malformed addresses from built docs", () => {
       const rows = [
-        { email: "noreply@nih.gov", reason: "hard_bounce", suppressBulk: true, suppressOperational: true },
-        { email: "bad@domain.com.com", reason: "global_unsubscribe", suppressBulk: true, suppressOperational: true },
+        { email: "noreply@nih.gov", reason: "hard_bounce", suppressBulk: true, suppressTransactional: true },
+        { email: "bad@domain.com.com", reason: "global_unsubscribe", suppressBulk: true, suppressTransactional: true },
       ];
 
       expect(buildSuppressionDocs(rows)).toEqual([]);

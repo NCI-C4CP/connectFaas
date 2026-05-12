@@ -142,8 +142,8 @@ describe("Email Suppression System", () => {
 
       const data = docSetSpy.mock.calls[0][1];
       expect(data.suppressBulk).toBe(true);
-      // suppressOperational=false is omitted; merge:true preserves existing value.
-      expect(data).not.toHaveProperty("suppressOperational");
+      // suppressTransactional=false is omitted; merge:true preserves existing value.
+      expect(data).not.toHaveProperty("suppressTransactional");
     });
 
     it("should include both flags when both are true", async () => {
@@ -158,7 +158,7 @@ describe("Email Suppression System", () => {
 
       const data = docSetSpy.mock.calls[0][1];
       expect(data.suppressBulk).toBe(true);
-      expect(data.suppressOperational).toBe(true);
+      expect(data.suppressTransactional).toBe(true);
     });
 
     it("should omit both flags when both are false (blocked)", async () => {
@@ -173,7 +173,7 @@ describe("Email Suppression System", () => {
 
       const data = docSetSpy.mock.calls[0][1];
       expect(data).not.toHaveProperty("suppressBulk");
-      expect(data).not.toHaveProperty("suppressOperational");
+      expect(data).not.toHaveProperty("suppressTransactional");
       expect(data.status).toBe("suppressed");
       expect(data.reason).toBe("blocked");
     });
@@ -217,7 +217,7 @@ describe("Email Suppression System", () => {
       existingDocData = {
         reason: "hard_bounce",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
         lastEventAt: "2030-01-01T00:00:00.000Z",
         lastNotificationId: "old-notif",
       };
@@ -301,7 +301,7 @@ describe("Email Suppression System", () => {
     it("should return true for bulk mail when suppressBulk is true", async () => {
       firestoreMocks.setupDocumentRetrieval("emailAddressStatus", "test@example.com", {
         suppressBulk: true,
-        suppressOperational: false,
+        suppressTransactional: false,
       });
 
       const result = await firestoreModule.isEmailSuppressed("test@example.com", "bulk");
@@ -311,37 +311,37 @@ describe("Email Suppression System", () => {
     it("should return false for bulk mail when suppressBulk is false", async () => {
       firestoreMocks.setupDocumentRetrieval("emailAddressStatus", "test@example.com", {
         suppressBulk: false,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
 
       const result = await firestoreModule.isEmailSuppressed("test@example.com", "bulk");
       expect(result).toBe(false);
     });
 
-    it("should return true for operational mail when suppressOperational is true", async () => {
+    it("should return true for transactional mail when suppressTransactional is true", async () => {
       firestoreMocks.setupDocumentRetrieval("emailAddressStatus", "test@example.com", {
         suppressBulk: false,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
 
-      const result = await firestoreModule.isEmailSuppressed("test@example.com", "operational");
+      const result = await firestoreModule.isEmailSuppressed("test@example.com", "transactional");
       expect(result).toBe(true);
     });
 
-    it("should return false for operational mail when suppressOperational is false", async () => {
+    it("should return false for transactional mail when suppressTransactional is false", async () => {
       firestoreMocks.setupDocumentRetrieval("emailAddressStatus", "test@example.com", {
         suppressBulk: true,
-        suppressOperational: false,
+        suppressTransactional: false,
       });
 
-      const result = await firestoreModule.isEmailSuppressed("test@example.com", "operational");
+      const result = await firestoreModule.isEmailSuppressed("test@example.com", "transactional");
       expect(result).toBe(false);
     });
 
     it("should normalize email before lookup", async () => {
       firestoreMocks.setupDocumentRetrieval("emailAddressStatus", "user@test.com", {
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
 
       const result = await firestoreModule.isEmailSuppressed("  USER@TEST.COM  ", "bulk");
@@ -388,12 +388,12 @@ describe("Email Suppression System", () => {
         {
           exists: true,
           id: "bounced@test.com",
-          data: () => ({ suppressBulk: true, suppressOperational: true }),
+          data: () => ({ suppressBulk: true, suppressTransactional: true }),
         },
         {
           exists: true,
           id: "ok@test.com",
-          data: () => ({ suppressBulk: false, suppressOperational: false }),
+          data: () => ({ suppressBulk: false, suppressTransactional: false }),
         },
       ]);
 
@@ -426,19 +426,19 @@ describe("Email Suppression System", () => {
         {
           exists: true,
           id: "spam@test.com",
-          data: () => ({ suppressBulk: true, suppressOperational: true }),
+          data: () => ({ suppressBulk: true, suppressTransactional: true }),
         },
         {
           exists: true,
           id: "unsub@test.com",
-          data: () => ({ suppressBulk: true, suppressOperational: false }),
+          data: () => ({ suppressBulk: true, suppressTransactional: false }),
         },
         { exists: false, id: "new@test.com" },
       ]);
 
       const result = await firestoreModule.getEmailSuppressions(
         ["spam@test.com", "unsub@test.com", "new@test.com"],
-        "operational"
+        "transactional"
       );
       expect(result.has("spam@test.com")).toBe(true);
       expect(result.has("unsub@test.com")).toBe(false);
@@ -1678,7 +1678,7 @@ describe("Email Suppression System", () => {
     });
 
     // Hard bounce
-    it("should suppress all mail (bulk + operational) on hard bounce", async () => {
+    it("should suppress all mail (bulk + transactional) on hard bounce", async () => {
       const { mockRef } = setupNotificationDoc();
       const event = makeEvent({ event: "bounce", type: "bounce", reason: "550 User unknown" });
 
@@ -1689,7 +1689,7 @@ describe("Email Suppression System", () => {
         expect.objectContaining({
           token: "tok-001",
           suppressBulk: true,
-          suppressOperational: true,
+          suppressTransactional: true,
           reason: "hard_bounce",
         }),
         { merge: true }
@@ -1706,7 +1706,7 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           suppressBulk: true,
-          suppressOperational: true,
+          suppressTransactional: true,
           reason: "spam_report",
         }),
         { merge: true }
@@ -1723,7 +1723,7 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           suppressBulk: true,
-          suppressOperational: true,
+          suppressTransactional: true,
           reason: "invalid_email",
         }),
         { merge: true }
@@ -1740,17 +1740,17 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledTimes(3);
       expect(emailDocSetSpy.mock.calls[0][0]).toEqual(expect.objectContaining({
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
         reason: "hard_bounce",
       }));
       expect(emailDocSetSpy.mock.calls[1][0]).toEqual(expect.objectContaining({
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
         reason: "spam_report",
       }));
       expect(emailDocSetSpy.mock.calls[2][0]).toEqual(expect.objectContaining({
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
         reason: "global_unsubscribe",
       }));
     });
@@ -1765,7 +1765,7 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledTimes(1);
       const setCall = emailDocSetSpy.mock.calls[0];
       expect(setCall[0].suppressBulk).toBe(true);
-      expect(setCall[0].suppressOperational).toBe(true);
+      expect(setCall[0].suppressTransactional).toBe(true);
       expect(setCall[0].reason).toBe("global_unsubscribe");
       expect(setCall[1]).toEqual({ merge: true });
     });
@@ -1780,7 +1780,7 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledTimes(1);
       const setCall = emailDocSetSpy.mock.calls[0];
       expect(setCall[0].suppressBulk).toBe(true);
-      expect(setCall[0]).not.toHaveProperty("suppressOperational");
+      expect(setCall[0]).not.toHaveProperty("suppressTransactional");
       expect(setCall[0].reason).toBe("unsubscribed");
       expect(setCall[1]).toEqual({ merge: true });
     });
@@ -1795,7 +1795,7 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledTimes(1);
       const setCall = emailDocSetSpy.mock.calls[0];
       expect(setCall[0]).not.toHaveProperty("suppressBulk");
-      expect(setCall[0]).not.toHaveProperty("suppressOperational");
+      expect(setCall[0]).not.toHaveProperty("suppressTransactional");
       expect(setCall[0].reason).toBe("blocked");
       expect(setCall[1]).toEqual({ merge: true });
     });
@@ -1865,7 +1865,7 @@ describe("Email Suppression System", () => {
       expect(emailDocSetSpy).toHaveBeenCalledWith(expect.objectContaining({
         reason: "hard_bounce",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       }), { merge: true });
     });
 

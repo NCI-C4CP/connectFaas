@@ -448,7 +448,7 @@ describe('API Endpoint Method Guards', () => {
             expect(calledEmail).toBe('user@example.com');
         });
 
-        it('should suppress bulk only (suppressBulk:true, suppressOperational:false)', async () => {
+        it('should suppress bulk only (suppressBulk:true, suppressTransactional:false)', async () => {
             const addEmailSuppressionSpy = vi.spyOn(firestore, 'addEmailSuppression').mockResolvedValue(undefined);
             const sig = generateUnsubscribeSignature('user@example.com', 'tok-abc', TEST_UNSUB_SECRET);
 

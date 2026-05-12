@@ -297,7 +297,7 @@ const classifySuppressionRow = ({ email, type }) => {
     email: normalizeEmailAddress(email),
     reason: policy.reason,
     suppressBulk: policy.suppressBulk,
-    suppressOperational: policy.suppressOperational,
+    suppressTransactional: policy.suppressTransactional,
   };
 };
 
@@ -386,7 +386,7 @@ const buildSuppressionDocs = (classifiedRows, tokenByEmail = new Map()) => {
       reason: row.reason,
       token: tokenByEmail.get(row.email) || "",
       suppressBulk: row.suppressBulk,
-      suppressOperational: row.suppressOperational,
+      suppressTransactional: row.suppressTransactional,
       notificationId: "backfill",
       lastEventAt: now,
     });

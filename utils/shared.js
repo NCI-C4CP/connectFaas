@@ -2479,35 +2479,128 @@ const sanitizeObject = (obj) => {
 };
 
 /**
- * Converts HTML to plaintext by stripping tags and converting line breaks to newlines.
- * This is a quality signal for mailbox providers and some recipients may prefer plaintext.
+ * Converts HTML to plaintext by stripping tags, decoding entities, and converting blocks
+ * elements into newlines. Used to populate the `text` part of outbound SendGrid emails.
+ * SendGrid does not auto-generate a text/plain version from text/html on the v3 Mail Send API.
  *
- * NOTE: This is a regex-only converter and does not handle every HTML
- * construct (table layout, anchor href extraction, numeric/hex character
- * entities beyond the listed shortlist, etc.). SendGrid will auto-generate
- * a plaintext alternative if the `text` field is omitted from the message
- * payload — that auto-generation is generally higher fidelity. Future work:
- * benchmark deliverability with the `text` field omitted and remove this
- * helper if SendGrid's output is acceptable.
+ * Limitations:
+ *   - Tables are flattened: cells separated by tabs, rows by newlines (no column widths)
+ *   - Ordered and unordered lists both render with `- ` bullets (counter not tracked)
+ *   - Nested lists are not indented (depth not tracked)
+ *   - <pre> whitespace is collapsed like any other element
+ *   - Bare URLs in text are not auto-linkified
  *
  * @param {string} html - The HTML string to convert to plaintext.
- * @returns {string} The plaintext string.
+ * @returns {string} Plaintext with leading/trailing whitespace trimmed.
  */
 const htmlToPlaintext = (html) => {
     if (!html) return "";
-    return html
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/p>/gi, "\n\n")
-        .replace(/<\/li>/gi, "\n")
-        .replace(/<\/h[1-6]>/gi, "\n\n")
-        .replace(/<[^>]+>/g, "")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&#39;/g, "'")
-        .replace(/&quot;/g, '"')
+
+    let text = html;
+
+    // Drop content we never want in the output.
+    text = text
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<!--[\s\S]*?-->/g, "");
+
+    // Anchors: render as "text (href)".
+    text = text.replace(
+        // Require whitespace before `href` so we don't pick up data-href, x-href, etc.
+        /<a\b[^>]*\shref\s*=\s*(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi,
+        (_match, _quote, href, innerHtml) => {
+            const innerStripped = innerHtml.replace(/<[^>]+>/g, "").trim();
+            const trimmedHref = href.trim();
+            if (!trimmedHref) return innerStripped;
+            if (!innerStripped) return trimmedHref;
+            if (innerStripped === trimmedHref) return trimmedHref;
+            return `${innerHtml} (${trimmedHref})`;
+        }
+    );
+
+    // List items: opening tag becomes a bullet. Closing tag handled with other block closers below.
+    text = text.replace(/<li\b[^>]*>/gi, "- ");
+
+    // Hard line breaks.
+    text = text.replace(/<br\s*\/?>/gi, "\n");
+    text = text.replace(/<hr\s*\/?>/gi, "\n");
+
+    // Block-level opening tags emit newlines so block content separates from preceding text.
+    // Paragraphs/headings/quotes mirror their closing-tag spacing of \n\n; other blocks emit \n.
+    // <tr> is intentionally absent. Its row-break is fully covered by </tr> below; adding it
+    // here would double up newlines between table rows.
+    text = text.replace(/<(p|h[1-6]|blockquote)\b[^>]*>/gi, "\n\n");
+    text = text.replace(/<(div|section|article|header|footer|nav|aside|table|ul|ol)\b[^>]*>/gi, "\n");
+
+    // Block-level closing tags. Paragraphs/headings/quotes get a blank line; everything else
+    // gets one. The collapse step below normalizes any 3+ newline runs back down to 2.
+    text = text.replace(/<\/(p|h[1-6]|blockquote)>/gi, "\n\n");
+    text = text.replace(/<\/(div|section|article|header|footer|nav|aside|li|tr|table|ul|ol)>/gi, "\n");
+
+    // Table cells: tab between cells, row newline from </tr> above.
+    text = text.replace(/<\/(td|th)>/gi, "\t");
+
+    // Strip everything else.
+    text = text.replace(/<[^>]+>/g, "");
+
+    // Decode numeric entities. Reject out-of-range code points (leave the literal intact).
+    text = text
+        .replace(/&#(\d+);/g, (match, dec) => {
+            const code = Number.parseInt(dec, 10);
+            if (!Number.isFinite(code) || code < 0 || code > 0x10FFFF) return match;
+            try { return String.fromCodePoint(code); } catch { return match; }
+        })
+        .replace(/&#[xX]([0-9a-fA-F]+);/g, (match, hex) => {
+            const code = Number.parseInt(hex, 16);
+            if (!Number.isFinite(code) || code < 0 || code > 0x10FFFF) return match;
+            try { return String.fromCodePoint(code); } catch { return match; }
+        });
+
+    // Decode named entities. `&amp;` is decoded LAST so an input like `&amp;lt;` decodes
+    // to `&lt;`, not `<` — without that ordering, entity-encoded literal entities would be
+    // silently corrupted.
+    const namedEntities = {
+        "&nbsp;": " ",
+        "&lt;": "<",
+        "&gt;": ">",
+        "&quot;": '"',
+        "&apos;": "'",
+        "&ndash;": "–",
+        "&mdash;": "—",
+        "&hellip;": "…",
+        "&ldquo;": "“",
+        "&rdquo;": "”",
+        "&lsquo;": "‘",
+        "&rsquo;": "’",
+        "&copy;": "©",
+        "&reg;": "®",
+        "&trade;": "™",
+        "&deg;": "°",
+        "&middot;": "·",
+        "&bull;": "•",
+        "&times;": "×",
+        "&divide;": "÷",
+        "&plusmn;": "±",
+        "&sect;": "§",
+        "&para;": "¶",
+        "&laquo;": "«",
+        "&raquo;": "»",
+        "&euro;": "€",
+        "&pound;": "£",
+        "&yen;": "¥",
+        "&cent;": "¢",
+    };
+    for (const [entity, char] of Object.entries(namedEntities)) {
+        text = text.replaceAll(entity, char);
+    }
+    text = text.replaceAll("&amp;", "&");
+
+    // Normalize whitespace: cap newline runs at 2, drop trailing spaces/tabs per line, trim ends.
+    return text
         .replace(/\n{3,}/g, "\n\n")
+        .split("\n")
+        .map(line => line.replace(/[ \t]+$/, ""))
+        .join("\n")
         .trim();
 };
 

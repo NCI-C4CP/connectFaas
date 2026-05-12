@@ -49,22 +49,22 @@ describe("emailSuppressionPolicy", () => {
       expect(getEmailSuppressionPolicyByReason("hard_bounce")).toEqual({
         reason: "hard_bounce",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyByReason("unsubscribed")).toEqual({
         reason: "unsubscribed",
         suppressBulk: true,
-        suppressOperational: false,
+        suppressTransactional: false,
       });
       expect(getEmailSuppressionPolicyByReason("global_unsubscribe")).toEqual({
         reason: "global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyByReason("legacy_global_unsubscribe")).toEqual({
         reason: "legacy_global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
     });
 
@@ -162,37 +162,37 @@ describe("emailSuppressionPolicy", () => {
       expect(getEmailSuppressionPolicyForImportType("bounces")).toEqual({
         reason: "hard_bounce",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyForImportType("global_unsubscribes")).toEqual({
         reason: "global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyForImportType(" GLOBAL_UNSUBSCRIBES ")).toEqual({
         reason: "global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyForImportType("legacy_global_unsubscribes")).toEqual({
         reason: "legacy_global_unsubscribe",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyForImportType("spam_reports")).toEqual({
         reason: "spam_report",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyForImportType("invalid_emails")).toEqual({
         reason: "invalid_email",
         suppressBulk: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
       expect(getEmailSuppressionPolicyForImportType("group_unsubscribes")).toEqual({
         reason: "unsubscribed",
         suppressBulk: true,
-        suppressOperational: false,
+        suppressTransactional: false,
       });
       expect(getEmailSuppressionPolicyForImportType("bounce")).toBeNull();
       expect(getEmailSuppressionPolicyForImportType("unsubscribe")).toBeNull();
@@ -224,7 +224,7 @@ describe("emailSuppressionPolicy", () => {
         token: "tok-123",
         suppressBulk: true,
       });
-      expect(doc).not.toHaveProperty("suppressOperational");
+      expect(doc).not.toHaveProperty("suppressTransactional");
     });
 
     it("should honor an explicit policy object and preserve caller overrides", () => {
@@ -233,7 +233,7 @@ describe("emailSuppressionPolicy", () => {
         policy: {
           reason: "manual_review",
           suppressBulk: false,
-          suppressOperational: true,
+          suppressTransactional: true,
         },
         status: "review",
         manualOverride: true,
@@ -248,7 +248,7 @@ describe("emailSuppressionPolicy", () => {
         lastEventAt: "2026-04-14T12:00:00.000Z",
         lastNotificationId: null,
         manualOverride: true,
-        suppressOperational: true,
+        suppressTransactional: true,
       });
     });
 

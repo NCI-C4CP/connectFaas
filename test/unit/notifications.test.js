@@ -1477,14 +1477,14 @@ describe("Notifications Unit Tests", () => {
       expect(customArgs.mail_stream).toBe("bulk");
     });
 
-    it("should classify non-newsletter with fewer than 5000 recipients as operational", async () => {
+    it("should classify non-newsletter with fewer than 5000 recipients as transactional", async () => {
       const spec = makeNotificationSpec({ category: "reminder" });
       const participants = [makeParticipant()];
       await runHandleNotificationSpec(spec, participants);
 
       expect(sgMailMock.send).toHaveBeenCalledTimes(1);
       const customArgs = sgMailMock.send.mock.calls[0][0].personalizations[0].custom_args;
-      expect(customArgs.mail_stream).toBe("operational");
+      expect(customArgs.mail_stream).toBe("transactional");
     });
 
     it("should upgrade to bulk when total recipients reach the configured bulkThreshold", async () => {
@@ -1581,7 +1581,7 @@ describe("Notifications Unit Tests", () => {
       await runHandleNotificationSpec(spec, participants);
 
       expect(sgMailMock.send).toHaveBeenCalledTimes(1);
-      expect(firestoreMock.getEmailSuppressions).toHaveBeenCalledWith(["ok@test.com"], "operational");
+      expect(firestoreMock.getEmailSuppressions).toHaveBeenCalledWith(["ok@test.com"], "transactional");
       const personalizations = sgMailMock.send.mock.calls[0][0].personalizations;
       expect(personalizations).toHaveLength(1);
       expect(personalizations[0].to).toBe("ok@test.com");
@@ -1692,7 +1692,7 @@ describe("Notifications Unit Tests", () => {
         .toContain("https://myconnect.cancer.gov/unsubscribe");
     });
 
-    it("should NOT add unsubscribe headers for operational mail", async () => {
+    it("should NOT add unsubscribe headers for transactional mail", async () => {
       const spec = makeNotificationSpec({ category: "reminder" });
       const participants = [makeParticipant()];
       await runHandleNotificationSpec(spec, participants);
@@ -1702,7 +1702,7 @@ describe("Notifications Unit Tests", () => {
       expect(emailBatch.headers).toBeUndefined();
       expect(emailBatch.asm).toBeUndefined();
       expect(emailBatch.tracking_settings).toBeUndefined();
-      // Per-personalization headers should also be absent for operational
+      // Per-personalization headers should also be absent for transactional
       const personalization = emailBatch.personalizations[0];
       expect(personalization.headers).toBeUndefined();
     });
@@ -2002,7 +2002,7 @@ describe("Notifications Unit Tests", () => {
 
       expect(summary).toBeDefined();
       expect(summary.specId).toBe("spec-1");
-      expect(summary.mailStream).toBe("operational");
+      expect(summary.mailStream).toBe("transactional");
       expect(summary.totalRecipients).toBe(1);
       expect(summary.emailsSent).toBeTypeOf("number");
       expect(summary.bulkLaneSentCounts).toEqual({ default: 1, microsoft: 0 });
@@ -2074,14 +2074,14 @@ describe("Notifications Unit Tests", () => {
       expect(emailData.text).toBeTypeOf("string");
     });
 
-    // mail_stream always operational for instant
-    it("should include mail_stream 'operational' in custom_args", async () => {
+    // mail_stream always transactional for instant
+    it("should include mail_stream 'transactional' in custom_args", async () => {
       setupInstantNotificationMocks();
       await notificationsModule.sendInstantNotification(makeInstantRequestData());
 
       expect(sgMailMock.send).toHaveBeenCalledTimes(1);
       const customArgs = sgMailMock.send.mock.calls[0][0].personalizations[0].custom_args;
-      expect(customArgs.mail_stream).toBe("operational");
+      expect(customArgs.mail_stream).toBe("transactional");
     });
 
     // Suppression
@@ -2159,8 +2159,8 @@ describe("Notifications Unit Tests", () => {
       );
     });
 
-    // No tracking_settings for operational
-    it("should not include tracking_settings (always operational)", async () => {
+    // No tracking_settings for transactional
+    it("should not include tracking_settings (always transactional)", async () => {
       setupInstantNotificationMocks();
       await notificationsModule.sendInstantNotification(makeInstantRequestData());
 

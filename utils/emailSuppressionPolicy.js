@@ -58,13 +58,13 @@ const shouldFilterEmailAddress = (email = "") => {
 };
 
 const EMAIL_SUPPRESSION_POLICIES_BY_REASON = Object.freeze({
-  hard_bounce: Object.freeze({ reason: "hard_bounce", suppressBulk: true, suppressOperational: true }),
-  spam_report: Object.freeze({ reason: "spam_report", suppressBulk: true, suppressOperational: true }),
-  invalid_email: Object.freeze({ reason: "invalid_email", suppressBulk: true, suppressOperational: true }),
-  unsubscribed: Object.freeze({ reason: "unsubscribed", suppressBulk: true, suppressOperational: false }),
-  global_unsubscribe: Object.freeze({ reason: "global_unsubscribe", suppressBulk: true, suppressOperational: true }),
-  legacy_global_unsubscribe: Object.freeze({ reason: "legacy_global_unsubscribe", suppressBulk: true, suppressOperational: true }),
-  blocked: Object.freeze({ reason: "blocked", suppressBulk: false, suppressOperational: false }),
+  hard_bounce: Object.freeze({ reason: "hard_bounce", suppressBulk: true, suppressTransactional: true }),
+  spam_report: Object.freeze({ reason: "spam_report", suppressBulk: true, suppressTransactional: true }),
+  invalid_email: Object.freeze({ reason: "invalid_email", suppressBulk: true, suppressTransactional: true }),
+  unsubscribed: Object.freeze({ reason: "unsubscribed", suppressBulk: true, suppressTransactional: false }),
+  global_unsubscribe: Object.freeze({ reason: "global_unsubscribe", suppressBulk: true, suppressTransactional: true }),
+  legacy_global_unsubscribe: Object.freeze({ reason: "legacy_global_unsubscribe", suppressBulk: true, suppressTransactional: true }),
+  blocked: Object.freeze({ reason: "blocked", suppressBulk: false, suppressTransactional: false }),
 });
 
 const EMAIL_SUPPRESSION_IMPORT_TYPE_TO_REASON = Object.freeze({
@@ -150,7 +150,7 @@ const buildEmailSuppressionDoc = ({
   notificationId = null,
   token = "",
   suppressBulk = false,
-  suppressOperational = false,
+  suppressTransactional = false,
   lastEventAt = new Date().toISOString(),
   manualOverride = false,
   status = "suppressed",
@@ -158,7 +158,7 @@ const buildEmailSuppressionDoc = ({
   const resolvedPolicy = policy || getEmailSuppressionPolicyByReason(reason) || {
     reason,
     suppressBulk: !!suppressBulk,
-    suppressOperational: !!suppressOperational,
+    suppressTransactional: !!suppressTransactional,
   };
 
   if (!normalizedEmail || !resolvedPolicy.reason || shouldFilterEmailAddress(normalizedEmail)) return null;
@@ -173,7 +173,7 @@ const buildEmailSuppressionDoc = ({
   };
   if (token) doc.token = token;
   if (resolvedPolicy.suppressBulk) doc.suppressBulk = true;
-  if (resolvedPolicy.suppressOperational) doc.suppressOperational = true;
+  if (resolvedPolicy.suppressTransactional) doc.suppressTransactional = true;
 
   return doc;
 };
