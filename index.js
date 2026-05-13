@@ -1,9 +1,9 @@
 const {onRequest} = require("firebase-functions/v2/https");
 const { onTaskDispatched } = require("firebase-functions/v2/tasks");
-const { getToken, validateUsersEmailPhone } = require('./utils/validation');
+const { getToken } = require('./utils/validation');
 const { getFilteredParticipants, getParticipants, identifyParticipant } = require('./utils/submission');
 const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('./utils/sites');
-const { getParticipantNotification, sendScheduledNotifications, processNotificationBatchBulkDefault, processNotificationBatchBulkMicrosoft } = require('./utils/notifications');
+const { sendScheduledNotifications, processNotificationBatchBulkDefault, processNotificationBatchBulkMicrosoft } = require('./utils/notifications');
 const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
 const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive');

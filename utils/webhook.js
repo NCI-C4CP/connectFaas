@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { EventWebhook, EventWebhookHeader } = require("@sendgrid/eventwebhook");
 const { getResponseJSON, getSecret } = require("./shared");
 const firestoreUtils = require("./firestore");
@@ -135,7 +136,13 @@ const handleEmailUnsubscribeRoute = async (req, res) => {
     }
 
     const expectedSig = notificationsUtils.generateUnsubscribeSignature(normalizedEmail, token, secret);
-    if (sig !== expectedSig) return res.status(403).json(getResponseJSON("Invalid signature.", 403));
+    // Constant-time compare to avoid leaking signature bytes via response-timing side channels.
+    // The length check first ensures timingSafeEqual receives equal-length buffers. It throws otherwise.
+    const sigBuf = Buffer.from(typeof sig === "string" ? sig : "", "utf8");
+    const expBuf = Buffer.from(expectedSig, "utf8");
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+        return res.status(403).json(getResponseJSON("Invalid signature.", 403));
+    }
 
     try {
         // This route is a bulk-only unsubscribe action.

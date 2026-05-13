@@ -36,7 +36,7 @@ const normalizeLocalPartForFiltering = (localPart = "") => localPart.replace(/[^
 
 const shouldFilterEmailAddress = (email = "") => {
   const normalizedEmail = normalizeEmailAddress(email);
-  if (!normalizedEmail || !normalizedEmail.includes("@")) return false;
+  if (!normalizedEmail || !normalizedEmail.includes("@")) return true;
 
   const [localPart = "", domain = ""] = normalizedEmail.split("@");
   const normalizedLocalPart = normalizeLocalPartForFiltering(localPart);

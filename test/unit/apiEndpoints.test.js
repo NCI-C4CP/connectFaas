@@ -421,6 +421,31 @@ describe('API Endpoint Method Guards', () => {
             expect(res.statusCode).toBe(403);
         });
 
+        it('should return 403 for a same-length-but-different signature (timing-safe compare path)', async () => {
+            // Constant-time compare via crypto.timingSafeEqual requires equal-length buffers;
+            const validSig = generateUnsubscribeSignature('user@example.com', 'tok-abc', TEST_UNSUB_SECRET);
+            const forgedSig = '0'.repeat(validSig.length);
+            expect(forgedSig.length).toBe(validSig.length);
+            expect(forgedSig).not.toBe(validSig);
+
+            const res = await invoke(api.webhook, 'POST', {
+                query: { api: 'email-unsubscribe', email: 'user@example.com', token: 'tok-abc', sig: forgedSig },
+                body: {},
+            });
+
+            expect(res.statusCode).toBe(403);
+        });
+
+        it('should return 403 (not throw) for length-mismatched signatures', async () => {
+            for (const badSig of ['', 'x', 'a'.repeat(15), 'a'.repeat(17), 'a'.repeat(100)]) {
+                const res = await invoke(api.webhook, 'POST', {
+                    query: { api: 'email-unsubscribe', email: 'user@example.com', token: 'tok-abc', sig: badSig },
+                    body: {},
+                });
+                expect(res.statusCode).toBe(403);
+            }
+        });
+
         it('should return 500 when unsubscribe secret resolution fails', async () => {
             vi.spyOn(notifications, 'resolveUnsubscribeSecret')
                 .mockRejectedValueOnce(new Error('secret unavailable'));

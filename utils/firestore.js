@@ -2571,7 +2571,7 @@ const storeNotification = async (notificationData) => {
         const docRef = notificationData?.id ?
             db.collection('notifications').doc(notificationData.id) :
             db.collection('notifications').doc();
-        await docRef.set(notificationData);
+        await docRef.set(notificationData, { merge: true });
     } catch (error) {
         console.error(error);
         return new Error(error);

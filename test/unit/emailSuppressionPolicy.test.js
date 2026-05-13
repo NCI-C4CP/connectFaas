@@ -42,6 +42,14 @@ describe("emailSuppressionPolicy", () => {
       expect(shouldFilterEmailAddress("user@example.gov")).toBe(false);
       expect(shouldFilterEmailAddress("participant@nih.gov")).toBe(false);
     });
+
+    it("should filter empty or malformed strings (no `@`)", () => {
+      // Prevents buildEmailSuppressionDoc from persisting invalid strings as Firestore doc ids in emailAddressStatus.
+      expect(shouldFilterEmailAddress("")).toBe(true);
+      expect(shouldFilterEmailAddress("   ")).toBe(true);
+      expect(shouldFilterEmailAddress("not-an-email")).toBe(true);
+      expect(shouldFilterEmailAddress("missing-at-sign.example.com")).toBe(true);
+    });
   });
 
   describe("getEmailSuppressionPolicyByReason", () => {
