@@ -28,6 +28,7 @@ const runParticipantDataCleanup = async () => {
 
 const participantDataCleanup = async (req, res) => {
     // Preserve direct invocation used by existing unit tests.
+    console.log("Received request for participantDataCleanup");
     if (!req || !res) {
         return runParticipantDataCleanup();
     }
