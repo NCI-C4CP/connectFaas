@@ -2507,15 +2507,15 @@ const htmlToPlaintext = (html) => {
 
     let text = html;
 
-    // Drop content we never want in the output. Closing tags allow trailing whitespace (`</script  >`, `</style\n>`)
-    // The do/while loop defends against tag-name obfuscation like `<scr<script></script>ipt>` where one strip pass reveals another tag.
-    // The loop terminates immediately on normal input.
+    // Drop content we never want in the output (e.g., `</script  >`, `</script\t\n bar>`).
+    // The do/while loop defends against tag-name obfuscation (e.g., `<scr<script></script>ipt>`)
+    // where one strip pass reveals another tag. Loop terminates immediately on normal input.
     let prevSanitized;
     do {
         prevSanitized = text;
         text = text
-            .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
-            .replace(/<style\b[\s\S]*?<\/style\s*>/gi, "")
+            .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, "")
+            .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, "")
             .replace(/<!--[\s\S]*?-->/g, "");
     } while (text !== prevSanitized);
 
@@ -2524,9 +2524,12 @@ const htmlToPlaintext = (html) => {
         // Require whitespace before `href` so we don't pick up data-href, x-href, etc.
         /<a\b[^>]*\shref\s*=\s*(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi,
         (_match, _quote, href, innerHtml) => {
-            // Tag-name-anchored pattern only matches well-formed-looking tags; `[^<>]*`
-            // rejects stray `<` in attribute values to avoid swallowing past unmatched `>`.
-            const innerStripped = innerHtml.replace(/<\/?[a-zA-Z!][^<>]*>/g, "").trim();
+            // Tag-name-anchored pattern only matches well-formed-looking tags; `[^<>]*` rejects
+            // stray `<` inside attribute values so we don't swallow past an unmatched `>`.
+            const innerStripped = innerHtml
+                .replace(/<\s*\/?\s*(?:script|style)\b[^>]*>?/gi, "")
+                .replace(/<\/?[a-zA-Z!][^<>]*>/g, "")
+                .trim();
             const trimmedHref = href.trim();
             if (!trimmedHref) return innerStripped;
             if (!innerStripped) return trimmedHref;
@@ -2617,6 +2620,15 @@ const htmlToPlaintext = (html) => {
         text = text.replaceAll(entity, char);
     }
     text = text.replaceAll("&amp;", "&");
+
+    // Final defense pass: strip any remaining script/style/comment-shaped tokens that
+    // could only have arrived here via entity-decoded sources (e.g., a template author
+    // wrote `&lt;script&gt;` and the decode pass above produced `<script>` text). For
+    // this study's email templates such tokens are never intentional, so we drop them
+    // rather than ship literal `<script` markers in the plain-text alternative.
+    text = text
+        .replace(/<\s*\/?\s*(?:script|style)\b[^>]*>?/gi, "")
+        .replace(/<!--[\s\S]*?(?:-->|$)/g, "");
 
     // Normalize whitespace: cap newline runs at 2, drop trailing spaces/tabs per line, trim ends.
     return text

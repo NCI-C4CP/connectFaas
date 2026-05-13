@@ -204,6 +204,15 @@ describe('htmlToPlaintext', () => {
         expect(htmlToPlaintext('<script>alert("x")</script\t>Body')).toBe('Body');
     });
 
+    it('should remove <script> blocks with attribute-like content in the closing tag', () => {
+        // HTML5 forbids attributes on end tags but browsers tolerate them; CodeQL flagged
+        // `</script\t\n bar>` specifically. The closing pattern now uses `[^>]*` after the
+        // tag name so any pre-`>` garbage is consumed.
+        expect(htmlToPlaintext('<script>alert("x")</script\t\n bar>Body')).toBe('Body');
+        expect(htmlToPlaintext('<script>alert("x")</script foo="bar">Body')).toBe('Body');
+        expect(htmlToPlaintext('<style>p{}</style data-x="y">Body')).toBe('Body');
+    });
+
     it('should remove <style> blocks and their content', () => {
         expect(htmlToPlaintext('<style>p { color: red; }</style>Body')).toBe('Body');
         expect(htmlToPlaintext('<style type="text/css">.x{}</style>Body')).toBe('Body');
@@ -217,6 +226,15 @@ describe('htmlToPlaintext', () => {
     it('should remove HTML comments', () => {
         expect(htmlToPlaintext('<!-- hidden -->Visible')).toBe('Visible');
         expect(htmlToPlaintext('<!--\n  multi-line comment\n-->after')).toBe('after');
+    });
+
+    it('should scrub entity-decoded script/style tokens via the final defense pass', () => {
+        // If a template author writes `&lt;script&gt;`, the entity-decoding pass produces a
+        // literal `<script>` in the output. The final defense pass removes such tokens so the
+        // plain-text alternative never carries `<script` markers.
+        expect(htmlToPlaintext('Before &lt;script&gt;alert(1)&lt;/script&gt; after')).toBe('Before alert(1) after');
+        expect(htmlToPlaintext('Before &lt;style&gt;.x{}&lt;/style&gt; after')).toBe('Before .x{} after');
+        expect(htmlToPlaintext('Note &lt;!-- comment --&gt; here')).toBe('Note  here');
     });
 
     it('should remove nested/obfuscated script and style via repeated stripping', () => {
