@@ -182,7 +182,6 @@ module.exports = {
   normalizeEmailAddress,
   normalizeSuppressionKey,
   shouldFilterEmailAddress,
-  EMAIL_SUPPRESSION_IMPORT_TYPE_TO_REASON,
   getEmailSuppressionPolicyByReason,
   getEmailSuppressionPolicyForSendGridEvent,
   getEmailSuppressionPolicyForImportType,

@@ -52,7 +52,6 @@ const sharedMock = {
   getTemplateForEmailLink: vi.fn().mockReturnValue("<p>email body</p>"),
   getSecret: vi.fn(),
   parseResponseJson: vi.fn(),
-  safeJSONParse: vi.fn((str) => JSON.parse(str)),
   setHeadersDomainRestricted: vi.fn(),
   setHeaders: vi.fn(),
   logIPAddress: vi.fn(),
@@ -79,7 +78,6 @@ const sharedMock = {
   },
   delay: vi.fn().mockResolvedValue(undefined),
   backoffMs: vi.fn((attempt) => 200 * Math.pow(2, attempt)),
-  htmlToPlaintext: vi.fn((html) => html ? html.replace(/<[^>]+>/g, "").trim() : ""),
   developmentTier: "DEV",
 };
 
@@ -188,7 +186,6 @@ describe("Notifications Unit Tests", () => {
     sharedMock.getTemplateForEmailLink.mockReset().mockReturnValue("<p>email body</p>");
     sharedMock.getSecret.mockReset().mockResolvedValue("fake-secret");
     sharedMock.parseResponseJson.mockReset();
-    sharedMock.safeJSONParse.mockReset().mockImplementation((str) => JSON.parse(str));
     sharedMock.developmentTier = "DEV";
 
     firestoreMock.generateSignInWithEmailLink.mockReset();

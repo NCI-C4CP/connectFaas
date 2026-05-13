@@ -9,6 +9,5 @@ const isProviderSendStartedState = (processingState = "") =>
   PROVIDER_SEND_STARTED_STATE_SET.has(processingState);
 
 module.exports = {
-  PROVIDER_SEND_STARTED_STATES,
   isProviderSendStartedState,
 };
