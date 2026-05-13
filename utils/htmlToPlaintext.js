@@ -183,6 +183,23 @@ const _parseTag = (src) => {
     return { type: "tag", name, isClose, attrs };
 };
 
+// Comprehensive list of HTML5 element names used by the placeholder-preservation heuristic. Anything NOT in this set, with no attributes and at least one uppercase
+// letter in its original-case name (i.e., camelCase or PascalCase) is treated as a substitution placeholder and preserved verbatim as text. See the note in _tokenizeHtml.
+const _KNOWN_HTML_TAG_NAMES = new Set([
+    "a", "abbr", "address", "area", "article", "aside", "audio", "b", "base", "bdi",
+    "bdo", "blockquote", "body", "br", "button", "canvas", "caption", "cite", "code",
+    "col", "colgroup", "data", "datalist", "dd", "del", "details", "dfn", "dialog",
+    "div", "dl", "dt", "em", "embed", "fieldset", "figcaption", "figure", "footer",
+    "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr",
+    "html", "i", "iframe", "img", "input", "ins", "kbd", "label", "legend", "li",
+    "link", "main", "map", "mark", "meta", "meter", "nav", "noscript", "object", "ol",
+    "optgroup", "option", "output", "p", "param", "picture", "pre", "progress", "q",
+    "rp", "rt", "ruby", "s", "samp", "script", "section", "select", "slot", "small",
+    "source", "span", "strong", "style", "sub", "summary", "sup", "svg", "table",
+    "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "title",
+    "tr", "track", "u", "ul", "var", "video", "wbr",
+]);
+
 // Walk the input character by character and produce a stream of `text` and `tag`
 // tokens. `<script>` and `<style>` blocks (including their content) and HTML
 // comments are dropped entirely. A `<` not followed by a letter, `/`, or `!` is
@@ -228,8 +245,23 @@ const _tokenizeHtml = (html) => {
         }
 
         const tagEnd = _scanTagEnd(html, i);
-        const tok = _parseTag(html.slice(i, tagEnd));
-        if (tok) tokens.push(tok);
+        const tagSrc = html.slice(i, tagEnd);
+        const tok = _parseTag(tagSrc);
+        if (tok) {
+            // Placeholder preservation. A tag-shaped token with no attributes whose original-case name contains at least one uppercase letter and is not in
+            // the known HTML tag list is treated as a SendGrid substitution placeholder (e.g., `<firstName>`, `<loginDetails>`). SendGrid's substitution
+            // layer replaces it in the plain-text alternative at delivery time.
+            const hasAttrs = Object.keys(tok.attrs).length > 0;
+            const originalNameMatch = tagSrc.match(/^<\/?([a-zA-Z][a-zA-Z0-9_-]*)/);
+            const originalName = originalNameMatch ? originalNameMatch[1] : "";
+            const looksLikePlaceholder = /[A-Z]/.test(originalName)
+                && !_KNOWN_HTML_TAG_NAMES.has(tok.name);
+            if (!hasAttrs && looksLikePlaceholder) {
+                tokens.push({ type: "text", value: tagSrc });
+            } else {
+                tokens.push(tok);
+            }
+        }
         i = tagEnd;
     }
 
@@ -312,6 +344,15 @@ const _NAMED_ENTITIES = {
  *   - Nested lists are not indented (depth not tracked)
  *   - <pre> whitespace is collapsed like any other element
  *   - Bare URLs in text are not auto-linkified
+ *
+ * Intentional:
+ *   - SendGrid substitution placeholder preservation:
+ *   Tag-shaped tokens with no attributes whose name contains at least one uppercase
+ *   letter and is not in the known HTML tag list (e.g., `<firstName>`, `<loginDetails>`)
+ *   are passed through verbatim as literal text. This matches the convention used by
+ *   the notification template library: at delivery time SendGrid's substitution layer
+ *   replaces these tokens in both the HTML and plain-text parts of the email. Real
+ *   HTML tags (`<p>`, `<DIV>`, `<a href=...>`, etc.) are unaffected.
  *
  * @param {string} html - The HTML string to convert to plaintext.
  * @returns {string} Plaintext with leading/trailing whitespace trimmed.
@@ -427,12 +468,12 @@ const htmlToPlaintext = (html) => {
     // never saw. Character-level scanning, not a regex sanitizer.
     text = _scrubDangerousMarkup(text);
 
-    // Normalize whitespace: cap newline runs at 2, drop trailing spaces/tabs per line, trim ends.
+    // Normalize whitespace. Order matters for handlingempty lines and avoiding false indentation.
     return text
-        .replace(/\n{3,}/g, "\n\n")
         .split("\n")
-        .map(line => line.replace(/[ \t]+$/, ""))
+        .map(line => line.trim())
         .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
         .trim();
 };
 

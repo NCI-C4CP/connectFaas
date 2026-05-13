@@ -238,6 +238,54 @@ describe('htmlToPlaintext', () => {
         expect(htmlToPlaintext('<scriptural>text</scriptural>')).toBe('text');
     });
 
+    // --- SendGrid substitution placeholder preservation ---
+
+    it('should preserve camelCase placeholder tags as literal text', () => {
+        // Templates use `<firstName>` / `<loginDetails>` as SendGrid substitution placeholders. They have no attrs and a camelCase name (no real HTML tag is
+        // camelCase). The plain-text alternative must keep these as-is so SendGrid can substitute them at delivery time.
+        expect(htmlToPlaintext('Hi <firstName>, welcome!')).toBe('Hi <firstName>, welcome!');
+        expect(htmlToPlaintext('Use <loginDetails> to sign in.')).toBe('Use <loginDetails> to sign in.');
+        expect(htmlToPlaintext('<firstName>')).toBe('<firstName>');
+        // Other plausible camelCase placeholders (lastName, connectId, participantName) are preserved by the same rule.
+        expect(htmlToPlaintext('Hello <lastName>')).toBe('Hello <lastName>');
+        expect(htmlToPlaintext('<connectId> assigned')).toBe('<connectId> assigned');
+    });
+
+    it('should preserve closing placeholder tags too', () => {
+        // Unusual in real templates (placeholders are not paired) but the rule applies
+        // symmetrically. Both `<firstName>` and `</firstName>` are preserved as text.
+        expect(htmlToPlaintext('<firstName>Joe</firstName>')).toBe('<firstName>Joe</firstName>');
+    });
+
+    it('should still treat uppercase HTML tags as real HTML (case-insensitive)', () => {
+        // `<P>` and `<DIV>` have uppercase letters, but their lowercased name is in the
+        // known HTML tag list, so they are processed normally.
+        expect(htmlToPlaintext('<P>title</P><DIV>body</DIV>')).toBe('title\n\nbody');
+        expect(htmlToPlaintext('<H1>hi</H1>x')).toBe('hi\n\nx');
+    });
+
+    it('should still strip non-camelCase unknown tags', () => {
+        // Names that have NO uppercase letter (`<scriptural>`, `<unknowntag>`) are not
+        // placeholders by the rule, so they are stripped as ordinary unknown HTML.
+        expect(htmlToPlaintext('<scriptural>text</scriptural>')).toBe('text');
+        expect(htmlToPlaintext('<unknowntag>x</unknowntag>')).toBe('x');
+    });
+
+    it('should drop the opening token when a placeholder-shaped tag has attributes', () => {
+        // Real templates never put attrs on placeholders.
+        expect(htmlToPlaintext('<firstName id="x">y</firstName>')).toBe('y</firstName>');
+    });
+
+    it('should collapse indented <br/> runs down to a single blank line', () => {
+        // Regression: production templates often have `<br/>` separated by indentation
+        // whitespace (`\n        <br/>\n        <br/>\n`). The whitespace order must trim
+        // trailing per-line whitespace before the `\n{3,}` collapse. Otherwise, the indented
+        // empties stay as a sequence of newlines-with-spaces-between and the collapse misses
+        // them, leaving 4+ blank lines in the output.
+        const html = 'first<br/>\n        <br/>\n        <br/>\n        <br/>\n        second';
+        expect(htmlToPlaintext(html)).toBe('first\n\nsecond');
+    });
+
     it('should handle comments containing `>` characters', () => {
         // The comment scanner looks for `-->` specifically; a `>` inside the comment body
         // does not end the comment.
