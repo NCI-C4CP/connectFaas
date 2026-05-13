@@ -2479,9 +2479,18 @@ const sanitizeObject = (obj) => {
 };
 
 /**
- * Converts HTML to plaintext by stripping tags, decoding entities, and converting blocks
+ * Converts HTML to plaintext by stripping tags, decoding entities, and converting block
  * elements into newlines. Used to populate the `text` part of outbound SendGrid emails.
  * SendGrid does not auto-generate a text/plain version from text/html on the v3 Mail Send API.
+ *
+ * Note about GitHub security bot/analysis: NOT A SECURITY SANITIZER. The output of this function is the `text/plain` MIME part of
+ * an email — it is rendered as plain text by mail clients, never as
+ * HTML. The strip rules below exist for output cleanliness (so HTML markup doesn't appear
+ * as visible characters in the plain-text alternative), not to prevent script execution
+ * or HTML element injection. Input is always controlled notification template HTML, not
+ * untrusted user input. Static analyzers may flag the strip regexes with HTML-injection
+ * queries (e.g., CodeQL `js/incomplete-multi-character-sanitization`). Those findings are
+ * false positives in this context.
  *
  * Limitations:
  *   - Tables are flattened: cells separated by tabs, rows by newlines (no column widths)
@@ -2498,18 +2507,26 @@ const htmlToPlaintext = (html) => {
 
     let text = html;
 
-    // Drop content we never want in the output.
-    text = text
-        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
-        .replace(/<!--[\s\S]*?-->/g, "");
+    // Drop content we never want in the output. Closing tags allow trailing whitespace (`</script  >`, `</style\n>`)
+    // The do/while loop defends against tag-name obfuscation like `<scr<script></script>ipt>` where one strip pass reveals another tag.
+    // The loop terminates immediately on normal input.
+    let prevSanitized;
+    do {
+        prevSanitized = text;
+        text = text
+            .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
+            .replace(/<style\b[\s\S]*?<\/style\s*>/gi, "")
+            .replace(/<!--[\s\S]*?-->/g, "");
+    } while (text !== prevSanitized);
 
     // Anchors: render as "text (href)".
     text = text.replace(
         // Require whitespace before `href` so we don't pick up data-href, x-href, etc.
         /<a\b[^>]*\shref\s*=\s*(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi,
         (_match, _quote, href, innerHtml) => {
-            const innerStripped = innerHtml.replace(/<[^>]+>/g, "").trim();
+            // Tag-name-anchored pattern only matches well-formed-looking tags; `[^<>]*`
+            // rejects stray `<` in attribute values to avoid swallowing past unmatched `>`.
+            const innerStripped = innerHtml.replace(/<\/?[a-zA-Z!][^<>]*>/g, "").trim();
             const trimmedHref = href.trim();
             if (!trimmedHref) return innerStripped;
             if (!innerStripped) return trimmedHref;
@@ -2541,7 +2558,13 @@ const htmlToPlaintext = (html) => {
     text = text.replace(/<\/(td|th)>/gi, "\t");
 
     // Strip everything else.
-    text = text.replace(/<[^>]+>/g, "");
+    let prevStripped;
+    do {
+        prevStripped = text;
+        text = text
+            .replace(/<\/?[a-zA-Z!][^<>]*>/g, "")
+            .replace(/<\s*>/g, "");
+    } while (text !== prevStripped);
 
     // Decode numeric entities. Reject out-of-range code points (leave the literal intact).
     text = text

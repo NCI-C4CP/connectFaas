@@ -197,14 +197,41 @@ describe('htmlToPlaintext', () => {
         expect(htmlToPlaintext('<SCRIPT>uppercase</SCRIPT>Body')).toBe('Body');
     });
 
+    it('should remove <script> blocks with whitespace in the closing tag', () => {
+        // Regression: previous regex required literal `</script>` and let the body leak through.
+        expect(htmlToPlaintext('<script>alert("x")</script >Body')).toBe('Body');
+        expect(htmlToPlaintext('<script>alert("x")</script\n>Body')).toBe('Body');
+        expect(htmlToPlaintext('<script>alert("x")</script\t>Body')).toBe('Body');
+    });
+
     it('should remove <style> blocks and their content', () => {
         expect(htmlToPlaintext('<style>p { color: red; }</style>Body')).toBe('Body');
         expect(htmlToPlaintext('<style type="text/css">.x{}</style>Body')).toBe('Body');
     });
 
+    it('should remove <style> blocks with whitespace in the closing tag', () => {
+        expect(htmlToPlaintext('<style>p{}</style >Body')).toBe('Body');
+        expect(htmlToPlaintext('<style>p{}</style\n>Body')).toBe('Body');
+    });
+
     it('should remove HTML comments', () => {
         expect(htmlToPlaintext('<!-- hidden -->Visible')).toBe('Visible');
         expect(htmlToPlaintext('<!--\n  multi-line comment\n-->after')).toBe('after');
+    });
+
+    it('should remove nested/obfuscated script and style via repeated stripping', () => {
+        // Defense against tag-name obfuscation: stripping one tag should not reveal an
+        // unstripped inner tag in the output. The do/while loop in the strip pipeline
+        // handles these cases.
+        expect(htmlToPlaintext('<scr<script>X</script>ipt>after')).toBe('after');
+        expect(htmlToPlaintext('<sty<style>.x{}</style>le>after')).toBe('after');
+        expect(htmlToPlaintext('<<p>>nested<</p>>')).toBe('nested');
+    });
+
+    it('should preserve arithmetic-like text content that is not actually a tag', () => {
+        // Tighter catch-all pattern requires `<` followed by letter/!/`/` to count as a tag,
+        // so `< 5` and `> 3` survive in plain text instead of being eaten as a malformed tag.
+        expect(htmlToPlaintext('if x < 5 then y > 3')).toBe('if x < 5 then y > 3');
     });
 
     // --- Tables ---
