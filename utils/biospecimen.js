@@ -404,10 +404,6 @@ const biospecimenAPIs = async (req, res) => {
             return res.status(500).json({ message: `Internal Server Error: ${error}`, code: 500 });
         }    
     }
-    else if (api === 'updateParticipantData') {
-        const { updateParticipantData } = require('./sites');
-        return updateParticipantData(req, res, siteCode)
-    }
     else if (api === 'updateParticipantDataNotSite') {
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
