@@ -6,8 +6,8 @@ steps:
     - |
       set -euo pipefail
       for QUEUE_NAME in "${_QUEUE_NAME}" "${_QUEUE_NAME_MICROSOFT}"; do
-        if ! gcloud tasks queues describe "${QUEUE_NAME}" --location="${_LOCATION}" >/dev/null 2>&1; then
-          gcloud tasks queues create "${QUEUE_NAME}" \
+        if ! gcloud tasks queues describe "$${QUEUE_NAME}" --location="${_LOCATION}" >/dev/null 2>&1; then
+          gcloud tasks queues create "$${QUEUE_NAME}" \
             --location="${_LOCATION}" \
             --max-concurrent-dispatches="${_MAX_CONCURRENT_DISPATCHES}" \
             --max-dispatches-per-second="${_MAX_DISPATCHES_PER_SECOND}" \
@@ -15,7 +15,7 @@ steps:
             --min-backoff="${_MIN_BACKOFF}" \
             --quiet
         fi
-        gcloud tasks queues update "${QUEUE_NAME}" \
+        gcloud tasks queues update "$${QUEUE_NAME}" \
           --location="${_LOCATION}" \
           --max-concurrent-dispatches="${_MAX_CONCURRENT_DISPATCHES}" \
           --max-dispatches-per-second="${_MAX_DISPATCHES_PER_SECOND}" \
