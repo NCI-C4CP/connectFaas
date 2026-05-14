@@ -1398,9 +1398,10 @@ const retrieveSiteNotifications = async (siteCode, isParent) => {
  * @param {Object} queries - The query object.
  * @param {string} siteCode - The site code.
  * @param {boolean} isParent - regulates access based on Whether the user is a parent or not.
+ * @param {number} limit - Maximum number of participants to return.
  * @returns {Array<object>} - An array of participant objects.
  */
-const filterDB = async (queries, siteCode, isParent) => {
+const filterDB = async (queries, siteCode, isParent, limit = 100) => {
 
     // Make separate get requests for each query, since Firestore only allows one 'array-contains' query per request.
     // This isolates a single array-contains query (firstName, lastName, email, phone).
@@ -1467,7 +1468,8 @@ const filterDB = async (queries, siteCode, isParent) => {
     // This executes each query and pushes the data to the fetchedResults array.
     const executeQuery = async (query) => {
         const operator = isParent ? 'in' : '==';
-        const snapshot = await (queries['allSiteSearch'] === 'true' ? query.get() : query.where('827220437', operator, siteCode).get());
+        const scopedQuery = queries['allSiteSearch'] === 'true' ? query : query.where('827220437', operator, siteCode);
+        const snapshot = await scopedQuery.limit(limit).get();
         printDocsCount(snapshot, "executeQuery");
         if (snapshot.size !== 0) {
             snapshot.docs.forEach(doc => {
@@ -1540,13 +1542,13 @@ const filterDB = async (queries, siteCode, isParent) => {
             const nonNameQuery = generateQuery(queries);
             await executeQuery(nonNameQuery);
 
-            return fetchedResults;
+            return fetchedResults.slice(0, limit);
         }
   
         removeDuplicateResults();
         removeMismatchedResults();
 
-        return fetchedResults;
+        return fetchedResults.slice(0, limit);
 
     } catch (error) {
       console.error(error);
