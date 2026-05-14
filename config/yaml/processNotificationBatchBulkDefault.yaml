@@ -18,7 +18,7 @@ steps:
   ]
 
 substitutions:
-  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
+  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-24-full/runtimes/nodejs24
   _FUNCTION: processNotificationBatchBulkDefault
   _MEMORY: 2048Mi
   _REGION: us-central1
