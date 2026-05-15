@@ -1,0 +1,55 @@
+steps:
+
+
+
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      set -euo pipefail
+
+      PROJECT_ID="$$(gcloud config get-value project)"
+      OIDC_SERVICE_ACCOUNT_EMAIL="${_OIDC_SERVICE_ACCOUNT_EMAIL}"
+      if [[ "$${OIDC_SERVICE_ACCOUNT_EMAIL}" == "AUTO" ]]; then
+        OIDC_SERVICE_ACCOUNT_EMAIL="connect-functions-firestore@$${PROJECT_ID}.iam.gserviceaccount.com"
+      fi
+      SERVICE_URL="$$(gcloud run services describe "${_SERVICE}" --region="${_REGION}" --format='value(status.url)')"
+
+      gcloud run services add-iam-policy-binding "${_SERVICE}" \
+        --region="${_REGION}" \
+        --member="serviceAccount:$${OIDC_SERVICE_ACCOUNT_EMAIL}" \
+        --role="roles/run.invoker"
+
+      if gcloud scheduler jobs describe "${_SCHEDULER_JOB}" --location="${_SCHEDULER_LOCATION}" >/dev/null 2>&1; then
+        gcloud scheduler jobs update http "${_SCHEDULER_JOB}" \
+          --location="${_SCHEDULER_LOCATION}" \
+          --schedule="${_SCHEDULE}" \
+          --time-zone="${_TIME_ZONE}" \
+          --uri="$${SERVICE_URL}" \
+          --http-method=POST \
+          --headers=Content-Type=application/json \
+          --message-body='{"mode":"audit"}' \
+          --oidc-service-account-email="$${OIDC_SERVICE_ACCOUNT_EMAIL}" \
+          --oidc-token-audience="$${SERVICE_URL}"
+      else
+        gcloud scheduler jobs create http "${_SCHEDULER_JOB}" \
+          --location="${_SCHEDULER_LOCATION}" \
+          --schedule="${_SCHEDULE}" \
+          --time-zone="${_TIME_ZONE}" \
+          --uri="$${SERVICE_URL}" \
+          --http-method=POST \
+          --headers=Content-Type=application/json \
+          --message-body='{"mode":"audit"}' \
+          --oidc-service-account-email="$${OIDC_SERVICE_ACCOUNT_EMAIL}" \
+          --oidc-token-audience="$${SERVICE_URL}"
+      fi
+
+substitutions:
+  _OIDC_SERVICE_ACCOUNT_EMAIL: AUTO
+  _REGION: us-central1
+  _SCHEDULE: '0 1 1 * *'
+  _SCHEDULER_JOB: auditdatadestruction-monthly
+  _SCHEDULER_LOCATION: us-central1
+  _SERVICE: auditdatadestruction
+  _TIME_ZONE: America/New_York

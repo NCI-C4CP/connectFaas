@@ -10,6 +10,7 @@ const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive'
 const { dashboard } = require('./utils/dashboard');
 const { importToBigQuery, firestoreExport, exportNotificationsToBucket } = require('./utils/events');
 const { participantDataCleanup } = require('./utils/participantDataCleanup');
+const { auditDataDestruction } = require('./utils/dataDestructionAudit');
 const { webhook } = require('./utils/webhook');
 const { heartbeat } = require('./utils/heartbeat');
 const { physicalActivity } = require('./utils/reports');
@@ -50,6 +51,7 @@ exports.exportNotificationsToBucket = onRequest(exportNotificationsToBucket);
 
 // End-Points for Participant Data Cleaning
 exports.participantDataCleanup = onRequest(participantDataCleanup);
+exports.auditDataDestruction = onRequest(auditDataDestruction);
 
 // End-Points for Event Webhook
 exports.webhook = webhook;

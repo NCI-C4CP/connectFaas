@@ -4,6 +4,7 @@
  */
 
 const { createFirebaseMocks } = require('../mocks/mockFactory');
+const { V0_DATA_DESTRUCTION_STUB_VARS, getCurrentPolicy } = require('../../utils/dataDestructionPolicy');
 
 let factory, mocks;
 let fieldMapping;
@@ -17,8 +18,8 @@ const dataHasBeenDestroyedCId = () => fieldMapping.participantMap.dataHasBeenDes
 const destroyDataCategoricalCId = () => fieldMapping.participantMap.destroyDataCategorical.toString();
 const dateRequestedDataDestroyCId = () => fieldMapping.participantMap.dateRequestedDataDestroy.toString();
 const dateTimeDataDestroyedCId = () => fieldMapping.participantMap.dateTimeDataDestroyed.toString();
-const concernedAboutInfoOnlineCId = () => fieldMapping.dataDestruction.concernedAboutInfoOnline.toString();
-const technicalProblemsCId = () => fieldMapping.dataDestruction.technicalProblems.toString();
+const concernedAboutInfoOnlineCId = () => V0_DATA_DESTRUCTION_STUB_VARS.concernedAboutInfoOnline.toString();
+const technicalProblemsCId = () => V0_DATA_DESTRUCTION_STUB_VARS.technicalProblems.toString();
 const requestedAndSignCId = () => fieldMapping.participantMap.requestedAndSign;
 const uninvitedRecruitsCId = () => fieldMapping.participantMap.uninvitedRecruits.toString();
 
@@ -418,7 +419,7 @@ describe('Participant Data Cleanup', () => {
             });
 
             it('should delete sub-fields of physicalActivity that are not in subStubFieldArray', async () => {
-                const physicalActivityCId = fieldMapping.dataDestruction.physicalActivity.toString();
+                const physicalActivityCId = V0_DATA_DESTRUCTION_STUB_VARS.physicalActivity.toString();
                 const { data, doc } = createDestructionParticipant({
                     [physicalActivityCId]: {
                         someExerciseData: 'val',
@@ -543,7 +544,7 @@ describe('Participant Data Cleanup', () => {
             });
 
             it('should still mark as destroyed when participant has only stub fields', async () => {
-                // Build a participant with ONLY stub fields — no extra data to delete
+                // Build a participant with only stub fields, no extra data to delete.
                 const stubOnlyData = {
                     Connect_ID: '1234567890',
                     token: 'test-token-abc',
@@ -552,9 +553,12 @@ describe('Participant Data Cleanup', () => {
                     state: { uid: 'firebase-uid' },
                 };
 
-                // Add all dataDestruction stub fields first
-                for (const val of Object.values(fieldMapping.dataDestruction)) {
-                    stubOnlyData[val.toString()] = 'stub-val';
+                // Add every CID-keyed retained field for the active policy so the
+                // participant has nothing destruction-cleanup would mark for delete.
+                for (const val of Object.values(getCurrentPolicy().retainedFieldsNamed)) {
+                    if (typeof val === 'number') {
+                        stubOnlyData[val.toString()] = 'stub-val';
+                    }
                 }
 
                 // Set eligibility fields AFTER the loop so they aren't overwritten
@@ -999,13 +1003,11 @@ describe('Participant Data Cleanup', () => {
                 expect(participantUpdateStub).not.toHaveBeenCalled();
             });
 
-            it('should continue processing next participant when updatedData building throws for a malformed record', async () => {
-                // p1 has query: null — Object.keys(null) will throw during updatedData building.
-                // p2 is normal. The outer per-participant try-catch should isolate the failure.
+            it('should tolerate null retained object fields while processing participants', async () => {
                 const p1 = createDestructionParticipant({
                     _docId: 'doc-malformed',
                     Connect_ID: '111',
-                    query: null, // will cause Object.keys(null) to throw
+                    query: null,
                 });
                 const p2 = createDestructionParticipant({ _docId: 'doc-normal', Connect_ID: '222' });
 
@@ -1013,9 +1015,7 @@ describe('Participant Data Cleanup', () => {
 
                 await firestoreModule.removeParticipantsDataDestruction();
 
-                // p1 should NOT be updated (threw during updatedData building)
-                expect(updateStubs['doc-malformed']).not.toHaveBeenCalled();
-                // p2 should still be processed successfully
+                expect(updateStubs['doc-malformed']).toHaveBeenCalledOnce();
                 expect(updateStubs['doc-normal']).toHaveBeenCalledOnce();
             });
 
@@ -1435,7 +1435,7 @@ describe('Participant Data Cleanup', () => {
             };
 
             const connectId = data.Connect_ID;
-            const bucketName = `pathology-reports-some-site-prod-6d04`;
+            const bucketName = `pathology-reports_kpco_connect-prod`;
             const fileName = 'report1.pdf';
             const fileNameCidStr = fieldMapping.pathologyReportFilename.toString();
 
@@ -1533,27 +1533,104 @@ describe('Participant Data Cleanup', () => {
                 process.env.GCLOUD_PROJECT = savedProject;
             }
         });
+
+        it('should not delete pathology metadata or mark destroyed for an unexpected bucket', async () => {
+            const { data, doc } = createDestructionParticipant();
+
+            const participantUpdateStub = vi.fn().mockResolvedValue();
+            const batchDeleteStub = vi.fn();
+            const batchCommitStub = vi.fn().mockResolvedValue();
+            const mockBatch = {
+                delete: batchDeleteStub,
+                commit: batchCommitStub,
+            };
+            batchDeleteStub.mockReturnValue(mockBatch);
+            mocks.firestore.batch.mockReturnValue(mockBatch);
+
+            const participantsSnapshot = { empty: false, size: 1, docs: [doc] };
+            const participantsQueryObj = {
+                where: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue(participantsSnapshot),
+            };
+            const emptySnapshot = { empty: true, size: 0, docs: [] };
+            const chainableQuery = {
+                where: vi.fn().mockReturnThis(),
+                select: vi.fn().mockReturnThis(),
+                limit: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue(emptySnapshot),
+            };
+
+            const fileNameCidStr = fieldMapping.pathologyReportFilename.toString();
+            const pathologySnapshot = {
+                empty: false,
+                size: 1,
+                docs: [{
+                    id: 'path-doc-1',
+                    data: () => ({
+                        Connect_ID: data.Connect_ID,
+                        bucketName: 'pathology-reports_kpco_connect-stg',
+                        [fileNameCidStr]: 'report1.pdf',
+                    }),
+                    ref: { id: 'path-doc-1' },
+                }],
+            };
+
+            mocks.firestore.collection.mockImplementation((collectionPath) => {
+                if (collectionPath === 'participants') {
+                    return {
+                        doc: vi.fn().mockReturnValue({
+                            update: participantUpdateStub,
+                            get: vi.fn().mockResolvedValue({ exists: true }),
+                            set: vi.fn().mockResolvedValue(),
+                            delete: vi.fn().mockResolvedValue(),
+                        }),
+                        where: vi.fn().mockReturnValue(participantsQueryObj),
+                        get: vi.fn().mockResolvedValue(participantsSnapshot),
+                    };
+                }
+
+                if (collectionPath === 'pathologyReports') {
+                    return {
+                        doc: vi.fn().mockImplementation(() => ({
+                            get: vi.fn().mockResolvedValue({ exists: false }),
+                            delete: vi.fn().mockResolvedValue(),
+                        })),
+                        where: vi.fn().mockReturnValue({
+                            select: vi.fn().mockReturnValue({
+                                get: vi.fn().mockResolvedValue(pathologySnapshot),
+                            }),
+                        }),
+                    };
+                }
+
+                return {
+                    doc: vi.fn().mockImplementation(() => ({
+                        get: vi.fn().mockResolvedValue({ exists: false }),
+                        delete: vi.fn().mockResolvedValue(),
+                    })),
+                    where: vi.fn().mockReturnValue(chainableQuery),
+                    get: vi.fn().mockResolvedValue(emptySnapshot),
+                };
+            });
+
+            await firestoreModule.removeParticipantsDataDestruction();
+
+            expect(participantUpdateStub).not.toHaveBeenCalled();
+            expect(batchDeleteStub).not.toHaveBeenCalled();
+        });
     });
 
     describe('DHQ deidentification', () => {
         it('should NOT include dhq3Username and dhq3StudyID in the dataDestruction stub fields', () => {
-            const dataDestructionValues = Object.values(fieldMapping.dataDestruction).map((id) =>
-                id.toString()
-            );
-            const dhq3UsernameCid = fieldMapping.dhq3Username.toString();
-            const dhq3StudyIdCid = fieldMapping.dhq3StudyID.toString();
-
-            expect(dataDestructionValues).not.toContain(dhq3UsernameCid);
-            expect(dataDestructionValues).not.toContain(dhq3StudyIdCid);
+            const { retainedTopLevelFields } = getCurrentPolicy();
+            expect(retainedTopLevelFields).not.toContain(fieldMapping.dhq3Username.toString());
+            expect(retainedTopLevelFields).not.toContain(fieldMapping.dhq3StudyID.toString());
         });
 
         it('should include Concerned About Info Online and Technical Problems in the dataDestruction stub fields', () => {
-            const dataDestructionValues = Object.values(fieldMapping.dataDestruction).map((id) =>
-                id.toString()
-            );
-
-            expect(dataDestructionValues).toContain(concernedAboutInfoOnlineCId());
-            expect(dataDestructionValues).toContain(technicalProblemsCId());
+            const { retainedTopLevelFields } = getCurrentPolicy();
+            expect(retainedTopLevelFields).toContain(concernedAboutInfoOnlineCId());
+            expect(retainedTopLevelFields).toContain(technicalProblemsCId());
         });
 
         it('should delete dhq3Username and dhq3StudyID fields during data destruction', async () => {
