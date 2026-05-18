@@ -10,7 +10,8 @@ const SENDGRID_WEBHOOK_CONCURRENCY = 10;
 const shouldAcceptSendGridExampleEvents = (query = {}) =>
     query.acceptExampleEvents === "true" || process.env.SENDGRID_ACCEPT_EXAMPLE_EVENTS === "true";
 
-// Keep webhook correlation strict. Example/test events should never mutate
+// Keep webhook correlation strict. One SendGrid account handles all environments.
+// Example/test events should never mutate
 // participant notification history or suppression state.
 const isSendGridCorrelatedEvent = (event = {}) =>
     Boolean(event.notification_id) && event.gcloud_project === process.env.GCLOUD_PROJECT;
@@ -24,24 +25,30 @@ const processVerifiedSendGridEvents = async (events = [], { acceptExampleEvents 
     for (let i = 0; i < events.length; i += SENDGRID_WEBHOOK_CONCURRENCY) {
         const chunk = events.slice(i, i + SENDGRID_WEBHOOK_CONCURRENCY);
         const results = await Promise.allSettled(chunk.map(async (event) => {
-            if (isSendGridCorrelatedEvent(event)) {
-                await firestoreUtils.processSendGridEvent(event);
-                return { type: "processed" };
+            try {
+                if (isSendGridCorrelatedEvent(event)) {
+                    await firestoreUtils.processSendGridEvent(event);
+                    return { type: "processed" };
+                }
+                if (acceptExampleEvents) {
+                    return { type: "example" };
+                }
+                return { type: "ignored" };
+            } catch (err) {
+                // Only correlated events can reach here uncorrelated and example paths return early without throwing.
+                console.error("SendGrid event processing error:", {
+                    eventType: event?.event,
+                    notificationId: event?.notification_id,
+                    message: err?.message,
+                    code: err?.code,
+                });
+                throw err;
             }
-
-            if (acceptExampleEvents) {
-                console.log(`Accepted SendGrid example event for testing. event=${event?.event || "unknown"} email=${event?.email || "unknown"}`);
-                return { type: "example" };
-            }
-
-            console.warn(`Ignoring uncorrelated SendGrid webhook event. event=${event?.event || "unknown"} email=${event?.email || "unknown"}`);
-            return { type: "ignored" };
         }));
 
         for (const result of results) {
             if (result.status === "rejected") {
                 failedCount++;
-                console.error("SendGrid event processing error:", result.reason);
             } else if (result.value.type === "processed") {
                 processedCount++;
             } else if (result.value.type === "example") {
@@ -94,6 +101,13 @@ const handleReceivedSendGridEvent = async (req, res, { forceAcceptExampleEvents 
         }
 
         const summary = await processVerifiedSendGridEvents(req.body, { acceptExampleEvents: forceAcceptExampleEvents || shouldAcceptSendGridExampleEvents(req.query) });
+        // Batch-level summary — counts only, no per-event detail. Skipped for pure-processed
+        // batches (typical prod traffic) to keep prod logs quiet, but fires in dev/stage where
+        // uncorrelated cross-env events dominate, giving ops visibility into the volume without
+        // ever surfacing recipient identifiers.
+        if (summary.ignored > 0 || summary.exampleEventsAccepted > 0 || summary.failed > 0) {
+            console.log(`SendGrid webhook batch: ${summary.processed} processed, ${summary.ignored} ignored (uncorrelated), ${summary.exampleEventsAccepted} examples, ${summary.failed} failed (total ${req.body.length})`);
+        }
         if (summary.failed > 0) {
             console.error(`SendGrid webhook: ${summary.failed}/${req.body.length} events failed`);
         }
