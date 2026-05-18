@@ -9,7 +9,11 @@ const NESTED_PARENT_CID_MAP = {
 };
 
 // V0 Data Destruction Stub Variables at the V1 pre-release commit, when Data Destruction auditing was introduced (May 2026 release).
-// INCLUDING firebaseAuthenticationEmail (V1 removed) and EXCLUDING dateRevokedHIPAA (V1 added).
+// firebaseAuthenticationEmail: (V1 removed)
+// dateRevokedHIPAA: (V1 added)
+// Note on dhq3Username: it is not retained. It is a DHQ-side respondent
+// ID that would re-identify the participant if linked back to DHQ records.
+// The trade-off is that, by breaking the linkage, we can't audit that variable.
 // V0 locked for versioning/auditing. Do not edit. To update the data destruction process for new requirements, create a new delta in DATA_DESTRUCTION_POLICY_DELTAS.
 const V0_DATA_DESTRUCTION_STUB_VARS = {
     consentFirstName: 471168198,

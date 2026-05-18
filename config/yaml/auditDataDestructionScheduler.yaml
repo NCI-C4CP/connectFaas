@@ -30,6 +30,7 @@ steps:
           --http-method=POST \
           --headers=Content-Type=application/json \
           --message-body='{"mode":"audit"}' \
+          --attempt-deadline="${_ATTEMPT_DEADLINE}" \
           --oidc-service-account-email="$${OIDC_SERVICE_ACCOUNT_EMAIL}" \
           --oidc-token-audience="$${SERVICE_URL}"
       else
@@ -41,6 +42,7 @@ steps:
           --http-method=POST \
           --headers=Content-Type=application/json \
           --message-body='{"mode":"audit"}' \
+          --attempt-deadline="${_ATTEMPT_DEADLINE}" \
           --oidc-service-account-email="$${OIDC_SERVICE_ACCOUNT_EMAIL}" \
           --oidc-token-audience="$${SERVICE_URL}"
       fi
@@ -53,3 +55,5 @@ substitutions:
   _SCHEDULER_LOCATION: us-central1
   _SERVICE: auditdatadestruction
   _TIME_ZONE: America/New_York
+  # Match the Cloud Run service timeout (1800s) so Scheduler does not retry while the audit is still running.
+  _ATTEMPT_DEADLINE: 1800s

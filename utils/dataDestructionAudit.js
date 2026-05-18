@@ -189,13 +189,18 @@ const auditRelatedCollections = async ({ participant, mode, dryRun }) => {
     const orphanedCollections = [];
     const collectionErrors = [];
     const warnings = [];
+    const coverageGaps = [];
     const cleanupActions = [];
 
     for (const collection of listOfCollectionsRelatedToDataDestruction) {
         const spec = getDataDestructionCollectionQuerySpec(collection, participant);
 
         if (spec.skipped) {
-            if (!DHQ_KEYED_COLLECTIONS.has(collection)) {
+            // DHQ collections are keyed by dhq3Username, which is deliberately not retained on the destroyed stub: dhq3Username is a DHQ-side respondent
+            // ID and retaining it would create a re-identification linkage back to the participant.
+            if (DHQ_KEYED_COLLECTIONS.has(collection)) {
+                coverageGaps.push({ collection, reason: spec.skipReason });
+            } else {
                 warnings.push(`${collection}: ${spec.skipReason}`);
             }
             continue;
@@ -241,6 +246,7 @@ const auditRelatedCollections = async ({ participant, mode, dryRun }) => {
         orphanedCollections,
         collectionErrors,
         warnings,
+        coverageGaps,
         cleanupActions,
     };
 };
@@ -520,6 +526,7 @@ const auditParticipantDataDestruction = async ({ doc, mode, dryRun, runId, proje
         storageErrors,
         cleanupActions,
         warnings,
+        coverageGaps: relatedResult.coverageGaps,
         checkedAt,
     };
 };
@@ -540,6 +547,7 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
         missingDefaultRetainedFields: 0,
         collectionErrors: 0,
         storageErrors: 0,
+        coverageGaps: 0,
     };
     const cleanupCounts = {
         relatedDocsDeleted: 0,
@@ -561,6 +569,7 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
         findingCounts.missingDefaultRetainedFields += result.missingDefaultRetainedFields.length;
         findingCounts.collectionErrors += result.collectionErrors.length;
         findingCounts.storageErrors += result.storageErrors.length;
+        findingCounts.coverageGaps += (result.coverageGaps || []).length;
 
         result.cleanupActions.forEach((action) => {
             if (action.type === "deleteRelatedDocs") cleanupCounts.relatedDocsDeleted += action.count;
@@ -1022,8 +1031,11 @@ const runDataDestructionAudit = async (rawOptions = {}, dependencies = {}) => {
 const auditDataDestruction = async (req, res) => {
     console.log("Received request for auditDataDestruction");
 
+    // Resolve so unit tests can substitute runDataDestructionAudit.
+    const runner = module.exports.runDataDestructionAudit;
+
     if (!req || !res) {
-        return runDataDestructionAudit();
+        return runner();
     }
 
     if (req.method !== "POST") {
@@ -1031,16 +1043,21 @@ const auditDataDestruction = async (req, res) => {
     }
 
     try {
-        const result = await runDataDestructionAudit(req.body || {});
+        const result = await runner(req.body || {});
 
         // Both delivery channels failing means the report reached nobody.
         const boxFailed = Boolean(result.summary?.boxUploadError);
         const emailFailed = Boolean(result.summary?.emailDelivery?.error);
         if (boxFailed && emailFailed) {
+            const statusCode = 502;
             console.error(
                 `Data destruction audit ${result.summary.runId} delivered no artifacts. ` +
                 `Box: ${result.summary.boxUploadError}; Email: ${result.summary.emailDelivery.error}`
             );
+            return res.status(statusCode).json({
+                ...getResponseJSON("Data destruction audit completed, but all report delivery channels failed.", statusCode),
+                summary: result.summary,
+            });
         }
 
         return res.status(200).json({

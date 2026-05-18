@@ -887,7 +887,7 @@ describe("dataDestructionAudit", () => {
             expect(result.summary.emailDelivery.error).toBe("no recipients");
         });
 
-        it("both Box and email failures still produce a 200 result", async () => {
+        it("records both Box and email failures on the summary without aborting the run", async () => {
             mocks.firestore.collection.mockImplementation((path) => {
                 if (path === "participants") return noParticipantsCollection();
                 return { where: vi.fn().mockReturnValue(queryReturning(emptySnapshot)) };
@@ -902,6 +902,100 @@ describe("dataDestructionAudit", () => {
             expect(result.summary.boxUploadError).toBe("box");
             expect(result.summary.emailDelivery.error).toBe("email");
             expect(result.summary.participantCounts.total).toBe(0);
+        });
+
+        it("HTTP handler returns 502 when both Box and email delivery fail", async () => {
+            mocks.firestore.collection.mockImplementation((path) => {
+                if (path === "participants") return noParticipantsCollection();
+                return { where: vi.fn().mockReturnValue(queryReturning(emptySnapshot)) };
+            });
+
+            const originalRun = audit.runDataDestructionAudit;
+            const stubbedRun = vi.fn().mockResolvedValue({
+                summary: {
+                    runId: "test-runid",
+                    boxUploadError: "box exploded",
+                    emailDelivery: { error: "mail rejected" },
+                },
+                participantResults: [],
+            });
+            audit.runDataDestructionAudit = stubbedRun;
+
+            const jsonFn = vi.fn().mockReturnThis();
+            const res = {
+                status: vi.fn().mockReturnThis(),
+                json: jsonFn,
+            };
+            const req = { method: "POST", body: {} };
+
+            try {
+                await audit.auditDataDestruction(req, res);
+            } finally {
+                audit.runDataDestructionAudit = originalRun;
+            }
+
+            expect(res.status).toHaveBeenCalledWith(502);
+            const payload = jsonFn.mock.calls[0][0];
+            expect(payload.code).toBe(502);
+            expect(payload.summary.boxUploadError).toBe("box exploded");
+            expect(payload.summary.emailDelivery.error).toBe("mail rejected");
+        });
+
+        it("HTTP handler still returns 200 when only Box fails (email delivered)", async () => {
+            const originalRun = audit.runDataDestructionAudit;
+            audit.runDataDestructionAudit = vi.fn().mockResolvedValue({
+                summary: {
+                    runId: "test-runid",
+                    boxUploadError: "box exploded",
+                    emailDelivery: { error: null, recipients: ["a@b.com"] },
+                },
+                participantResults: [],
+            });
+
+            const jsonFn = vi.fn().mockReturnThis();
+            const res = { status: vi.fn().mockReturnThis(), json: jsonFn };
+            const req = { method: "POST", body: {} };
+
+            try {
+                await audit.auditDataDestruction(req, res);
+            } finally {
+                audit.runDataDestructionAudit = originalRun;
+            }
+
+            expect(res.status).toHaveBeenCalledWith(200);
+        });
+
+        it("records DHQ-keyed orphan-lookup skips as structured coverageGaps", async () => {
+            // Destroyed stub does not retain dhq3Username, so DHQ orphan detection cannot run.
+            const participantDoc = destroyedParticipantDoc();
+            const participantsSnapshot = { empty: false, size: 1, docs: [participantDoc] };
+            mocks.firestore.collection.mockImplementation((path) => {
+                if (path === "participants") {
+                    return {
+                        where: vi.fn().mockReturnThis(),
+                        get: vi.fn().mockResolvedValue(participantsSnapshot),
+                    };
+                }
+                return { where: vi.fn().mockReturnValue(queryReturning(emptySnapshot)) };
+            });
+
+            const result = await audit.runDataDestructionAudit({}, {
+                uploadAuditArtifacts: vi.fn().mockResolvedValue({
+                    summaryFileName: "s", participantsFileName: "p", summaryFileId: "s", participantsFileId: "p",
+                }),
+                emailAuditArtifacts: vi.fn().mockResolvedValue({ recipients: [], attachments: [] }),
+                now: () => new Date("2026-05-14T05:00:00.000Z"),
+            });
+
+            const [participantResult] = result.participantResults;
+            const gapCollections = participantResult.coverageGaps.map((gap) => gap.collection);
+            expect(gapCollections).toEqual(expect.arrayContaining([
+                "dhqAnalysisResults",
+                "dhqDetailedAnalysis",
+                "dhqRawAnswers",
+            ]));
+            // Coverage gap count should equal the number of DHQ collections in the audit list.
+            expect(result.summary.findingCounts.coverageGaps).toBe(participantResult.coverageGaps.length);
         });
 
         it("summary aggregates policy versions applied as a histogram", async () => {

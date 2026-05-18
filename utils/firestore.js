@@ -957,6 +957,7 @@ const deletePathologyReports = async (connectId) => {
 const removeParticipantsDataDestruction = async () => {
     try {
         let count = 0;
+        let validationFailureCount = 0;
         const millisecondsWait = 5184000000; // 60days
         // CID for participant's data destruction status.
         const dataHasBeenDestroyed =
@@ -996,7 +997,6 @@ const removeParticipantsDataDestruction = async () => {
                 timeDiff > millisecondsWait
             ) {
                 try {
-                    const destroyedAt = new Date().toISOString();
                     const activePolicy = getCurrentPolicy();
                     const { updateData: updatedData } = buildDataDestructionUpdate(
                         participant,
@@ -1022,6 +1022,9 @@ const removeParticipantsDataDestruction = async () => {
 
                     if (errors.length === 0) {
                         try {
+                            // Stamp after cleanup so dateTimeDataDestroyed records when destruction
+                            // actually completed — the policy resolver matches on this value.
+                            const destroyedAt = new Date().toISOString();
                             updatedData[dataHasBeenDestroyed] = fieldMapping.yes;
                             updatedData[dateTimeDataDestroyedCId] = destroyedAt;
                             updatedData[fieldMapping.participationStatus] = fieldMapping.participantMap.dataDestroyedStatus;
@@ -1051,6 +1054,11 @@ const removeParticipantsDataDestruction = async () => {
                                         });
 
                                     if (validation.status === "fail") {
+                                        // Destruction was committed, but the stub contains unexpected
+                                        // retained fields or is missing required ones. The audit
+                                        // pipeline will catch and clean this; we surface it here so
+                                        // the production destruction caller has a failure signal.
+                                        validationFailureCount++;
                                         console.error(validationMessage);
                                     } else {
                                         console.log(validationMessage);
@@ -1074,6 +1082,9 @@ const removeParticipantsDataDestruction = async () => {
         }
 
         console.log(`Successfully updated ${count} participants for data destruction`);
+        if (validationFailureCount > 0) {
+            console.error(`Data destruction completed with ${validationFailureCount} post-destruction validation failure(s). See per-participant logs for unexpected stub fields; the data destruction audit will detect and clean these.`);
+        }
     } catch (error) {
         console.error(`Error occurred when updating documents: ${error}`);
     }
