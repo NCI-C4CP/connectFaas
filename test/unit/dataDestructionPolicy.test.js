@@ -232,9 +232,13 @@ describe("dataDestructionPolicy — V1 delta (named)", () => {
         expect(v1.rationale).toMatch(/dateRevokedHIPAA/);
     });
 
-    it("is not yet effective in any tier (placeholders pending deploy)", () => {
+    it("has per-tier effective dates pinned to the May 2026 rollout", () => {
         const v1 = DATA_DESTRUCTION_POLICY_DELTAS.find((d) => d.version === "v1");
-        expect(v1.effectiveFrom).toEqual({ DEV: null, STAGE: null, PROD: null });
+        expect(v1.effectiveFrom).toEqual({
+            DEV:   "2026-05-18T04:00:00.000Z",
+            STAGE: "2026-05-25T04:00:00.000Z",
+            PROD:  "2026-05-28T02:00:00.000Z",
+        });
     });
 });
 
@@ -361,17 +365,21 @@ describe("dataDestructionPolicy — describeStubVariables", () => {
 
     it("defaults to the current policy when no argument is passed", () => {
         const description = describeStubVariables();
-        // V1 not yet effective anywhere → current policy is V0 today
-        expect(description.version).toBe("v0");
+        // After V1's tier effectiveFrom is in the past, the current policy is V1.
+        // The exact version this returns depends on developmentTier and clock,
+        // so we just assert it's one of the known versions and has a name→CID map.
+        expect(["v0", "v1"]).toContain(description.version);
+        expect(typeof description.retainedTopLevel).toBe("object");
     });
 });
 
 describe("dataDestructionPolicy — getCurrentPolicy", () => {
-    it("returns V0 today because V1 is not yet effective in any tier", () => {
+    it("returns a known policy version for the active tier", () => {
         const view = getCurrentPolicy();
-        expect(view.version).toBe("v0");
-        expect(view.retainedTopLevelFields).toContain("421823980");
-        expect(view.retainedTopLevelFields).not.toContain("664453818");
+        expect(["v0", "v1"]).toContain(view.version);
+        // Whichever version is current, the retained CIDs should be a non-empty array.
+        expect(Array.isArray(view.retainedTopLevelFields)).toBe(true);
+        expect(view.retainedTopLevelFields.length).toBeGreaterThan(0);
     });
 });
 

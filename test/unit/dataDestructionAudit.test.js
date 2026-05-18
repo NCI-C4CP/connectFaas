@@ -101,13 +101,16 @@ describe("dataDestructionAudit", () => {
     });
 
     afterEach(() => {
-        delete process.env.BOX_DATA_DESTRUCTION_AUDIT_FOLDER_ID;
         delete process.env.BOX_CLIENT_ID_SECRET;
-        delete process.env.BOX_CLIENT_SECRET_SECRET;
+        delete process.env.BOX_CLIENT_SECRET;
         delete process.env.BOX_ENTERPRISE_ID;
-        delete process.env.DATA_DESTRUCTION_AUDIT_EMAIL_RECIPIENTS;
         delete process.env.GCLOUD_SENDGRID_SECRET;
     });
+
+    const stubAppSettings = (dataDestructionAudit) =>
+        vi.fn().mockResolvedValue(
+            dataDestructionAudit === undefined ? {} : { dataDestructionAudit }
+        );
 
     it("uses token, DHQ username, and Connect_ID lookup keys for orphan detection", () => {
         const participant = {
@@ -532,7 +535,7 @@ describe("dataDestructionAudit", () => {
     describe("Box upload", () => {
         beforeEach(() => {
             process.env.BOX_CLIENT_ID_SECRET = "projects/test/secrets/box-client-id/versions/latest";
-            process.env.BOX_CLIENT_SECRET_SECRET = "projects/test/secrets/box-client-secret/versions/latest";
+            process.env.BOX_CLIENT_SECRET = "projects/test/secrets/box-client-secret/versions/latest";
             process.env.BOX_ENTERPRISE_ID = "enterprise-1";
         });
 
@@ -560,8 +563,6 @@ describe("dataDestructionAudit", () => {
         });
 
         it("uploads Box audit artifacts with exact filenames", async () => {
-            process.env.BOX_DATA_DESTRUCTION_AUDIT_FOLDER_ID = "folder-1";
-
             const fetchFn = vi.fn()
                 .mockResolvedValueOnce(okJson({ access_token: "box-token" }))
                 .mockResolvedValueOnce({
@@ -586,6 +587,7 @@ describe("dataDestructionAudit", () => {
                 summary,
                 participantsNdjson: "",
                 fileNames,
+                settings: { boxFolderID: "folder-1" },
                 getSecretFn: vi.fn().mockResolvedValue("secret"),
                 fetchFn,
             });
@@ -603,11 +605,33 @@ describe("dataDestructionAudit", () => {
         });
 
         it("refuses upload when the folder ID is still a TODO placeholder", async () => {
-            process.env.BOX_DATA_DESTRUCTION_AUDIT_FOLDER_ID = "TODO_DEV_BOX_FOLDER_ID";
             await expect(audit.uploadAuditArtifacts({
                 summary: {},
                 participantsNdjson: "",
                 fileNames: audit.buildAuditFileNames("20260514"),
+                settings: { boxFolderID: "TODO_DEV_BOX_FOLDER_ID" },
+                getSecretFn: vi.fn(),
+                fetchFn: vi.fn(),
+            })).rejects.toThrow(/Box upload is not configured/);
+        });
+
+        it("refuses upload when the folder ID is an empty string", async () => {
+            await expect(audit.uploadAuditArtifacts({
+                summary: {},
+                participantsNdjson: "",
+                fileNames: audit.buildAuditFileNames("20260514"),
+                settings: { boxFolderID: "" },
+                getSecretFn: vi.fn(),
+                fetchFn: vi.fn(),
+            })).rejects.toThrow(/Box upload is not configured/);
+        });
+
+        it("refuses upload when the folder ID is missing from settings entirely", async () => {
+            await expect(audit.uploadAuditArtifacts({
+                summary: {},
+                participantsNdjson: "",
+                fileNames: audit.buildAuditFileNames("20260514"),
+                settings: {},
                 getSecretFn: vi.fn(),
                 fetchFn: vi.fn(),
             })).rejects.toThrow(/Box upload is not configured/);
@@ -674,7 +698,6 @@ describe("dataDestructionAudit", () => {
         });
 
         it("sends summary + NDJSON attachments through the injected SendGrid client", async () => {
-            process.env.DATA_DESTRUCTION_AUDIT_EMAIL_RECIPIENTS = "team@example.com, lead@example.com";
             process.env.GCLOUD_SENDGRID_SECRET = "projects/p/secrets/sendgrid/versions/1";
 
             const sgClient = { setApiKey: vi.fn(), send: vi.fn().mockResolvedValue() };
@@ -694,6 +717,7 @@ describe("dataDestructionAudit", () => {
                 summary,
                 participantsNdjson: '{"x":1}\n',
                 fileNames,
+                settings: { emailRecipients: ["team@example.com", "lead@example.com"] },
                 getSecretFn,
                 sgClient,
             });
@@ -713,29 +737,29 @@ describe("dataDestructionAudit", () => {
             expect(result.recipients).toEqual(["team@example.com", "lead@example.com"]);
         });
 
-        it("throws when no recipients are configured", async () => {
+        it("throws when settings has no recipients configured", async () => {
             await expect(audit.emailAuditArtifacts({
                 summary: {},
                 participantsNdjson: "",
                 fileNames: audit.buildAuditFileNames("20260514"),
+                settings: {},
                 getSecretFn: vi.fn(),
                 sgClient: { setApiKey: vi.fn(), send: vi.fn() },
             })).rejects.toThrow(/Email delivery is not configured/);
         });
 
         it("throws when GCLOUD_SENDGRID_SECRET is unset", async () => {
-            process.env.DATA_DESTRUCTION_AUDIT_EMAIL_RECIPIENTS = "a@b.com";
             await expect(audit.emailAuditArtifacts({
                 summary: {},
                 participantsNdjson: "",
                 fileNames: audit.buildAuditFileNames("20260514"),
+                settings: { emailRecipients: ["a@b.com"] },
                 getSecretFn: vi.fn(),
                 sgClient: { setApiKey: vi.fn(), send: vi.fn() },
             })).rejects.toThrow(/GCLOUD_SENDGRID_SECRET/);
         });
 
         it("prefixes subject with DRY RUN when dryRun is set", async () => {
-            process.env.DATA_DESTRUCTION_AUDIT_EMAIL_RECIPIENTS = "a@b.com";
             process.env.GCLOUD_SENDGRID_SECRET = "x";
             const sgClient = { setApiKey: vi.fn(), send: vi.fn().mockResolvedValue() };
             await audit.emailAuditArtifacts({
@@ -745,10 +769,63 @@ describe("dataDestructionAudit", () => {
                 },
                 participantsNdjson: "",
                 fileNames: audit.buildAuditFileNames("20260514"),
+                settings: { emailRecipients: ["a@b.com"] },
                 getSecretFn: vi.fn().mockResolvedValue("k"),
                 sgClient,
             });
             expect(sgClient.send.mock.calls[0][0].subject.startsWith("DRY RUN ")).toBe(true);
+        });
+
+        describe("settings helpers", () => {
+            it("getDataDestructionAuditSettings reads the dataDestructionAudit sub-object once", async () => {
+                const getAppSettingsFn = stubAppSettings({
+                    emailRecipients: ["a@b.com"],
+                    boxFolderID: "folder-1",
+                });
+                const result = await audit.getDataDestructionAuditSettings(getAppSettingsFn);
+                expect(result).toEqual({ emailRecipients: ["a@b.com"], boxFolderID: "folder-1" });
+                expect(getAppSettingsFn).toHaveBeenCalledOnce();
+                expect(getAppSettingsFn).toHaveBeenCalledWith("connectFaas", ["dataDestructionAudit"]);
+            });
+
+            it("getDataDestructionAuditSettings returns {} when the sub-object is missing", async () => {
+                expect(await audit.getDataDestructionAuditSettings(stubAppSettings(undefined))).toEqual({});
+            });
+
+            it("extractEmailRecipientsFromSettings handles array form", () => {
+                expect(audit.extractEmailRecipientsFromSettings({
+                    emailRecipients: ["a@b.com", "c@d.com"],
+                })).toEqual(["a@b.com", "c@d.com"]);
+            });
+
+            it("extractEmailRecipientsFromSettings falls back to parsing a string", () => {
+                expect(audit.extractEmailRecipientsFromSettings({
+                    emailRecipients: "a@b.com, c@d.com; e@f.com",
+                })).toEqual(["a@b.com", "c@d.com", "e@f.com"]);
+            });
+
+            it("extractEmailRecipientsFromSettings filters TODO placeholders and malformed entries", () => {
+                expect(audit.extractEmailRecipientsFromSettings({
+                    emailRecipients: ["TODO_FILL", "good@example.com", "not-an-email", "another@example.org"],
+                })).toEqual(["good@example.com", "another@example.org"]);
+            });
+
+            it("extractEmailRecipientsFromSettings returns [] when the field is missing or wrong type", () => {
+                expect(audit.extractEmailRecipientsFromSettings({})).toEqual([]);
+                expect(audit.extractEmailRecipientsFromSettings({ emailRecipients: 42 })).toEqual([]);
+                expect(audit.extractEmailRecipientsFromSettings()).toEqual([]);
+            });
+
+            it("extractBoxFolderIdFromSettings returns the folder ID when valid", () => {
+                expect(audit.extractBoxFolderIdFromSettings({ boxFolderID: "folder-1" })).toBe("folder-1");
+            });
+
+            it("extractBoxFolderIdFromSettings returns null for empty string, TODO placeholder, or missing", () => {
+                expect(audit.extractBoxFolderIdFromSettings({ boxFolderID: "" })).toBeNull();
+                expect(audit.extractBoxFolderIdFromSettings({ boxFolderID: "TODO_FILL_THIS_IN" })).toBeNull();
+                expect(audit.extractBoxFolderIdFromSettings({})).toBeNull();
+                expect(audit.extractBoxFolderIdFromSettings()).toBeNull();
+            });
         });
     });
 

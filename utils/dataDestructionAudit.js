@@ -3,7 +3,7 @@ const { randomUUID } = require("crypto");
 const sgMail = require("@sendgrid/mail");
 const fieldMapping = require("./fieldToConceptIdMapping");
 const { getResponseJSON, getEasternDateKey, getSecret, listOfCollectionsRelatedToDataDestruction, developmentTier, validEmailFormat } = require("./shared");
-const { db, storage, isValidPathologyBucketName } = require("./firestore");
+const { db, storage, isValidPathologyBucketName, getAppSettings } = require("./firestore");
 const { resolvePolicyForDestruction, getCurrentPolicy, describeStubVariables, validateDestroyedStub } = require("./dataDestructionPolicy");
 
 const AUDIT_MODE = "audit";
@@ -600,11 +600,11 @@ const getBoxAccessToken = async ({
     fetchFn = fetch,
 } = {}) => {
     const clientIdSecretName = process.env.BOX_CLIENT_ID_SECRET;
-    const clientSecretSecretName = process.env.BOX_CLIENT_SECRET_SECRET;
+    const clientSecretSecretName = process.env.BOX_CLIENT_SECRET;
     const enterpriseId = process.env.BOX_ENTERPRISE_ID;
 
     if (!clientIdSecretName || !clientSecretSecretName || !enterpriseId) {
-        throw new Error("Box upload is not configured. Missing BOX_CLIENT_ID_SECRET, BOX_CLIENT_SECRET_SECRET, or BOX_ENTERPRISE_ID.");
+        throw new Error("Box upload is not configured. Missing BOX_CLIENT_ID_SECRET, BOX_CLIENT_SECRET, or BOX_ENTERPRISE_ID.");
     }
 
     const [clientId, clientSecret] = await Promise.all([
@@ -732,12 +732,13 @@ const uploadAuditArtifacts = async ({
     summary,
     participantsNdjson,
     fileNames,
+    settings = {},
     getSecretFn = getSecret,
     fetchFn = fetch,
 } = {}) => {
-    const folderId = process.env.BOX_DATA_DESTRUCTION_AUDIT_FOLDER_ID;
-    if (!folderId || folderId.startsWith("TODO_")) {
-        throw new Error("Box upload is not configured. Missing BOX_DATA_DESTRUCTION_AUDIT_FOLDER_ID.");
+    const folderId = extractBoxFolderIdFromSettings(settings);
+    if (!folderId) {
+        throw new Error("Box upload is not configured. appSettings (connectFaas).dataDestructionAudit.boxFolderID is empty or missing.");
     }
 
     const accessToken = await getBoxAccessToken({ getSecretFn, fetchFn });
@@ -793,6 +794,47 @@ const parseEmailRecipients = (raw) => {
 };
 
 /**
+ * Fetch the audit's runtime settings sub-object from
+ * appSettings → connectFaas → dataDestructionAudit. One Firestore read per run.
+ * Returns the sub-object directly (or {} if the doc/field is missing).
+ */
+const getDataDestructionAuditSettings = async (getAppSettingsFn = getAppSettings) => {
+    const settings = await getAppSettingsFn("connectFaas", ["dataDestructionAudit"]);
+    return settings?.dataDestructionAudit ?? {};
+};
+
+/**
+ * Pure extractor: emailRecipients from a resolved dataDestructionAudit settings
+ * sub-object. Accepts a native array (preferred) or a comma/semicolon/whitespace-
+ * separated string (graceful fallback). Filters TODO placeholders and entries
+ * that fail validEmailFormat.
+ */
+const extractEmailRecipientsFromSettings = (settings = {}) => {
+    const raw = settings.emailRecipients;
+    if (Array.isArray(raw)) {
+        return raw.filter((entry) =>
+            typeof entry === "string" &&
+            !entry.startsWith("TODO_") &&
+            validEmailFormat.test(entry)
+        );
+    }
+    if (typeof raw === "string") {
+        return parseEmailRecipients(raw);
+    }
+    return [];
+};
+
+/**
+ * Get boxFolderID from appSettings -> connectFaas -> dataDestructionAudit.boxFolderID.
+ */
+const extractBoxFolderIdFromSettings = (settings = {}) => {
+    const raw = settings.boxFolderID;
+    if (typeof raw !== "string") return null;
+    if (raw.length === 0 || raw.startsWith("TODO_")) return null;
+    return raw;
+};
+
+/**
  * Best-effort email delivery of the same JSON summary + NDJSON content that Box receives.
  * Calls SendGrid directly so this module does not depend on notifications.js.
  */
@@ -800,12 +842,13 @@ const emailAuditArtifacts = async ({
     summary,
     participantsNdjson,
     fileNames,
+    settings = {},
     getSecretFn = getSecret,
     sgClient = sgMail,
 } = {}) => {
-    const recipients = parseEmailRecipients(process.env.DATA_DESTRUCTION_AUDIT_EMAIL_RECIPIENTS);
+    const recipients = extractEmailRecipientsFromSettings(settings);
     if (recipients.length === 0) {
-        throw new Error("Email delivery is not configured. Missing DATA_DESTRUCTION_AUDIT_EMAIL_RECIPIENTS.");
+        throw new Error("Email delivery is not configured. appSettings (connectFaas).dataDestructionAudit.emailRecipients is empty or missing.");
     }
 
     const apiKeySecret = process.env.GCLOUD_SENDGRID_SECRET;
@@ -888,6 +931,9 @@ const runDataDestructionAudit = async (rawOptions = {}, dependencies = {}) => {
         connectIds: options.mode === CLEANUP_MODE ? options.connectIds : [],
     });
 
+    const settingsFn = dependencies.getDataDestructionAuditSettings || getDataDestructionAuditSettings;
+    const settings = await settingsFn(dependencies.getAppSettingsFn || getAppSettings);
+
     const participantResults = [];
     // Cache bucket.exists() results across participants in this run so we don't repeat per participant.
     const bucketExistsCache = new Map();
@@ -925,6 +971,7 @@ const runDataDestructionAudit = async (rawOptions = {}, dependencies = {}) => {
             summary,
             participantsNdjson,
             fileNames,
+            settings,
             getSecretFn: dependencies.getSecretFn || getSecret,
             fetchFn: dependencies.fetchFn || fetch,
         });
@@ -944,6 +991,7 @@ const runDataDestructionAudit = async (rawOptions = {}, dependencies = {}) => {
             summary,
             participantsNdjson,
             fileNames,
+            settings,
             getSecretFn: dependencies.getSecretFn || getSecret,
             sgClient: dependencies.sgClient || sgMail,
         });
@@ -1026,6 +1074,9 @@ module.exports = {
     uploadAuditArtifacts,
     emailAuditArtifacts,
     parseEmailRecipients,
+    getDataDestructionAuditSettings,
+    extractEmailRecipientsFromSettings,
+    extractBoxFolderIdFromSettings,
     getDataDestructionCollectionQuerySpec,
     getProjectContext,
     normalizeAuditOptions,

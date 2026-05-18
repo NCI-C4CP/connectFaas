@@ -194,10 +194,11 @@ const V0_DATA_DESTRUCTION_POLICY_BASELINE = {
 // Add future deltas as V2, V3, etc. objects, then update the DATA_DESTRUCTION_POLICY_DELTAS list.
 const V1_DATA_DESTRUCTION_STUB_VARS = {
     version: "v1",
+    // ISO timestamps in UTC. EDT is (UTC-4) in May. Coincides with 10:00 ET prod release time.
     effectiveFrom: {
-        DEV:   null, // TODO: fill in with ISO timestamp when V1 deploys to DEV
-        STAGE: null, // TODO: fill in with ISO timestamp when V1 deploys to STAGE
-        PROD:  null, // TODO: fill in with ISO timestamp when V1 deploys to PROD
+        DEV:   "2026-05-18T04:00:00.000Z", // 2026-05-18 00:00 ET
+        STAGE: "2026-05-25T04:00:00.000Z", // 2026-05-25 00:00 ET
+        PROD:  "2026-05-28T02:00:00.000Z", // 2026-05-27 22:00 ET
     },
     retainedFieldsNamed: {
         add:    { dateRevokedHIPAA: 664453818 },
