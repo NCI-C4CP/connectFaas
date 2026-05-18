@@ -2956,7 +2956,7 @@ const validateTwilioRequest = async (req) => {
     await setupTwilio();
   }
   const twilioSignature = req.headers["x-twilio-signature"];
-  const requestUrl = `https://${req.get("host")}/webhook${req.originalUrl.slice(1)}`;
+  const requestUrl = `https://${req.get("host")}${req.originalUrl}`;
   if (!twilio.validateRequest(twilioAuthToken, twilioSignature, requestUrl, req.body)) {
     console.warn(`Twilio request validation failed. twilioSignature: ${twilioSignature}, requestUrl: ${requestUrl}`);
     return false;
