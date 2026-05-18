@@ -170,6 +170,12 @@ describe('htmlToPlaintext', () => {
         expect(htmlToPlaintext('<style>p{}</style data-x="y">Body')).toBe('Body');
     });
 
+    it('should not let HTML entities in the closing tag bypass script stripping', () => {
+        // The tokenizer treats `&` as a non-tag-boundary character, so `</script&nbsp;>` is not recognized as a close tag.
+        // The scanner keeps consuming as script content to EOF. Body is dropped along with the script.
+        expect(htmlToPlaintext('<script>alert("x")</script&nbsp;>Body')).toBe('');
+    });
+
     it('should remove <style> blocks and their content', () => {
         expect(htmlToPlaintext('<style>p { color: red; }</style>Body')).toBe('Body');
         expect(htmlToPlaintext('<style type="text/css">.x{}</style>Body')).toBe('Body');

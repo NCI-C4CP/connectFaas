@@ -6,6 +6,16 @@ require("firebase-admin/functions");
 require("@google-cloud/secret-manager");
 require("twilio");
 
+const conceptIds = require("../../utils/fieldToConceptIdMapping");
+
+// Concept-ID constants used across notification tests.
+const FIELD_VERIFICATION_STATUS = `d_${conceptIds.verificationStatus}`;
+const FIELD_CELL_PHONE = `d_${conceptIds.cellPhone}`;
+const VALUE_VERIFIED = String(conceptIds.verified);
+
+const TEST_EMAIL_FIELD = `d_${"335767902"}`;
+const TEST_FIRST_NAME_FIELD = `d_${"153098809"}`;
+
 const sgMailMock = {
   setApiKey: vi.fn(),
   send: vi.fn().mockResolvedValue([{ statusCode: 202, body: {} }]),
@@ -807,18 +817,18 @@ describe("Notifications Unit Tests", () => {
       id: "sched-spec-1",
       category: "reminder",
       attempt: "1st",
-      primaryField: "d_821247024",
+      primaryField: FIELD_VERIFICATION_STATUS,
       time: { start: { day: 0, hour: 1, minute: 0 }, stop: { day: 0, hour: 0, minute: 0 } },
       notificationType: ["email"],
-      emailField: "d_335767902",
+      emailField: TEST_EMAIL_FIELD,
       phoneField: "",
-      firstNameField: "d_153098809",
+      firstNameField: TEST_FIRST_NAME_FIELD,
       preferredNameField: "",
       email: {
         english: { subject: "Scheduled Subject", body: "<p>Hello {{firstName}}</p>" },
       },
       sms: {},
-      conditions: JSON.stringify([["d_821247024", "equals", "197316935"]]),
+      conditions: JSON.stringify([[FIELD_VERIFICATION_STATUS, "equals", VALUE_VERIFIED]]),
       ...overrides,
     });
 
@@ -826,8 +836,8 @@ describe("Notifications Unit Tests", () => {
       Connect_ID: `C-${token}`,
       token,
       state: { uid: `uid-${token}` },
-      d_335767902: `${token}@test.gov`,
-      d_153098809: "Taylor",
+      [TEST_EMAIL_FIELD]: `${token}@test.gov`,
+      [TEST_FIRST_NAME_FIELD]: "Taylor",
       353358909: 0,
     });
 
@@ -863,7 +873,7 @@ describe("Notifications Unit Tests", () => {
         specId: "spec-bulk-threshold",
         runSequence: 3,
         plannedRecipientCount: 1,
-        conditions: [{ field: "d_821247024", operator: "equals", value: "197316935" }],
+        conditions: [{ field: FIELD_VERIFICATION_STATUS, operator: "equals", value: VALUE_VERIFIED }],
       });
       expect(batchDocs).toHaveLength(1);
       expect(batchDocs[0]).toMatchObject({
@@ -902,7 +912,7 @@ describe("Notifications Unit Tests", () => {
       bigqueryMock.countParticipantsForNotificationsBQ.mockResolvedValue(6000);
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce([makeScheduledParticipant("tok-a")])
-        .mockResolvedValueOnce([{ ...makeScheduledParticipant("tok-b"), d_335767902: "tok-b@outlook.com" }])
+        .mockResolvedValueOnce([{ ...makeScheduledParticipant("tok-b"), [TEST_EMAIL_FIELD]: "tok-b@outlook.com" }])
         .mockResolvedValue([]);
 
       const req = { method: "POST", body: { scheduleAt: "09:00" } };
@@ -956,8 +966,8 @@ describe("Notifications Unit Tests", () => {
         makeScheduledParticipant("tok-default-1"),
         makeScheduledParticipant("tok-default-2"),
         makeScheduledParticipant("tok-default-3"),
-        { ...makeScheduledParticipant("tok-ms-1"), d_335767902: "tok-ms-1@outlook.com" },
-        { ...makeScheduledParticipant("tok-ms-2"), d_335767902: "tok-ms-2@hotmail.com" },
+        { ...makeScheduledParticipant("tok-ms-1"), [TEST_EMAIL_FIELD]: "tok-ms-1@outlook.com" },
+        { ...makeScheduledParticipant("tok-ms-2"), [TEST_EMAIL_FIELD]: "tok-ms-2@hotmail.com" },
       ]);
 
       const req = { method: "POST", body: { scheduleAt: "09:00" } };
@@ -1071,8 +1081,8 @@ describe("Notifications Unit Tests", () => {
         token: "tok-login",
         state: { uid: "uid-tok-login" },
         [conceptIds.preferredLanguage]: conceptIds.english,
-        d_153098809: "Taylor",
-        d_335767902: "tok-login@test.gov",
+        [TEST_FIRST_NAME_FIELD]: "Taylor",
+        [TEST_EMAIL_FIELD]: "tok-login@test.gov",
         loginDetails: "***-4567, a***@example.org",
       }));
       expect(plannedRecipient).not.toHaveProperty("email");
@@ -1298,9 +1308,9 @@ describe("Notifications Unit Tests", () => {
       bigqueryMock.countParticipantsForNotificationsBQ.mockResolvedValue(4);
       bigqueryMock.getParticipantsForNotificationsBQ.mockResolvedValueOnce([
         makeScheduledParticipant("valid-default"),
-        { ...makeScheduledParticipant("filtered"), d_335767902: "noreply@nih.gov" },
-        { ...makeScheduledParticipant("suppressed"), d_335767902: "suppressed@test.gov" },
-        { ...makeScheduledParticipant("valid-ms"), d_335767902: "valid-ms@outlook.com" },
+        { ...makeScheduledParticipant("filtered"), [TEST_EMAIL_FIELD]: "noreply@nih.gov" },
+        { ...makeScheduledParticipant("suppressed"), [TEST_EMAIL_FIELD]: "suppressed@test.gov" },
+        { ...makeScheduledParticipant("valid-ms"), [TEST_EMAIL_FIELD]: "valid-ms@outlook.com" },
       ]);
       firestoreMock.getEmailSuppressions.mockResolvedValue(new Set(["suppressed@test.gov"]));
 
@@ -1378,12 +1388,12 @@ describe("Notifications Unit Tests", () => {
       id: "spec-1",
       category: "reminder",
       attempt: "1st",
-      primaryField: "d_821247024",
+      primaryField: FIELD_VERIFICATION_STATUS,
       time: { start: { day: 0, hour: 1, minute: 0 }, stop: { day: 0, hour: 0, minute: 0 } },
       notificationType: ["email"],
-      emailField: "d_335767902",
+      emailField: TEST_EMAIL_FIELD,
       phoneField: "",
-      firstNameField: "d_153098809",
+      firstNameField: TEST_FIRST_NAME_FIELD,
       preferredNameField: "",
       email: {
         english: { subject: "Test Subject", body: "<p>Hello {{firstName}}</p>" },
@@ -1397,8 +1407,8 @@ describe("Notifications Unit Tests", () => {
       token: "tok-abc",
       state: { uid: "uid-123" },
       [conceptIds.preferredLanguage]: 0, // not mapped; falls back to "english"
-      "d_335767902": "user@test.gov",
-      "d_153098809": "Jane",
+      [TEST_EMAIL_FIELD]: "user@test.gov",
+      [TEST_FIRST_NAME_FIELD]: "Jane",
       ...overrides,
     });
 
@@ -1488,9 +1498,9 @@ describe("Notifications Unit Tests", () => {
       setNotificationSettings({ bulkThreshold: 3 });
       const spec = makeNotificationSpec({ category: "reminder" });
       const participants = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "a@test.com" }),
-        makeParticipant({ Connect_ID: "C2", token: "t2", "d_335767902": "b@test.com" }),
-        makeParticipant({ Connect_ID: "C3", token: "t3", "d_335767902": "c@test.com" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "a@test.com" }),
+        makeParticipant({ Connect_ID: "C2", token: "t2", [TEST_EMAIL_FIELD]: "b@test.com" }),
+        makeParticipant({ Connect_ID: "C3", token: "t3", [TEST_EMAIL_FIELD]: "c@test.com" }),
       ];
       await runHandleNotificationSpec(spec, participants);
 
@@ -1503,11 +1513,11 @@ describe("Notifications Unit Tests", () => {
       setNotificationSettings({ notificationBatchLimit: 2 });
       const spec = makeNotificationSpec({ category: "newsletter" });
       const participantsPage1 = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "a@test.com" }),
-        makeParticipant({ Connect_ID: "C2", token: "t2", "d_335767902": "b@test.com" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "a@test.com" }),
+        makeParticipant({ Connect_ID: "C2", token: "t2", [TEST_EMAIL_FIELD]: "b@test.com" }),
       ];
       const participantsPage2 = [
-        makeParticipant({ Connect_ID: "C3", token: "t3", "d_335767902": "c@test.com" }),
+        makeParticipant({ Connect_ID: "C3", token: "t3", [TEST_EMAIL_FIELD]: "c@test.com" }),
       ];
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce(participantsPage1)
@@ -1540,8 +1550,8 @@ describe("Notifications Unit Tests", () => {
     it("should skip suppressed emails in personalization array", async () => {
       const spec = makeNotificationSpec();
       const participants = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "ok@test.com" }),
-        makeParticipant({ Connect_ID: "C2", token: "t2", "d_335767902": "suppressed@test.com" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "ok@test.com" }),
+        makeParticipant({ Connect_ID: "C2", token: "t2", [TEST_EMAIL_FIELD]: "suppressed@test.com" }),
       ];
       firestoreMock.getEmailSuppressions.mockResolvedValue(new Set(["suppressed@test.com"]));
       bigqueryMock.getParticipantsForNotificationsBQ
@@ -1571,8 +1581,8 @@ describe("Notifications Unit Tests", () => {
     it("should skip filtered no-reply or malformed recipient emails before send", async () => {
       const spec = makeNotificationSpec();
       const participants = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "ok@test.com" }),
-        makeParticipant({ Connect_ID: "C2", token: "t2", "d_335767902": "noreply@nih.gov" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "ok@test.com" }),
+        makeParticipant({ Connect_ID: "C2", token: "t2", [TEST_EMAIL_FIELD]: "noreply@nih.gov" }),
       ];
 
       await runHandleNotificationSpec(spec, participants);
@@ -1588,15 +1598,15 @@ describe("Notifications Unit Tests", () => {
       const conceptIds = require("../../utils/fieldToConceptIdMapping");
       const spec = makeNotificationSpec({
         notificationType: ["email", "sms"],
-        phoneField: "d_388711124",
+        phoneField: FIELD_CELL_PHONE,
         sms: { english: { body: "Hello {{firstName}}" } },
       });
       const participants = [
         makeParticipant({
           Connect_ID: "C1",
           token: "t1",
-          "d_335767902": "suppressed@test.com",
-          "d_388711124": "5551234567",
+          [TEST_EMAIL_FIELD]: "suppressed@test.com",
+          [FIELD_CELL_PHONE]: "5551234567",
           [conceptIds.canWeText]: conceptIds.yes,
         }),
       ];
@@ -1636,7 +1646,7 @@ describe("Notifications Unit Tests", () => {
       const consoleSpy = vi.spyOn(console, "log");
       const spec = makeNotificationSpec();
       const participants = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "suppressed@test.com" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "suppressed@test.com" }),
       ];
       firestoreMock.getEmailSuppressions.mockResolvedValue(new Set(["suppressed@test.com"]));
 
@@ -1854,9 +1864,9 @@ describe("Notifications Unit Tests", () => {
 
       const spec = makeNotificationSpec({ category: "newsletter" });
       const fullBatch = Array.from({ length: 1000 }, (_, i) => makeParticipant({
-        Connect_ID: `C${i}`, token: `t${i}`, "d_335767902": `u${i}@test.com`,
+        Connect_ID: `C${i}`, token: `t${i}`, [TEST_EMAIL_FIELD]: `u${i}@test.com`,
       }));
-      const secondBatch = [makeParticipant({ Connect_ID: "extra", token: "textra", "d_335767902": "extra@test.com" })];
+      const secondBatch = [makeParticipant({ Connect_ID: "extra", token: "textra", [TEST_EMAIL_FIELD]: "extra@test.com" })];
 
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce(fullBatch)
@@ -1892,7 +1902,7 @@ describe("Notifications Unit Tests", () => {
 
       // Simulate a full batch (1000 participants) so hasNext=true, triggering the delay
       const fullBatch = Array.from({ length: 1000 }, (_, i) => makeParticipant({
-        Connect_ID: `C${i}`, token: `t${i}`, "d_335767902": `u${i}@test.com`,
+        Connect_ID: `C${i}`, token: `t${i}`, [TEST_EMAIL_FIELD]: `u${i}@test.com`,
       }));
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce(fullBatch)
@@ -1922,7 +1932,7 @@ describe("Notifications Unit Tests", () => {
 
       const spec = makeNotificationSpec({ category: "newsletter" });
       const fullBatch = Array.from({ length: 1000 }, (_, i) => makeParticipant({
-        Connect_ID: `C${i}`, token: `t${i}`, "d_335767902": `u${i}@test.com`,
+        Connect_ID: `C${i}`, token: `t${i}`, [TEST_EMAIL_FIELD]: `u${i}@test.com`,
       }));
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce(fullBatch)
@@ -1942,7 +1952,7 @@ describe("Notifications Unit Tests", () => {
       const fullBatch = Array.from({ length: 1000 }, (_, i) => makeParticipant({
         Connect_ID: `C${i}`,
         token: `t${i}`,
-        "d_335767902": `u${i}@outlook.com`,
+        [TEST_EMAIL_FIELD]: `u${i}@outlook.com`,
       }));
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce(fullBatch)
@@ -1965,7 +1975,7 @@ describe("Notifications Unit Tests", () => {
       const mixedBatch = Array.from({ length: 1000 }, (_, i) => makeParticipant({
         Connect_ID: `C${i}`,
         token: `t${i}`,
-        "d_335767902": i < 500 ? `u${i}@outlook.com` : `u${i}@test.gov`,
+        [TEST_EMAIL_FIELD]: i < 500 ? `u${i}@outlook.com` : `u${i}@test.gov`,
       }));
       bigqueryMock.getParticipantsForNotificationsBQ
         .mockResolvedValueOnce(mixedBatch)
@@ -1984,7 +1994,7 @@ describe("Notifications Unit Tests", () => {
       setNotificationSettings({ microsoftBulkDomains: ["test.gov"] });
 
       const spec = makeNotificationSpec({ category: "newsletter" });
-      const participants = [makeParticipant({ "d_335767902": "user@test.gov" })];
+      const participants = [makeParticipant({ [TEST_EMAIL_FIELD]: "user@test.gov" })];
       const summary = await runHandleNotificationSpec(spec, participants);
 
       expect(summary.bulkLaneSentCounts.microsoft).toBe(1);
@@ -2011,8 +2021,8 @@ describe("Notifications Unit Tests", () => {
     it("should include suppressed count in summary", async () => {
       const spec = makeNotificationSpec();
       const participants = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "ok@test.com" }),
-        makeParticipant({ Connect_ID: "C2", token: "t2", "d_335767902": "suppressed@test.com" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "ok@test.com" }),
+        makeParticipant({ Connect_ID: "C2", token: "t2", [TEST_EMAIL_FIELD]: "suppressed@test.com" }),
       ];
       firestoreMock.getEmailSuppressions.mockResolvedValue(new Set(["suppressed@test.com"]));
 
@@ -2024,7 +2034,7 @@ describe("Notifications Unit Tests", () => {
     it("should report zero emails when all suppressed", async () => {
       const spec = makeNotificationSpec();
       const participants = [
-        makeParticipant({ Connect_ID: "C1", token: "t1", "d_335767902": "supp@test.com" }),
+        makeParticipant({ Connect_ID: "C1", token: "t1", [TEST_EMAIL_FIELD]: "supp@test.com" }),
       ];
       firestoreMock.getEmailSuppressions.mockResolvedValue(new Set(["supp@test.com"]));
 
@@ -2175,16 +2185,16 @@ describe("Notifications Unit Tests", () => {
       id: "planned-bulk-spec",
       category: "newsletter",
       attempt: "1st",
-      primaryField: "d_821247024",
+      primaryField: FIELD_VERIFICATION_STATUS,
       time: { start: { day: 0, hour: 1, minute: 0 }, stop: { day: 0, hour: 0, minute: 0 } },
       notificationType: ["email"],
-      emailField: "d_335767902",
-      firstNameField: "d_153098809",
+      emailField: TEST_EMAIL_FIELD,
+      firstNameField: TEST_FIRST_NAME_FIELD,
       email: {
         english: { subject: "Newsletter", body: "<p>Hello {{firstName}}</p>" },
       },
       sms: {},
-      conditions: JSON.stringify([["d_821247024", "equals", "197316935"]]),
+      conditions: JSON.stringify([[FIELD_VERIFICATION_STATUS, "equals", VALUE_VERIFIED]]),
       ...overrides,
     });
 
@@ -2192,8 +2202,8 @@ describe("Notifications Unit Tests", () => {
       Connect_ID: `C-${token}`,
       token,
       state: { uid: `uid-${token}` },
-      d_335767902: email,
-      d_153098809: "Alex",
+      [TEST_EMAIL_FIELD]: email,
+      [TEST_FIRST_NAME_FIELD]: "Alex",
       353358909: 0,
     });
 
@@ -2215,9 +2225,9 @@ describe("Notifications Unit Tests", () => {
           timeParams: {
             startTimeStr: "2026-01-01T00:00:00.000Z",
             stopTimeStr: "2026-01-01T00:00:00.000Z",
-            timeField: "d_821247024",
+            timeField: FIELD_VERIFICATION_STATUS,
           },
-          conditions: [["d_821247024", "equals", "197316935"]],
+          conditions: [[FIELD_VERIFICATION_STATUS, "equals", VALUE_VERIFIED]],
         },
         batch: {
           id: batchId,
@@ -2792,25 +2802,25 @@ describe("Notifications Unit Tests", () => {
         id: "sched-recovery-spec",
         category: "newsletter",
         attempt: "1st",
-        primaryField: "d_821247024",
+        primaryField: FIELD_VERIFICATION_STATUS,
         time: { start: { day: 0, hour: 1, minute: 0 }, stop: { day: 0, hour: 0, minute: 0 } },
         notificationType: ["email"],
-        emailField: "d_335767902",
+        emailField: TEST_EMAIL_FIELD,
         phoneField: "",
-        firstNameField: "d_153098809",
+        firstNameField: TEST_FIRST_NAME_FIELD,
         preferredNameField: "",
         email: {
           english: { subject: "Scheduled Subject", body: "<p>Hello {{firstName}}</p>" },
         },
         sms: {},
-        conditions: JSON.stringify([["d_821247024", "equals", "197316935"]]),
+        conditions: JSON.stringify([[FIELD_VERIFICATION_STATUS, "equals", VALUE_VERIFIED]]),
       };
       const participant = {
         Connect_ID: "C-tok-recovery",
         token: "tok-recovery",
         state: { uid: "uid-tok-recovery" },
-        d_335767902: "tok-recovery@test.gov",
-        d_153098809: "Taylor",
+        [TEST_EMAIL_FIELD]: "tok-recovery@test.gov",
+        [TEST_FIRST_NAME_FIELD]: "Taylor",
         353358909: 0,
       };
       firestoreMock.getNotificationSpecsByScheduleOncePerDay
@@ -2842,9 +2852,9 @@ describe("Notifications Unit Tests", () => {
           timeParams: {
             startTimeStr: "2026-01-01T00:00:00.000Z",
             stopTimeStr: "2026-01-01T00:00:00.000Z",
-            timeField: "d_821247024",
+            timeField: FIELD_VERIFICATION_STATUS,
           },
-          conditions: [["d_821247024", "equals", "197316935"]],
+          conditions: [[FIELD_VERIFICATION_STATUS, "equals", VALUE_VERIFIED]],
         },
         batch: {
           id: firstTaskPayload.batchId,
@@ -2889,9 +2899,9 @@ describe("Notifications Unit Tests", () => {
           timeParams: {
             startTimeStr: "2026-01-01T00:00:00.000Z",
             stopTimeStr: "2026-01-01T00:00:00.000Z",
-            timeField: "d_821247024",
+            timeField: FIELD_VERIFICATION_STATUS,
           },
-          conditions: [["d_821247024", "equals", "197316935"]],
+          conditions: [[FIELD_VERIFICATION_STATUS, "equals", VALUE_VERIFIED]],
         },
         batch: {
           id: recoveryTaskPayload.batchId,

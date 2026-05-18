@@ -55,6 +55,10 @@ delete require.cache[firestorePath];
 const firestoreModule = require("../../utils/firestore");
 
 describe("Email Suppression System", () => {
+  // Shared across queued-run, bulk-run, and state-machine scenarios.
+  const STALE_RUN_DATE_KEY = "2026-04-01";
+  const STALE_RUN_UPDATED_AT = "2026-04-01T15:00:00.000Z";
+
   beforeEach(() => {
     // Clear overrides.
     firestoreMocks._collectionOverrides.clear();
@@ -499,19 +503,19 @@ describe("Email Suppression System", () => {
 
       const count = await firestoreModule.markNotificationSpecsQueuedForRun(
         ["spec-a", "spec-a", "", "spec-b"],
-        "2026-04-01",
-        "2026-04-01T15:00:00.000Z",
+        STALE_RUN_DATE_KEY,
+        STALE_RUN_UPDATED_AT,
       );
 
       expect(count).toBe(2);
       expect(mockBatch.update).toHaveBeenCalledTimes(2);
       expect(mockBatch.update).toHaveBeenNthCalledWith(1, { id: "spec-a" }, {
-        queuedBulkRunDateKey: "2026-04-01",
-        queuedBulkRunUpdatedAt: "2026-04-01T15:00:00.000Z",
+        queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
+        queuedBulkRunUpdatedAt: STALE_RUN_UPDATED_AT,
       });
       expect(mockBatch.update).toHaveBeenNthCalledWith(2, { id: "spec-b" }, {
-        queuedBulkRunDateKey: "2026-04-01",
-        queuedBulkRunUpdatedAt: "2026-04-01T15:00:00.000Z",
+        queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
+        queuedBulkRunUpdatedAt: STALE_RUN_UPDATED_AT,
       });
       expect(mockBatch.commit).toHaveBeenCalledTimes(1);
     });
@@ -526,21 +530,21 @@ describe("Email Suppression System", () => {
 
       const count = await firestoreModule.markNotificationSpecsQueuedForRun(
         ["spec-a", "spec-b"],
-        "2026-04-01",
-        "2026-04-01T15:00:00.000Z",
+        STALE_RUN_DATE_KEY,
+        STALE_RUN_UPDATED_AT,
         { "spec-a": 2, "spec-b": 7 },
       );
 
       expect(count).toBe(2);
       expect(mockBatch.update).toHaveBeenNthCalledWith(1, { id: "spec-a" }, {
-        queuedBulkRunDateKey: "2026-04-01",
-        queuedBulkRunUpdatedAt: "2026-04-01T15:00:00.000Z",
+        queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
+        queuedBulkRunUpdatedAt: STALE_RUN_UPDATED_AT,
         queuedBulkRunSequence: 2,
         bulkRunSequence: 2,
       });
       expect(mockBatch.update).toHaveBeenNthCalledWith(2, { id: "spec-b" }, {
-        queuedBulkRunDateKey: "2026-04-01",
-        queuedBulkRunUpdatedAt: "2026-04-01T15:00:00.000Z",
+        queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
+        queuedBulkRunUpdatedAt: STALE_RUN_UPDATED_AT,
         queuedBulkRunSequence: 7,
         bulkRunSequence: 7,
       });
@@ -555,16 +559,16 @@ describe("Email Suppression System", () => {
 
       const count = await firestoreModule.markNotificationSpecsQueuedForRun(
         ["spec-a"],
-        "2026-04-01",
-        "2026-04-01T15:00:00.000Z",
+        STALE_RUN_DATE_KEY,
+        STALE_RUN_UPDATED_AT,
         { "spec-a": 2 },
         { commitRunSequence: false },
       );
 
       expect(count).toBe(1);
       expect(mockBatch.update).toHaveBeenCalledWith({ id: "spec-a" }, {
-        queuedBulkRunDateKey: "2026-04-01",
-        queuedBulkRunUpdatedAt: "2026-04-01T15:00:00.000Z",
+        queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
+        queuedBulkRunUpdatedAt: STALE_RUN_UPDATED_AT,
         queuedBulkRunSequence: 2,
       });
     });
@@ -581,8 +585,8 @@ describe("Email Suppression System", () => {
 
       const count = await firestoreModule.markNotificationSpecsQueuedForRun(
         docs.map((doc) => doc.id),
-        "2026-04-01",
-        "2026-04-01T15:00:00.000Z",
+        STALE_RUN_DATE_KEY,
+        STALE_RUN_UPDATED_AT,
       );
 
       expect(count).toBe(31);
@@ -596,13 +600,13 @@ describe("Email Suppression System", () => {
       const mockBatch = firestoreMocks.createMockBatch();
       firestoreMocks.mockFirestore.batch.mockReturnValueOnce(mockBatch);
       setupNotificationSpecsCollection([
-        { id: "spec-a", queuedBulkRunDateKey: "2026-04-01" },
+        { id: "spec-a", queuedBulkRunDateKey: STALE_RUN_DATE_KEY },
         { id: "spec-b", queuedBulkRunDateKey: "2026-03-31" },
       ]);
 
       const count = await firestoreModule.clearNotificationSpecsQueuedRun(
         ["spec-a", "spec-b"],
-        "2026-04-01",
+        STALE_RUN_DATE_KEY,
       );
 
       expect(count).toBe(1);
@@ -621,7 +625,7 @@ describe("Email Suppression System", () => {
       setupNotificationSpecsCollection([
         {
           id: "spec-a",
-          queuedBulkRunDateKey: "2026-04-01",
+          queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
           queuedBulkRunSequence: 2,
           bulkRunSequence: 2,
         },
@@ -629,7 +633,7 @@ describe("Email Suppression System", () => {
 
       const count = await firestoreModule.clearNotificationSpecsQueuedRun(
         ["spec-a"],
-        "2026-04-01",
+        STALE_RUN_DATE_KEY,
         { "spec-a": 1 },
       );
 
@@ -642,13 +646,13 @@ describe("Email Suppression System", () => {
       const mockBatch = firestoreMocks.createMockBatch();
       firestoreMocks.mockFirestore.batch.mockReturnValueOnce(mockBatch);
       setupNotificationSpecsCollection([
-        { id: "spec-a", queuedBulkRunDateKey: "2026-04-01" },
+        { id: "spec-a", queuedBulkRunDateKey: STALE_RUN_DATE_KEY },
         { id: "spec-b", queuedBulkRunDateKey: "2026-03-31" },
       ]);
 
       const count = await firestoreModule.completeNotificationSpecsQueuedRun(
         ["spec-a", "spec-b"],
-        "2026-04-01",
+        STALE_RUN_DATE_KEY,
         "2026-04-01T20:00:00.000Z",
       );
 
@@ -656,7 +660,7 @@ describe("Email Suppression System", () => {
       expect(mockBatch.update).toHaveBeenCalledTimes(1);
       expect(mockBatch.update).toHaveBeenCalledWith({ id: "spec-a" }, {
         lastRunTime: "2026-04-01T20:00:00.000Z",
-        lastRunDateKey: "2026-04-01",
+        lastRunDateKey: STALE_RUN_DATE_KEY,
         queuedBulkRunDateKey: "delete",
         queuedBulkRunUpdatedAt: "delete",
         queuedBulkRunSequence: "delete",
@@ -670,7 +674,7 @@ describe("Email Suppression System", () => {
       setupNotificationSpecsCollection([
         {
           id: "spec-a",
-          queuedBulkRunDateKey: "2026-04-01",
+          queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
           queuedBulkRunSequence: 2,
           bulkRunSequence: 2,
         },
@@ -678,7 +682,7 @@ describe("Email Suppression System", () => {
 
       const count = await firestoreModule.completeNotificationSpecsQueuedRun(
         ["spec-a"],
-        "2026-04-01",
+        STALE_RUN_DATE_KEY,
         "2026-04-01T20:00:00.000Z",
         { "spec-a": 1 },
       );
@@ -693,8 +697,8 @@ describe("Email Suppression System", () => {
       vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
       setupNotificationSpecsCollection([
         { id: "eligible-spec", scheduleAt: "15:00", isDraft: false, lastRunDateKey: "2026-03-31" },
-        { id: "ran-today", scheduleAt: "15:00", isDraft: false, lastRunDateKey: "2026-04-01" },
-        { id: "queued-today", scheduleAt: "15:00", isDraft: false, queuedBulkRunDateKey: "2026-04-01" },
+        { id: "ran-today", scheduleAt: "15:00", isDraft: false, lastRunDateKey: STALE_RUN_DATE_KEY },
+        { id: "queued-today", scheduleAt: "15:00", isDraft: false, queuedBulkRunDateKey: STALE_RUN_DATE_KEY },
         { id: "", scheduleAt: "15:00", isDraft: false, lastRunDateKey: "2026-03-31" },
       ]);
 
@@ -709,7 +713,7 @@ describe("Email Suppression System", () => {
       vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
       setupNotificationSpecsCollection([
         { id: "legacy-eligible", scheduleAt: "15:00", isDraft: false, lastRunTime: "2026-03-31T15:00:00.000Z" },
-        { id: "legacy-ran-today", scheduleAt: "15:00", isDraft: false, lastRunTime: "2026-04-01T15:00:00.000Z" },
+        { id: "legacy-ran-today", scheduleAt: "15:00", isDraft: false, lastRunTime: STALE_RUN_UPDATED_AT },
       ]);
 
       const specs = await firestoreModule.getNotificationSpecsByScheduleOncePerDay("15:00");
@@ -1139,7 +1143,7 @@ describe("Email Suppression System", () => {
           "run-not-terminal": {
             id: "run-not-terminal",
             specId: "spec-not-terminal",
-            runDateKey: "2026-04-01",
+            runDateKey: STALE_RUN_DATE_KEY,
             batchCount: 2,
           },
         },
@@ -1168,7 +1172,7 @@ describe("Email Suppression System", () => {
           "run-complete": {
             id: "run-complete",
             specId: "spec-complete",
-            runDateKey: "2026-04-01",
+            runDateKey: STALE_RUN_DATE_KEY,
             batchCount: 2,
           },
         },
@@ -1185,7 +1189,7 @@ describe("Email Suppression System", () => {
           get: vi.fn().mockResolvedValue({
             docs: [{
               id: "spec-complete",
-              data: () => ({ id: "spec-complete", queuedBulkRunDateKey: "2026-04-01" }),
+              data: () => ({ id: "spec-complete", queuedBulkRunDateKey: STALE_RUN_DATE_KEY }),
               ref: { id: "spec-complete" },
             }],
           }),
@@ -1206,7 +1210,7 @@ describe("Email Suppression System", () => {
       }, { merge: true });
       expect(mockBatch.update).toHaveBeenCalledWith({ id: "spec-complete" }, expect.objectContaining({
         lastRunTime: "2026-04-01T14:00:00.000Z",
-        lastRunDateKey: "2026-04-01",
+        lastRunDateKey: STALE_RUN_DATE_KEY,
         queuedBulkRunDateKey: "delete",
       }));
     });
@@ -1219,7 +1223,7 @@ describe("Email Suppression System", () => {
           "run-failed": {
             id: "run-failed",
             specId: "spec-failed",
-            runDateKey: "2026-04-01",
+            runDateKey: STALE_RUN_DATE_KEY,
             runSequence: 3,
             batchCount: 2,
           },
@@ -1239,7 +1243,7 @@ describe("Email Suppression System", () => {
               id: "spec-failed",
               data: () => ({
                 id: "spec-failed",
-                queuedBulkRunDateKey: "2026-04-01",
+                queuedBulkRunDateKey: STALE_RUN_DATE_KEY,
                 bulkRunSequence: 2,
               }),
               ref: { id: "spec-failed" },
@@ -1373,7 +1377,7 @@ describe("Email Suppression System", () => {
       ], () => firestoreModule.markNotificationBatchProviderSendStarted(
         [notificationRecord],
         "owner-a",
-        "2026-04-01T15:00:00.000Z",
+        STALE_RUN_UPDATED_AT,
       ));
 
       expect(result.recordsToSend).toEqual([notificationRecord]);
@@ -1383,7 +1387,7 @@ describe("Email Suppression System", () => {
         processingState: "provider_send_in_flight",
         isSent: false,
         providerAttemptOwner: "owner-a",
-        providerAttemptStartedAt: "2026-04-01T15:00:00.000Z",
+        providerAttemptStartedAt: STALE_RUN_UPDATED_AT,
         reservationExpiresAt: "delete",
       }));
     });
@@ -1397,7 +1401,7 @@ describe("Email Suppression System", () => {
       ], () => firestoreModule.markNotificationBatchProviderSendStarted(
         [notificationRecord],
         "owner-a",
-        "2026-04-01T15:00:00.000Z",
+        STALE_RUN_UPDATED_AT,
       ));
 
       expect(result.recordsToSend).toEqual([]);
