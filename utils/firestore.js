@@ -2579,7 +2579,7 @@ const storeNotification = async (notificationData) => {
 }
 
 const isSentNotificationRecord = (notificationData = {}) => (
-  notificationData?.isSent !== false &&
+  notificationData?.isSent !== fieldMapping.no &&
   notificationData?.processingState !== "reserved" &&
   notificationData?.processingState !== "send_failed" &&
   !isProviderSendStartedState(notificationData?.processingState)
@@ -2732,7 +2732,7 @@ const reserveNotificationBatch = async (
         // mutated by webhook events or by a later spec change.
         const reservationStateUpdate = {
           processingState: "reserved",
-          isSent: false,
+          isSent: fieldMapping.no,
           providerAttemptOwner,
           reservationExpiresAt,
           reservedAt: nowIso,
@@ -2803,7 +2803,7 @@ const markNotificationBatchProviderSendStarted = async (
           docRef,
           {
             processingState: "provider_send_in_flight",
-            isSent: false,
+            isSent: fieldMapping.no,
             providerAttemptOwner,
             providerAttemptStartedAt: startedAt,
             updatedAt: startedAt,
@@ -2873,7 +2873,7 @@ const markNotificationBatchProviderAcceptanceUnknown = async (
         }
 
         const docData = snapshot.data() || {};
-        if (docData.processingState === "provider_accepted" && docData.isSent === true) {
+        if (docData.processingState === "provider_accepted" && docData.isSent === fieldMapping.yes) {
           skippedReasons.alreadyAccepted++;
           continue;
         }
@@ -2890,7 +2890,7 @@ const markNotificationBatchProviderAcceptanceUnknown = async (
           docRef,
           {
             processingState: "provider_acceptance_unknown",
-            isSent: false,
+            isSent: fieldMapping.no,
             providerAcceptanceUnknownAt: unknownAt,
             providerAttemptOwner,
             updatedAt: unknownAt,
@@ -2953,7 +2953,7 @@ const markNotificationBatchAccepted = async (notificationRecordArray, providerAt
         }
 
         const docData = snapshot.data() || {};
-        if (docData.processingState === "provider_accepted" && docData.isSent === true) {
+        if (docData.processingState === "provider_accepted" && docData.isSent === fieldMapping.yes) {
           skippedReasons.alreadyAccepted++;
           continue;
         }
@@ -2971,7 +2971,7 @@ const markNotificationBatchAccepted = async (notificationRecordArray, providerAt
           {
             ...record,
             processingState: "provider_accepted",
-            isSent: true,
+            isSent: fieldMapping.yes,
             providerAcceptedAt: acceptedAt,
             updatedAt: acceptedAt,
             ...clearProviderAttemptFields(),
@@ -3036,7 +3036,7 @@ const markNotificationBatchFailed = async (
         if (!snapshot.exists) continue;
 
         const docData = snapshot.data() || {};
-        if (docData.processingState === "provider_accepted" && docData.isSent === true) {
+        if (docData.processingState === "provider_accepted" && docData.isSent === fieldMapping.yes) {
           continue;
         }
         if (providerAttemptOwner && getProviderAttemptOwner(docData) !== providerAttemptOwner) {
@@ -3051,7 +3051,7 @@ const markNotificationBatchFailed = async (
           {
             ...record,
             processingState: "send_failed",
-            isSent: false,
+            isSent: fieldMapping.no,
             updatedAt: failedAt,
             lastSendAttemptAt: failedAt,
             ...clearProviderAttemptFields(),
@@ -6188,13 +6188,13 @@ const processSendGridEvent = async (event) => {
           if (event.event === "dropped") {
             providerStateUpdate = {
               processingState: "send_failed",
-              isSent: false,
+              isSent: fieldMapping.no,
               ...clearProviderAttemptFields(),
             };
           } else {
             providerStateUpdate = {
               processingState: "provider_accepted",
-              isSent: true,
+              isSent: fieldMapping.yes,
               providerAcceptedAt: existingData.providerAcceptedAt || eventDate,
               ...clearProviderAttemptFields(),
             };

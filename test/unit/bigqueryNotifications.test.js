@@ -88,9 +88,9 @@ describe("bigquery notification helpers", () => {
     expect(query).toContain("d_335767902 != @cond_1");
     expect(query).toContain("d_821247024 < @startTimeStr");
     expect(query).toContain("d_821247024 >= @stopTimeStr");
-    expect(query).toContain("IFNULL(isSent, TRUE) = TRUE");
+    expect(query).toContain("IFNULL(isSent, @conceptIdYes) = @conceptIdYes");
     expect(query).toContain("processingState = 'send_failed'");
-    expect(query).toContain("AND isSent IS NULL");
+    expect(query).toContain("AND alreadyHandled IS NULL");
     expect(query).toContain("token > @previousToken");
     expect(query).toContain("ORDER BY token LIMIT 50");
 
@@ -127,8 +127,8 @@ describe("bigquery notification helpers", () => {
     expect(query).toContain("SELECT COUNT(*) AS cnt");
     expect(query).toContain("FROM `Connect.participants`");
     expect(query).toContain("d_821247024 > @cond_0");
-    expect(query).toContain("IFNULL(isSent, TRUE) = TRUE");
-    expect(query).toContain("AND isSent IS NULL");
+    expect(query).toContain("IFNULL(isSent, @conceptIdYes) = @conceptIdYes");
+    expect(query).toContain("AND alreadyHandled IS NULL");
     expect(query).not.toContain("ORDER BY token");
     expect(query).not.toContain("LIMIT ");
     expect(query).not.toContain("token > @previousToken");
@@ -145,11 +145,11 @@ describe("bigquery notification helpers", () => {
 
     const { query, params } = querySpy.mock.calls[0][0];
     expect(query).toContain("LEFT JOIN (");
-    expect(query).toContain("SELECT DISTINCT token, TRUE AS isSent");
+    expect(query).toContain("SELECT DISTINCT token, TRUE AS alreadyHandled");
     expect(query).toContain("notificationSpecificationsID = @notificationSpecId");
-    expect(query).toContain("IFNULL(isSent, TRUE) = TRUE");
+    expect(query).toContain("IFNULL(isSent, @conceptIdYes) = @conceptIdYes");
     expect(query).toContain("processingState = 'send_failed'");
-    expect(query).toContain("AND isSent IS NULL");
+    expect(query).toContain("AND alreadyHandled IS NULL");
     expect(params.notificationSpecId).toBe("spec-state-machine");
   });
 

@@ -4,6 +4,7 @@
 
 const FirestoreMocks = require("../mocks/core/firestoreMocks");
 const MockHelpers = require("../mocks/helpers/mockHelpers");
+const conceptIds = require("../../utils/fieldToConceptIdMapping");
 
 const firestoreMocks = new FirestoreMocks();
 const mockHelpers = new MockHelpers();
@@ -1343,7 +1344,7 @@ describe("Email Suppression System", () => {
           exists: true,
           data: () => ({
             processingState: "provider_send_in_flight",
-            isSent: false,
+            isSent: conceptIds.no,
             providerAttemptOwner: "owner-a",
             reservationExpiresAt: oldReservation,
           }),
@@ -1358,7 +1359,7 @@ describe("Email Suppression System", () => {
           exists: true,
           data: () => ({
             processingState: "provider_acceptance_unknown",
-            isSent: false,
+            isSent: conceptIds.no,
             providerAcceptanceUnknownAt: "2026-04-01T12:00:00.000Z",
           }),
         },
@@ -1385,7 +1386,7 @@ describe("Email Suppression System", () => {
       expect(setSpy).toHaveBeenCalledTimes(1);
       expect(setSpy.mock.calls[0][1]).toEqual(expect.objectContaining({
         processingState: "provider_send_in_flight",
-        isSent: false,
+        isSent: conceptIds.no,
         providerAttemptOwner: "owner-a",
         providerAttemptStartedAt: STALE_RUN_UPDATED_AT,
         reservationExpiresAt: "delete",
@@ -1430,7 +1431,7 @@ describe("Email Suppression System", () => {
       expect(setSpy).toHaveBeenCalledTimes(1);
       expect(setSpy.mock.calls[0][1]).toEqual(expect.objectContaining({
         processingState: "provider_acceptance_unknown",
-        isSent: false,
+        isSent: conceptIds.no,
         providerAcceptanceUnknownAt: "2026-04-01T16:00:00.000Z",
         providerAttemptOwner: "owner-a",
         lastProviderErrorCode: "ETIMEDOUT",
@@ -1458,7 +1459,7 @@ describe("Email Suppression System", () => {
       expect(setSpy).toHaveBeenCalledTimes(1);
       expect(setSpy.mock.calls[0][1]).toEqual(expect.objectContaining({
         processingState: "provider_accepted",
-        isSent: true,
+        isSent: conceptIds.yes,
         providerAcceptedAt: "2026-04-01T17:00:00.000Z",
         providerAttemptOwner: "delete",
         reservationExpiresAt: "delete",
@@ -1505,7 +1506,7 @@ describe("Email Suppression System", () => {
       expect(setSpy).toHaveBeenCalledTimes(1);
       expect(setSpy.mock.calls[0][1]).toEqual(expect.objectContaining({
         processingState: "send_failed",
-        isSent: false,
+        isSent: conceptIds.no,
         lastProviderErrorMessage: "provider failed",
         providerAttemptOwner: "delete",
         reservationExpiresAt: "delete",
@@ -1516,7 +1517,7 @@ describe("Email Suppression System", () => {
       const { count, setSpy } = await runFailedUpdateWithSnapshots([
         {
           exists: true,
-          data: () => ({ processingState: "provider_accepted", isSent: true }),
+          data: () => ({ processingState: "provider_accepted", isSent: conceptIds.yes }),
         },
       ]);
 
@@ -1604,7 +1605,7 @@ describe("Email Suppression System", () => {
     it("should resolve provider_acceptance_unknown when a correlated SendGrid event arrives", async () => {
       const { mockRef } = setupNotificationDoc({
         processingState: "provider_acceptance_unknown",
-        isSent: false,
+        isSent: conceptIds.no,
         providerAttemptOwner: "run-batch-owner",
       });
 
@@ -1616,7 +1617,7 @@ describe("Email Suppression System", () => {
       expect(mockRef.update).toHaveBeenCalledWith(expect.objectContaining({
         deliveredStatus: true,
         processingState: "provider_accepted",
-        isSent: true,
+        isSent: conceptIds.yes,
         providerAcceptedAt: "2023-11-14T22:13:20.000Z",
         providerAttemptOwner: "delete",
       }));
@@ -1625,7 +1626,7 @@ describe("Email Suppression System", () => {
     it("should resolve provider_send_in_flight when any correlated SendGrid event arrives", async () => {
       const { mockRef } = setupNotificationDoc({
         processingState: "provider_send_in_flight",
-        isSent: false,
+        isSent: conceptIds.no,
         providerAttemptOwner: "run-batch-owner",
       });
 
@@ -1639,7 +1640,7 @@ describe("Email Suppression System", () => {
       expect(mockRef.update).toHaveBeenCalledWith(expect.objectContaining({
         bounceStatus: true,
         processingState: "provider_accepted",
-        isSent: true,
+        isSent: conceptIds.yes,
         providerAcceptedAt: "2023-11-14T22:13:20.000Z",
         providerAttemptOwner: "delete",
       }));
@@ -1648,7 +1649,7 @@ describe("Email Suppression System", () => {
     it("should transition provider_send_in_flight to send_failed (not provider_accepted) on a dropped event", async () => {
       const { mockRef } = setupNotificationDoc({
         processingState: "provider_send_in_flight",
-        isSent: false,
+        isSent: conceptIds.no,
         providerAttemptOwner: "run-batch-owner",
       });
 
@@ -1661,7 +1662,7 @@ describe("Email Suppression System", () => {
       expect(mockRef.update).toHaveBeenCalledWith(expect.objectContaining({
         droppedStatus: true,
         processingState: "send_failed",
-        isSent: false,
+        isSent: conceptIds.no,
         providerAttemptOwner: "delete",
       }));
     });

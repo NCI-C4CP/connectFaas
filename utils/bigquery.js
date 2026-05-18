@@ -1,5 +1,6 @@
 const {BigQuery, BigQueryDate} = require('@google-cloud/bigquery');
 const bigquery = new BigQuery();
+const fieldMapping = require('./fieldToConceptIdMapping');
 
 const getTable = async (tableName, isParent, siteCode) => {
     try {
@@ -127,8 +128,8 @@ const buildNotificationEligibilityQuery = ({
     timeField,
   });
   const fragments = [...eligibility.fragments];
-  const params = { ...eligibility.params, notificationSpecId };
-  const types = { ...eligibility.types, notificationSpecId: "STRING" };
+  const params = { ...eligibility.params, notificationSpecId, conceptIdYes: fieldMapping.yes };
+  const types = { ...eligibility.types, notificationSpecId: "STRING", conceptIdYes: "INT64" };
 
   if (!countOnly && previousToken) {
     fragments.push(`token > @previousToken`);
@@ -138,22 +139,22 @@ const buildNotificationEligibilityQuery = ({
 
   // The LEFT JOIN identifies tokens that should NOT be re-fetched. A token
   // is excluded when any of the following is true (notifications spec doc)
-  //   - isSent IS NULL or TRUE (legacy record or successfully sent)
+  //   - isSent IS NULL or `yes` (concept ID 353358909): legacy record or successfully sent
   //   - processingState = 'send_failed' (permanent failure)
   // Records in `reserved`/`provider_send_in_flight`/`provider_acceptance_unknown` remain re-fetchable.
   // The per-record state machine handles re-reservation and duplicate-prevention safely.
   let query = `SELECT ${countOnly ? "COUNT(*) AS cnt" : selectSql}
     FROM \`Connect.participants\`
     LEFT JOIN (
-      SELECT DISTINCT token, TRUE AS isSent
+      SELECT DISTINCT token, TRUE AS alreadyHandled
       FROM
         \`Connect.notifications\`
       WHERE
         notificationSpecificationsID = @notificationSpecId
-        AND (IFNULL(isSent, TRUE) = TRUE OR processingState = 'send_failed'))
+        AND (IFNULL(isSent, @conceptIdYes) = @conceptIdYes OR processingState = 'send_failed'))
     USING (token)
     WHERE ${fragments.length === 0 ? "1=1" : fragments.join(" AND ")}
-    AND isSent IS NULL`;
+    AND alreadyHandled IS NULL`;
 
   if (!countOnly) {
     const numericLimit = Number(limit);
