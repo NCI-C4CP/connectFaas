@@ -536,7 +536,6 @@ describe("dataDestructionAudit", () => {
         beforeEach(() => {
             process.env.BOX_CLIENT_ID_SECRET = "projects/test/secrets/box-client-id/versions/latest";
             process.env.BOX_CLIENT_SECRET = "projects/test/secrets/box-client-secret/versions/latest";
-            process.env.BOX_ENTERPRISE_ID = "enterprise-1";
         });
 
         it("gets a Box access token with client credentials", async () => {
@@ -545,7 +544,11 @@ describe("dataDestructionAudit", () => {
                 .mockResolvedValueOnce("client-id")
                 .mockResolvedValueOnce("client-secret");
 
-            await expect(audit.getBoxAccessToken({ getSecretFn, fetchFn })).resolves.toBe("box-token");
+            await expect(audit.getBoxAccessToken({
+                enterpriseId: "enterprise-1",
+                getSecretFn,
+                fetchFn,
+            })).resolves.toBe("box-token");
             expect(fetchFn).toHaveBeenCalledWith("https://api.box.com/oauth2/token", expect.objectContaining({
                 method: "POST",
             }));
@@ -559,7 +562,18 @@ describe("dataDestructionAudit", () => {
             });
             const getSecretFn = vi.fn().mockResolvedValue("secret");
 
-            await expect(audit.getBoxAccessToken({ getSecretFn, fetchFn })).rejects.toThrow(/Box token request failed/);
+            await expect(audit.getBoxAccessToken({
+                enterpriseId: "enterprise-1",
+                getSecretFn,
+                fetchFn,
+            })).rejects.toThrow(/Box token request failed/);
+        });
+
+        it("getBoxAccessToken refuses when enterpriseId is missing", async () => {
+            await expect(audit.getBoxAccessToken({
+                getSecretFn: vi.fn(),
+                fetchFn: vi.fn(),
+            })).rejects.toThrow(/boxEnterpriseID/);
         });
 
         it("uploads Box audit artifacts with exact filenames", async () => {
@@ -587,7 +601,7 @@ describe("dataDestructionAudit", () => {
                 summary,
                 participantsNdjson: "",
                 fileNames,
-                settings: { boxFolderID: "folder-1" },
+                settings: { boxFolderID: "folder-1", boxEnterpriseID: "enterprise-1" },
                 getSecretFn: vi.fn().mockResolvedValue("secret"),
                 fetchFn,
             });
@@ -825,6 +839,17 @@ describe("dataDestructionAudit", () => {
                 expect(audit.extractBoxFolderIdFromSettings({ boxFolderID: "TODO_FILL_THIS_IN" })).toBeNull();
                 expect(audit.extractBoxFolderIdFromSettings({})).toBeNull();
                 expect(audit.extractBoxFolderIdFromSettings()).toBeNull();
+            });
+
+            it("extractBoxEnterpriseIdFromSettings returns the enterprise ID as a string when valid", () => {
+                expect(audit.extractBoxEnterpriseIdFromSettings({ boxEnterpriseID: "123456789" })).toBe("123456789");
+                expect(audit.extractBoxEnterpriseIdFromSettings({ boxEnterpriseID: 123456789 })).toBe("123456789");
+            });
+
+            it("extractBoxEnterpriseIdFromSettings returns null for empty string, TODO placeholder, or missing", () => {
+                expect(audit.extractBoxEnterpriseIdFromSettings({ boxEnterpriseID: "" })).toBeNull();
+                expect(audit.extractBoxEnterpriseIdFromSettings({})).toBeNull();
+                expect(audit.extractBoxEnterpriseIdFromSettings()).toBeNull();
             });
         });
     });

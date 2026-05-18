@@ -605,15 +605,19 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
  * Fetch a Box access token with Client Credentials Grant.
  */
 const getBoxAccessToken = async ({
+    enterpriseId,
     getSecretFn = getSecret,
     fetchFn = fetch,
 } = {}) => {
     const clientIdSecretName = process.env.BOX_CLIENT_ID_SECRET;
     const clientSecretSecretName = process.env.BOX_CLIENT_SECRET;
-    const enterpriseId = process.env.BOX_ENTERPRISE_ID;
 
-    if (!clientIdSecretName || !clientSecretSecretName || !enterpriseId) {
-        throw new Error("Box upload is not configured. Missing BOX_CLIENT_ID_SECRET, BOX_CLIENT_SECRET, or BOX_ENTERPRISE_ID.");
+    if (!clientIdSecretName || !clientSecretSecretName) {
+        throw new Error("Box upload is not configured. Missing BOX_CLIENT_ID_SECRET or BOX_CLIENT_SECRET.");
+    }
+
+    if (!enterpriseId) {
+        throw new Error("Box upload is not configured. appSettings (connectFaas).dataDestructionAudit.boxEnterpriseID is empty or missing.");
     }
 
     const [clientId, clientSecret] = await Promise.all([
@@ -750,7 +754,8 @@ const uploadAuditArtifacts = async ({
         throw new Error("Box upload is not configured. appSettings (connectFaas).dataDestructionAudit.boxFolderID is empty or missing.");
     }
 
-    const accessToken = await getBoxAccessToken({ getSecretFn, fetchFn });
+    const enterpriseId = extractBoxEnterpriseIdFromSettings(settings);
+    const accessToken = await getBoxAccessToken({ enterpriseId, getSecretFn, fetchFn });
 
     summary.boxFiles = {
         summary: { fileName: fileNames.summaryFileName, fileId: null },
@@ -831,6 +836,17 @@ const extractEmailRecipientsFromSettings = (settings = {}) => {
         return parseEmailRecipients(raw);
     }
     return [];
+};
+
+/**
+ * Get boxEnterpriseID from appSettings -> connectFaas -> dataDestructionAudit.boxEnterpriseID.
+ */
+const extractBoxEnterpriseIdFromSettings = (settings = {}) => {
+    const raw = settings.boxEnterpriseID;
+    if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+    if (typeof raw !== "string") return null;
+    if (raw.length === 0 || raw.startsWith("TODO_")) return null;
+    return raw;
 };
 
 /**
@@ -1094,6 +1110,7 @@ module.exports = {
     getDataDestructionAuditSettings,
     extractEmailRecipientsFromSettings,
     extractBoxFolderIdFromSettings,
+    extractBoxEnterpriseIdFromSettings,
     getDataDestructionCollectionQuerySpec,
     getProjectContext,
     normalizeAuditOptions,
