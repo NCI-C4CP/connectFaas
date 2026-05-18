@@ -101,13 +101,6 @@ const handleReceivedSendGridEvent = async (req, res, { forceAcceptExampleEvents 
         }
 
         const summary = await processVerifiedSendGridEvents(req.body, { acceptExampleEvents: forceAcceptExampleEvents || shouldAcceptSendGridExampleEvents(req.query) });
-        // Batch-level summary — counts only, no per-event detail. Skipped for pure-processed
-        // batches (typical prod traffic) to keep prod logs quiet, but fires in dev/stage where
-        // uncorrelated cross-env events dominate, giving ops visibility into the volume without
-        // ever surfacing recipient identifiers.
-        if (summary.ignored > 0 || summary.exampleEventsAccepted > 0 || summary.failed > 0) {
-            console.log(`SendGrid webhook batch: ${summary.processed} processed, ${summary.ignored} ignored (uncorrelated), ${summary.exampleEventsAccepted} examples, ${summary.failed} failed (total ${req.body.length})`);
-        }
         if (summary.failed > 0) {
             console.error(`SendGrid webhook: ${summary.failed}/${req.body.length} events failed`);
         }

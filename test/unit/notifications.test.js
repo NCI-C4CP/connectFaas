@@ -751,7 +751,7 @@ describe("Notifications Unit Tests", () => {
 
       await expect(
         notificationsModule.sendEmail("blocked@example.com", "Subject", "<p>Body</p>")
-      ).rejects.toThrow("Blocked non-prod SendGrid sandbox send to non-allowlisted recipient(s): blocked@example.com");
+      ).rejects.toThrow("Blocked non-prod SendGrid sandbox send: 1 non-allowlisted recipient(s)");
 
       expect(sgMailMock.send).not.toHaveBeenCalled();
     });
@@ -765,7 +765,7 @@ describe("Notifications Unit Tests", () => {
 
       await expect(
         notificationsModule.sendEmail("allowed@example.com", "Subject", "<p>Body</p>", "blocked@example.com")
-      ).rejects.toThrow("Blocked non-prod SendGrid sandbox send to non-allowlisted recipient(s): blocked@example.com");
+      ).rejects.toThrow("Blocked non-prod SendGrid sandbox send: 1 non-allowlisted recipient(s)");
 
       expect(sgMailMock.send).not.toHaveBeenCalled();
     });
