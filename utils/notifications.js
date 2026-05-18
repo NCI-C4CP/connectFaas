@@ -451,7 +451,7 @@ const enforceNonProdEmailAllowlist = (message, deliveryMode, notificationSetting
   const disallowedRecipients = collectRecipientEmails(message)
     .filter((email) => !allowlist.has(email));
   if (disallowedRecipients.length > 0) {
-    throw new Error(`Blocked non-prod SendGrid ${deliveryMode} send to non-allowlisted recipient(s): ${disallowedRecipients.join(", ")}`);
+    throw new Error(`Blocked non-prod SendGrid ${deliveryMode} send: ${disallowedRecipients.length} non-allowlisted recipient(s)`);
   }
 };
 
@@ -1085,10 +1085,9 @@ const sendEmail = async (emailTo, messageSubject, html, cc) => {
     if(cc) msg.cc = cc;
     msg.text = htmlToPlaintext(html);
     try {
-        await sendViaSendGrid(msg, { logLabel: `sendEmail(${emailTo})`, notificationSettings });
-        console.log('Email sent to ' + emailTo);
+        await sendViaSendGrid(msg, { logLabel: "sendEmail", notificationSettings });
     } catch (error) {
-        console.error('Email send failed for ' + emailTo, error);
+        console.error("Email send failed:", { message: error?.message, code: error?.code });
         throw error;
     }
 }
@@ -2957,7 +2956,7 @@ const validateTwilioRequest = async (req) => {
     await setupTwilio();
   }
   const twilioSignature = req.headers["x-twilio-signature"];
-  const requestUrl = `https://${req.get("host")}/webhook${req.originalUrl.slice(1)}`;
+  const requestUrl = `https://${req.get("host")}${req.originalUrl}`;
   if (!twilio.validateRequest(twilioAuthToken, twilioSignature, requestUrl, req.body)) {
     console.warn(`Twilio request validation failed. twilioSignature: ${twilioSignature}, requestUrl: ${requestUrl}`);
     return false;

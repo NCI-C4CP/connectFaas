@@ -196,14 +196,14 @@ describe('Validation Derived Variable Helpers', () => {
             const getParticipantDataSpy = vi.spyOn(firestore, 'getParticipantData').mockResolvedValue(false);
             const getSpecimenCollectionsSpy = vi.spyOn(firestore, 'getSpecimenCollections');
             const retrieveUserSurveysSpy = vi.spyOn(firestore, 'retrieveUserSurveys');
-            const updateParticipantDataSpy = vi.spyOn(firestore, 'updateParticipantData');
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId');
 
             await validation.checkDerivedVariables('missing-token', 'missing-site');
 
             expect(getParticipantDataSpy).toHaveBeenCalledWith('missing-token', 'missing-site');
             expect(getSpecimenCollectionsSpy).not.toHaveBeenCalled();
             expect(retrieveUserSurveysSpy).not.toHaveBeenCalled();
-            expect(updateParticipantDataSpy).not.toHaveBeenCalled();
+            expect(updateParticipantDataByDocIdSpy).not.toHaveBeenCalled();
         });
 
         it('should return early when participant has no uid in state', async () => {
@@ -215,13 +215,13 @@ describe('Validation Derived Variable Helpers', () => {
             });
             const getSpecimenCollectionsSpy = vi.spyOn(firestore, 'getSpecimenCollections').mockResolvedValue([]);
             const retrieveUserSurveysSpy = vi.spyOn(firestore, 'retrieveUserSurveys');
-            const updateParticipantDataSpy = vi.spyOn(firestore, 'updateParticipantData');
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId');
 
             await validation.checkDerivedVariables('token', 'site');
 
             expect(getSpecimenCollectionsSpy).toHaveBeenCalledTimes(1);
             expect(retrieveUserSurveysSpy).not.toHaveBeenCalled();
-            expect(updateParticipantDataSpy).not.toHaveBeenCalled();
+            expect(updateParticipantDataByDocIdSpy).not.toHaveBeenCalled();
         });
 
         it('should not write participant updates when derived updates are empty', async () => {
@@ -246,11 +246,11 @@ describe('Validation Derived Variable Helpers', () => {
             });
             vi.spyOn(firestore, 'getSpecimenCollections').mockResolvedValue([]);
             vi.spyOn(firestore, 'retrieveUserSurveys').mockResolvedValue({});
-            const updateParticipantDataSpy = vi.spyOn(firestore, 'updateParticipantData');
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId');
 
             await validation.checkDerivedVariables('token', 'site');
 
-            expect(updateParticipantDataSpy).not.toHaveBeenCalled();
+            expect(updateParticipantDataByDocIdSpy).not.toHaveBeenCalled();
         });
 
         const testInfo = [
@@ -823,7 +823,7 @@ describe('Validation Derived Variable Helpers', () => {
                 }));
                 vi.spyOn(firestore, 'getSpecimenCollections').mockImplementation(() => thisTest.specimens);
                 vi.spyOn(firestore, 'retrieveUserSurveys').mockImplementation(() => thisTest.surveys);
-                vi.spyOn(firestore, 'updateParticipantData').mockImplementation((doc, updates) => {
+                vi.spyOn(firestore, 'updateParticipantDataByDocId').mockImplementation((doc, updates) => {
                     updatesHolder = updates;
                 });
 

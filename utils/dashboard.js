@@ -27,7 +27,6 @@ const dashboard = async (req, res) => {
     const authObj = await isParentEntity(siteDetails);
     if (userEmail) authObj['userEmail'] = userEmail;
     const isParent = authObj.isParent;
-    const siteCodes = authObj.siteCodes;
     const isCoordinatingCenter = authObj.coordinatingCenter;
     const isHelpDesk = authObj.helpDesk;
     const api = req.query.api;
@@ -97,12 +96,6 @@ const dashboard = async (req, res) => {
             console.error('Error in getFilteredParticipants.', error);
             return res.status(500).json(getResponseJSON('An error occurred while searching for this participant. Please try again later.', 500));
         }
-    } else if (api === 'identifyParticipant' && isParent === false) {
-        const { identifyParticipant } = require('./submission');
-        return await identifyParticipant(req, res, siteCodes);
-    } else if (api === 'submitParticipantsData') {
-        const { submitParticipantsData } = require('./sites');
-        return await submitParticipantsData(req, res, siteCodes);
     } else if (api === 'updateParticipantData') {
         const { updateParticipantData } = require('./sites');
         return await updateParticipantData(req, res, authObj);
