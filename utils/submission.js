@@ -360,6 +360,7 @@ const getFilteredParticipants = async (req, res, authObj) => {
 
     if (Object.keys(queries).length === 0) return res.status(400).json(getResponseJSON(`Please include parameters to filter data. ${helpMessage}`, 400));
     if (!Object.keys(queries).every(param => filterableParams.includes(param))) return res.status(400).json(getResponseJSON(`Invalid filter parameter. ${helpMessage}`, 400));
+    if (limit && limit > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
 
     // Return only verified and active participants for sites using the getFilteredParticipants API directly.
     if (source === 'dashboard' || source === 'biospecimen') {
