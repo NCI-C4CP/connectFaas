@@ -332,7 +332,9 @@ function convertToFirestoreData(bqData) {
 }
 
 function convertToBigqueryKey(str) {
-  return str.replace(/(?<=^|\.)(\d)/g, "d_$1");
+  // Trim before the d_ prefix transform. Notification specs occasionally accumulate
+  // stray leading/trailing whitespace in concept-ID references (likely copy/paste typos).
+  return String(str).trim().replace(/(?<=^|\.)(\d)/g, "d_$1");
 }
 
 function convertToFirestoreKey(str) {
