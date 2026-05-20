@@ -1,4 +1,4 @@
-const { defaultFlags, developmentTier } = require("./shared");
+const { defaultFlags, developmentTier, VALID_TIERS } = require("./shared");
 
 const toFieldKey = (value) => String(value);
 
@@ -163,30 +163,27 @@ const BUILTIN_RETAINED_TOP_LEVEL_NAMED_DATA_DESTRUCTION_VARS = {
     Connect_ID: "Connect_ID",
 };
 
-// Sub-field allowlist shared by V0 across query / state / physicalActivity.
-const V0_NESTED_NAMED_DATA_DESTRUCTION_VARS_SUBFIELDS = {
+// Per-parent nested sub-field allowlists.
+const V0_QUERY_RETAINED_SUBFIELDS = {
     firstName: "firstName",
     lastName: "lastName",
+};
+const V0_STATE_RETAINED_SUBFIELDS = {
     studyId: "studyId",
     uid: "uid",
+};
+const V0_PHYSICAL_ACTIVITY_RETAINED_SUBFIELDS = {
     flagForReportUnreadViewedDeclined: 446235715,
     dateRoiPaReportFirstViewed: 749055145,
 };
 
-const V0_DATA_DESTRUCTION_POLICY_BASELINE = {
+const V0_DATA_DESTRUCTION_BASELINE = {
     version: "v0",
     retainedFieldsNamed: { ...V0_DATA_DESTRUCTION_STUB_VARS, ...BUILTIN_RETAINED_TOP_LEVEL_NAMED_DATA_DESTRUCTION_VARS },
     nestedRetainedFieldsNamed: {
-        query: { ...V0_NESTED_NAMED_DATA_DESTRUCTION_VARS_SUBFIELDS },
-        state: { ...V0_NESTED_NAMED_DATA_DESTRUCTION_VARS_SUBFIELDS },
-        physicalActivity: { ...V0_NESTED_NAMED_DATA_DESTRUCTION_VARS_SUBFIELDS },
-    },
-    requiredAfterDestructionNamed: {
-        Connect_ID: "Connect_ID",
-        token: "token",
-        dataHasBeenDestroyed: 861639549,
-        dateTimeDataDestroyed: 652627623,
-        participationStatus: 912301837,
+        query:            { ...V0_QUERY_RETAINED_SUBFIELDS },
+        state:            { ...V0_STATE_RETAINED_SUBFIELDS },
+        physicalActivity: { ...V0_PHYSICAL_ACTIVITY_RETAINED_SUBFIELDS },
     },
     rationale:
         "Pre-versioning Data Destruction Policy baseline. Documented retroactively so audits of " +
@@ -210,10 +207,6 @@ const V1_DATA_DESTRUCTION_STUB_VARS = {
     },
     nestedRetainedFieldsNamed: {
         // { parentName: { subName: cidOrLiteral } }
-        add:    {},
-        remove: {},
-    },
-    requiredAfterDestructionNamed: {
         add:    {},
         remove: {},
     },
@@ -249,7 +242,7 @@ const hasFieldPath = (obj, fieldPath) => {
 };
 
 const applyDelta = (state, delta) => {
-    const { retainedFieldsNamed, nestedRetainedFieldsNamed, requiredAfterDestructionNamed } = state;
+    const { retainedFieldsNamed, nestedRetainedFieldsNamed } = state;
 
     Object.keys(delta.retainedFieldsNamed?.remove || {}).forEach((name) => {
         delete retainedFieldsNamed[name];
@@ -267,13 +260,6 @@ const applyDelta = (state, delta) => {
             ...(nestedRetainedFieldsNamed[parentName] || {}),
             ...subMap,
         };
-    });
-
-    Object.keys(delta.requiredAfterDestructionNamed?.remove || {}).forEach((name) => {
-        delete requiredAfterDestructionNamed[name];
-    });
-    Object.entries(delta.requiredAfterDestructionNamed?.add || {}).forEach(([name, value]) => {
-        requiredAfterDestructionNamed[name] = value;
     });
 };
 
@@ -305,12 +291,15 @@ const resolvePolicyForDestruction = (
     destructionIso,
     tier = developmentTier,
     versions = DATA_DESTRUCTION_POLICY_DELTAS,
-    baseline = V0_DATA_DESTRUCTION_POLICY_BASELINE,
+    baseline = V0_DATA_DESTRUCTION_BASELINE,
 ) => {
+    if (!VALID_TIERS.includes(tier)) {
+        throw new Error(`Invalid tier "${tier}". Expected one of: ${VALID_TIERS.join(", ")}`);
+    }
+
     const state = {
         retainedFieldsNamed: { ...baseline.retainedFieldsNamed },
         nestedRetainedFieldsNamed: cloneNamedNested(baseline.nestedRetainedFieldsNamed),
-        requiredAfterDestructionNamed: { ...baseline.requiredAfterDestructionNamed },
     };
 
     let resolvedVersion = baseline.version;
@@ -345,8 +334,6 @@ const resolvePolicyForDestruction = (
         retainedFieldsNamed: state.retainedFieldsNamed,
         nestedRetainedFields,
         nestedRetainedFieldsNamed: state.nestedRetainedFieldsNamed,
-        requiredAfterDestruction: namedMapToCidArray(state.requiredAfterDestructionNamed),
-        requiredAfterDestructionNamed: state.requiredAfterDestructionNamed,
         defaultFieldsRetainedIfPresent: Object.keys(defaultFlags)
             .map(toFieldKey)
             .filter((f) => retainedSet.has(f)),
@@ -368,7 +355,6 @@ const describeStubVariables = (policy = getCurrentPolicy()) => ({
     appliedDeltas: policy.appliedDeltas,
     retainedTopLevel: policy.retainedFieldsNamed,
     retainedNested: policy.nestedRetainedFieldsNamed,
-    requiredAfterDestruction: policy.requiredAfterDestructionNamed,
 });
 
 /**
@@ -438,7 +424,6 @@ const validateDestroyedStub = (
     const retainedFields = new Set(policy.retainedTopLevelFields.map(toFieldKey));
     const unexpectedStubFields = [];
     const unexpectedNestedFields = [];
-    const missingRequiredStubFields = [];
     const missingDefaultRetainedFields = [];
 
     Object.keys(participant).forEach((key) => {
@@ -457,12 +442,6 @@ const validateDestroyedStub = (
         });
     });
 
-    policy.requiredAfterDestruction.forEach((fieldPath) => {
-        if (!hasFieldPath(participant, fieldPath)) {
-            missingRequiredStubFields.push(fieldPath);
-        }
-    });
-
     const participantBefore = options.participantBefore;
     if (isObject(participantBefore)) {
         policy.defaultFieldsRetainedIfPresent
@@ -475,11 +454,7 @@ const validateDestroyedStub = (
     }
 
     let status = "pass";
-    if (
-        missingRequiredStubFields.length > 0 ||
-        unexpectedStubFields.length > 0 ||
-        unexpectedNestedFields.length > 0
-    ) {
+    if (unexpectedStubFields.length > 0 || unexpectedNestedFields.length > 0) {
         status = "fail";
     } else if (missingDefaultRetainedFields.length > 0) {
         status = "warn";
@@ -492,13 +467,12 @@ const validateDestroyedStub = (
         status,
         unexpectedStubFields,
         unexpectedNestedFields,
-        missingRequiredStubFields,
         missingDefaultRetainedFields,
     };
 };
 
 module.exports = {
-    V0_DATA_DESTRUCTION_BASELINE: V0_DATA_DESTRUCTION_POLICY_BASELINE,
+    V0_DATA_DESTRUCTION_BASELINE,
     V0_DATA_DESTRUCTION_STUB_VARS,
     V1_DATA_DESTRUCTION_STUB_VARS,
     DATA_DESTRUCTION_POLICY_DELTAS,

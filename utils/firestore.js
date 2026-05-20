@@ -1049,7 +1049,6 @@ const removeParticipantsDataDestruction = async () => {
                                         JSON.stringify({
                                             unexpectedStubFields: validation.unexpectedStubFields,
                                             unexpectedNestedFields: validation.unexpectedNestedFields,
-                                            missingRequiredStubFields: validation.missingRequiredStubFields,
                                             missingDefaultRetainedFields: validation.missingDefaultRetainedFields,
                                         });
 

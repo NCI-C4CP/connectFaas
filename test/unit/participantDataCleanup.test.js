@@ -33,8 +33,8 @@ function createDestructionParticipant(overrides = {}) {
         Connect_ID: '1234567890',
         token: 'test-token-abc',
         pin: '123456',
-        query: { firstName: 'Jane', lastName: 'Doe', studyId: 'S1', someOtherField: 'val' },
-        state: { uid: 'firebase-uid', otherStateField: 'val2' },
+        query: { firstName: 'Jane', lastName: 'Doe', someOtherField: 'val' },
+        state: { studyId: 'S1', uid: 'firebase-uid', otherStateField: 'val2' },
         [destroyDataCId()]: fieldMapping.yes,
         [dataHasBeenDestroyedCId()]: fieldMapping.no,
         [destroyDataCategoricalCId()]: requestedAndSignCId(),
@@ -437,7 +437,7 @@ describe('Participant Data Cleanup', () => {
                 expect(updateArg).toHaveProperty(`${physicalActivityCId}.anotherField`);
             });
 
-            it('should delete sub-fields of query/state that are not in subStubFieldArray', async () => {
+            it('Deletes nested sub-fields not retained by the per-parent allowlist', async () => {
                 const { data, doc } = createDestructionParticipant();
                 const { updateStubs } = setupFullDestructionMock([doc]);
 
@@ -445,13 +445,17 @@ describe('Participant Data Cleanup', () => {
 
                 const updateArg = updateStubs[doc.id].mock.calls[0][0];
 
-                // query.someOtherField should be deleted
+                // Non-allowlisted sub-fields are deleted.
                 expect(updateArg).toHaveProperty('query.someOtherField');
+                expect(updateArg).toHaveProperty('state.otherStateField');
 
-                // query.firstName, query.lastName, query.studyId should be preserved (not deleted)
+                // query retains only name fields.
                 expect(updateArg).not.toHaveProperty('query.firstName');
                 expect(updateArg).not.toHaveProperty('query.lastName');
-                expect(updateArg).not.toHaveProperty('query.studyId');
+
+                // state retains only study identifiers.
+                expect(updateArg).not.toHaveProperty('state.studyId');
+                expect(updateArg).not.toHaveProperty('state.uid');
             });
         });
 
@@ -549,8 +553,8 @@ describe('Participant Data Cleanup', () => {
                     Connect_ID: '1234567890',
                     token: 'test-token-abc',
                     pin: '123456',
-                    query: { firstName: 'Jane', lastName: 'Doe', studyId: 'S1' },
-                    state: { uid: 'firebase-uid' },
+                    query: { firstName: 'Jane', lastName: 'Doe' },
+                    state: { studyId: 'S1', uid: 'firebase-uid' },
                 };
 
                 // Add every CID-keyed retained field for the active policy so the

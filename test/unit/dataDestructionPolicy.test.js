@@ -27,7 +27,6 @@ const syntheticV1 = {
         remove: { firebaseAuthenticationEmail: 421823980 },
     },
     nestedRetainedFieldsNamed: { add: {}, remove: {} },
-    requiredAfterDestructionNamed: { add: {}, remove: {} },
     rationale: "test",
 };
 
@@ -39,25 +38,26 @@ describe("dataDestructionPolicy — V0 baseline (named)", () => {
         expect(V0_DATA_DESTRUCTION_BASELINE.retainedFieldsNamed.token).toBe("token");
     });
 
-    it("requires Connect_ID, token, and the three destruction stamps by name", () => {
-        expect(V0_DATA_DESTRUCTION_BASELINE.requiredAfterDestructionNamed).toEqual({
-            Connect_ID: "Connect_ID",
-            token: "token",
-            dataHasBeenDestroyed: 861639549,
-            dateTimeDataDestroyed: 652627623,
-            participationStatus: 912301837,
-        });
+    it("retains Connect_ID, token, and the three destruction stamps in the top-level retained map", () => {
+        expect(V0_DATA_DESTRUCTION_BASELINE.retainedFieldsNamed.Connect_ID).toBe("Connect_ID");
+        expect(V0_DATA_DESTRUCTION_BASELINE.retainedFieldsNamed.token).toBe("token");
+        expect(V0_DATA_DESTRUCTION_BASELINE.retainedFieldsNamed.dataHasBeenDestroyedFlag).toBe(861639549);
+        expect(V0_DATA_DESTRUCTION_BASELINE.retainedFieldsNamed.dateTimeDataDestroyed).toBe(652627623);
+        expect(V0_DATA_DESTRUCTION_BASELINE.retainedFieldsNamed.participationStatus).toBe(912301837);
+        // requiredAfterDestructionNamed should not exist at all.
+        expect(V0_DATA_DESTRUCTION_BASELINE.requiredAfterDestructionNamed).toBeUndefined();
     });
 
-    it("uses the same nested allowlist for query / state / physicalActivity", () => {
-        const sub = V0_DATA_DESTRUCTION_BASELINE.nestedRetainedFieldsNamed.query;
-        expect(V0_DATA_DESTRUCTION_BASELINE.nestedRetainedFieldsNamed.state).toEqual(sub);
-        expect(V0_DATA_DESTRUCTION_BASELINE.nestedRetainedFieldsNamed.physicalActivity).toEqual(sub);
-        expect(sub).toEqual({
+    it("uses per-parent nested allowlists (query has names; state has study ids; physicalActivity has report flags)", () => {
+        expect(V0_DATA_DESTRUCTION_BASELINE.nestedRetainedFieldsNamed.query).toEqual({
             firstName: "firstName",
             lastName: "lastName",
+        });
+        expect(V0_DATA_DESTRUCTION_BASELINE.nestedRetainedFieldsNamed.state).toEqual({
             studyId: "studyId",
             uid: "uid",
+        });
+        expect(V0_DATA_DESTRUCTION_BASELINE.nestedRetainedFieldsNamed.physicalActivity).toEqual({
             flagForReportUnreadViewedDeclined: 446235715,
             dateRoiPaReportFirstViewed: 749055145,
         });
@@ -228,7 +228,7 @@ describe("dataDestructionPolicy — V1 delta (named)", () => {
         expect(v1.retainedFieldsNamed.add).toEqual({ dateRevokedHIPAA: 664453818 });
         expect(v1.retainedFieldsNamed.remove).toEqual({ firebaseAuthenticationEmail: 421823980 });
         expect(v1.nestedRetainedFieldsNamed).toEqual({ add: {}, remove: {} });
-        expect(v1.requiredAfterDestructionNamed).toEqual({ add: {}, remove: {} });
+        expect(v1.requiredAfterDestructionNamed).toBeUndefined();
         expect(v1.rationale).toMatch(/dateRevokedHIPAA/);
     });
 
@@ -253,6 +253,15 @@ describe("dataDestructionPolicy — resolver", () => {
         expect(view.retainedFieldsNamed.dateRevokedHIPAA).toBeUndefined();
         expect(view.retainedTopLevelFields).toContain("421823980");
         expect(view.retainedTopLevelFields).not.toContain("664453818");
+    });
+
+    it("throws on an unknown tier rather than silently falling back to V0", () => {
+        expect(() => resolvePolicyForDestruction("2026-06-01T00:00:00.000Z", "SANDBOX", versions))
+            .toThrow(/Invalid tier "SANDBOX"/);
+        expect(() => resolvePolicyForDestruction("2026-06-01T00:00:00.000Z", "", versions))
+            .toThrow(/Invalid tier/);
+        expect(() => resolvePolicyForDestruction("2026-06-01T00:00:00.000Z", null, versions))
+            .toThrow(/Invalid tier/);
     });
 
     it("returns V0 when destructionIso is unparseable", () => {
@@ -292,12 +301,18 @@ describe("dataDestructionPolicy — resolver", () => {
 
     it("materializes nestedRetainedFields under the CID-form parent key", () => {
         const view = resolvePolicyForDestruction(null, "DEV", []);
-        // physicalActivity parent renders as its CID 686238347 in the doc-shape map
+        // physicalActivity parent renders as its CID 686238347 in the doc-shape map,
+        // with only its own per-parent sub-fields.
         expect(view.nestedRetainedFields["686238347"]).toEqual(expect.arrayContaining([
-            "firstName", "lastName", "studyId", "uid", "446235715", "749055145",
+            "446235715", "749055145",
         ]));
-        // builtin parents stay as literal names
-        expect(view.nestedRetainedFields.query).toEqual(expect.arrayContaining(["firstName"]));
+        expect(view.nestedRetainedFields["686238347"]).not.toContain("firstName");
+        expect(view.nestedRetainedFields["686238347"]).not.toContain("studyId");
+        // Builtin parents stay as literal names with their own per-parent sub-fields.
+        expect(view.nestedRetainedFields.query).toEqual(expect.arrayContaining(["firstName", "lastName"]));
+        expect(view.nestedRetainedFields.query).not.toContain("studyId");
+        expect(view.nestedRetainedFields.state).toEqual(expect.arrayContaining(["studyId", "uid"]));
+        expect(view.nestedRetainedFields.state).not.toContain("firstName");
     });
 
     it("recomputes defaultFieldsRetainedIfPresent against the resolved retained set", () => {
@@ -330,23 +345,19 @@ describe("dataDestructionPolicy — applyDelta (named)", () => {
         const state = {
             retainedFieldsNamed: { a: 1, b: 2, c: 3 },
             nestedRetainedFieldsNamed: { query: { x: "x" } },
-            requiredAfterDestructionNamed: { Connect_ID: "Connect_ID" },
         };
         applyDelta(state, {
             retainedFieldsNamed: { add: { d: 4 }, remove: { b: 2 } },
             nestedRetainedFieldsNamed: { add: { query: { y: "y" } }, remove: { query: { x: "x" } } },
-            requiredAfterDestructionNamed: { add: { newReq: 999 }, remove: { Connect_ID: "Connect_ID" } },
         });
         expect(state.retainedFieldsNamed).toEqual({ a: 1, c: 3, d: 4 });
         expect(state.nestedRetainedFieldsNamed.query).toEqual({ y: "y" });
-        expect(state.requiredAfterDestructionNamed).toEqual({ newReq: 999 });
     });
 
     it("tolerates missing delta sections", () => {
         const state = {
             retainedFieldsNamed: { a: 1 },
             nestedRetainedFieldsNamed: {},
-            requiredAfterDestructionNamed: {},
         };
         expect(() => applyDelta(state, {})).not.toThrow();
         expect(state.retainedFieldsNamed).toEqual({ a: 1 });
@@ -360,7 +371,11 @@ describe("dataDestructionPolicy — describeStubVariables", () => {
         expect(description.effectiveFrom).toBeNull();
         expect(description.retainedTopLevel.firebaseAuthenticationEmail).toBe(421823980);
         expect(description.retainedNested.query.firstName).toBe("firstName");
-        expect(description.requiredAfterDestruction.dataHasBeenDestroyed).toBe(861639549);
+        // The destruction stamps live in retainedTopLevel; there is no requiredAfterDestruction category.
+        expect(description.retainedTopLevel.dataHasBeenDestroyedFlag).toBe(861639549);
+        expect(description.retainedTopLevel.dateTimeDataDestroyed).toBe(652627623);
+        expect(description.retainedTopLevel.participationStatus).toBe(912301837);
+        expect(description.requiredAfterDestruction).toBeUndefined();
     });
 
     it("defaults to the current policy when no argument is passed", () => {
@@ -471,16 +486,15 @@ describe("dataDestructionPolicy — validateDestroyedStub", () => {
         expect(validation.unexpectedNestedFields).toContain("query.extraQuery");
     });
 
-    it("flags missing required fields", () => {
+    it("passes a stub with only retained top-level fields", () => {
         const validation = validateDestroyedStub({
             Connect_ID: 123,
             token: "token-1",
         }, v0);
 
-        expect(validation.status).toBe("fail");
-        expect(validation.missingRequiredStubFields).toEqual(expect.arrayContaining([
-            "861639549", "652627623", "912301837",
-        ]));
+        expect(validation.status).toBe("pass");
+        expect(validation.unexpectedStubFields).toEqual([]);
+        expect(validation.missingRequiredStubFields).toBeUndefined();
     });
 
     it("warns when defaults that were present before are missing after", () => {

@@ -28,7 +28,7 @@ steps:
           --time-zone="${_TIME_ZONE}" \
           --uri="$${SERVICE_URL}" \
           --http-method=POST \
-          --headers=Content-Type=application/json \
+          --update-headers=Content-Type=application/json \
           --message-body='{"mode":"audit"}' \
           --attempt-deadline="${_ATTEMPT_DEADLINE}" \
           --oidc-service-account-email="$${OIDC_SERVICE_ACCOUNT_EMAIL}" \

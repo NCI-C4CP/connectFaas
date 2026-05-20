@@ -2478,11 +2478,15 @@ const sanitizeObject = (obj) => {
     }, {});
 };
 
-const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
-            ? 'PROD'
-            : process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-stg-5519'
-                ? 'STAGE'
-                : 'DEV';
+const PROJECT_TIER_MAP = Object.freeze({
+    'nih-nci-dceg-connect-dev':       'DEV',
+    'nih-nci-dceg-connect-stg-5519':  'STAGE',
+    'nih-nci-dceg-connect-prod-6d04': 'PROD',
+});
+const DEFAULT_TIER = 'DEV';
+const VALID_TIERS = Object.freeze([...new Set(Object.values(PROJECT_TIER_MAP))]);
+
+const developmentTier = PROJECT_TIER_MAP[process.env.GCLOUD_PROJECT] || DEFAULT_TIER;
 
 module.exports = {
     getResponseJSON,
@@ -2571,4 +2575,6 @@ module.exports = {
     uspsUrl,
     sanitizeObject,
     developmentTier,
+    VALID_TIERS,
+    PROJECT_TIER_MAP,
 };

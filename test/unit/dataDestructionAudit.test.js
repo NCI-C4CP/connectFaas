@@ -15,8 +15,8 @@ const destroyedParticipantDoc = (overrides = {}) => {
         Connect_ID: 1001,
         token: "token-1001",
         pin: "123456",
-        query: { firstName: "Jane", lastName: "Doe", studyId: "S1" },
-        state: { uid: "uid-1001" },
+        query: { firstName: "Jane", lastName: "Doe" },
+        state: { studyId: "S1", uid: "uid-1001" },
         [fieldMapping.participantMap.dataHasBeenDestroyed.toString()]: fieldMapping.yes,
         [fieldMapping.participantMap.dateTimeDataDestroyed.toString()]: "2026-05-14T05:00:00.000Z",
         [fieldMapping.participationStatus]: fieldMapping.participantMap.dataDestroyedStatus,
@@ -527,8 +527,94 @@ describe("dataDestructionAudit", () => {
 
     it("generates exact Box artifact filenames", () => {
         expect(audit.buildAuditFileNames("20260514")).toEqual({
-            summaryFileName: "20260514_data_destruction_summary.json",
-            participantsFileName: "20260514_data_destruction_participants.ndjson",
+            summaryFileName:         "20260514_data_destruction_summary.json",
+            participantsFileName:    "20260514_data_destruction_participants.ndjson",
+            participantsCsvFileName: "20260514_data_destruction_participants.csv",
+        });
+    });
+
+    describe("buildParticipantsCsv", () => {
+        const baseResult = (overrides = {}) => ({
+            runId: "run-1",
+            connectId: 1001,
+            participantDocId: "doc-1001",
+            tier: "DEV",
+            mode: "audit",
+            dryRun: false,
+            policyVersion: "v0",
+            policyResolution: { destructionAt: "2026-05-14T05:00:00.000Z", effectiveFrom: null, appliedDeltas: [] },
+            status: "pass",
+            orphanedCollections: [],
+            pathologyReports: { metadataCount: 0, storageFileCount: 0, invalidMetadataCount: 0, bucketsChecked: [] },
+            unexpectedStubFields: [],
+            unexpectedNestedFields: [],
+            missingDefaultRetainedFields: [],
+            collectionErrors: [],
+            storageErrors: [],
+            cleanupActions: [],
+            warnings: [],
+            coverageGaps: [],
+            checkedAt: "2026-05-14T05:00:01.000Z",
+            ...overrides,
+        });
+
+        it("emits header-only output when participantResults is empty", () => {
+            const csv = audit.buildParticipantsCsv([]);
+            const lines = csv.split("\n");
+            expect(lines[0]).toBe(audit.PARTICIPANT_CSV_COLUMNS.join(","));
+            // Header + trailing newline → exactly 2 entries when split.
+            expect(lines).toHaveLength(2);
+            expect(lines[1]).toBe("");
+        });
+
+        it("emits one row per participant with stable column order", () => {
+            const csv = audit.buildParticipantsCsv([
+                baseResult({ connectId: 1001 }),
+                baseResult({ connectId: 2002, status: "fail" }),
+            ]);
+            const lines = csv.trim().split("\n");
+            expect(lines).toHaveLength(3); // header + 2 rows
+            expect(lines[0]).toBe(audit.PARTICIPANT_CSV_COLUMNS.join(","));
+            expect(lines[1].split(",")[1]).toBe("1001");
+            expect(lines[2].split(",")[1]).toBe("2002");
+            expect(lines[2]).toContain("fail");
+        });
+
+        it("flattens arrays into semicolon-joined columns with counts", () => {
+            const csv = audit.buildParticipantsCsv([
+                baseResult({
+                    status: "fail",
+                    orphanedCollections: [
+                        { collection: "notifications", queryField: "token", count: 3 },
+                        { collection: "ssn", queryField: "token", count: 1 },
+                    ],
+                    unexpectedStubFields: ["123456789", "999000111"],
+                    coverageGaps: [
+                        { collection: "dhqAnalysisResults", reason: "no key" },
+                        { collection: "dhqRawAnswers", reason: "no key" },
+                    ],
+                }),
+            ]);
+            const row = csv.trim().split("\n")[1];
+            // orphanedCollectionDocCount = 3+1 = 4; orphanedCollections = "notifications;ssn"
+            expect(row).toContain(",4,notifications;ssn,");
+            // unexpectedStubFieldCount = 2; semicolon-joined
+            expect(row).toContain(",2,123456789;999000111,");
+            // coverageGapCount = 2; collection names semicolon-joined
+            expect(row).toContain(",2,dhqAnalysisResults;dhqRawAnswers,");
+        });
+
+        it("RFC 4180 escapes commas, quotes, and newlines in array entries", () => {
+            const csv = audit.buildParticipantsCsv([
+                baseResult({
+                    status: "error",
+                    // Each entry contains a comma, a quote, and a newline.
+                    collectionErrors: ['notifications: timeout, then disconnected', 'ssn: "quoted msg"', "multi\nline"],
+                }),
+            ]);
+            const row = csv.trim().split("\n").slice(1).join("\n");
+            
+            expect(row).toContain('"notifications: timeout, then disconnected;ssn: ""quoted msg"";multi\nline"');
         });
     });
 
@@ -576,13 +662,19 @@ describe("dataDestructionAudit", () => {
             })).rejects.toThrow(/boxEnterpriseID/);
         });
 
-        it("uploads Box audit artifacts with exact filenames", async () => {
+        it("uploads Box audit artifacts (summary, NDJSON, CSV) with exact filenames", async () => {
+            // 5 fetch calls expected: token, ndjson, csv, summary v1, summary version self-ref.
             const fetchFn = vi.fn()
                 .mockResolvedValueOnce(okJson({ access_token: "box-token" }))
                 .mockResolvedValueOnce({
                     ok: true,
                     status: 201,
                     json: vi.fn().mockResolvedValue({ entries: [{ id: "participants-file-id", name: "20260514_data_destruction_participants.ndjson" }] }),
+                })
+                .mockResolvedValueOnce({
+                    ok: true,
+                    status: 201,
+                    json: vi.fn().mockResolvedValue({ entries: [{ id: "participants-csv-file-id", name: "20260514_data_destruction_participants.csv" }] }),
                 })
                 .mockResolvedValueOnce({
                     ok: true,
@@ -600,6 +692,7 @@ describe("dataDestructionAudit", () => {
             const uploadResult = await audit.uploadAuditArtifacts({
                 summary,
                 participantsNdjson: "",
+                participantsCsv: "runId\n",
                 fileNames,
                 settings: { boxFolderID: "folder-1", boxEnterpriseID: "enterprise-1" },
                 getSecretFn: vi.fn().mockResolvedValue("secret"),
@@ -609,8 +702,17 @@ describe("dataDestructionAudit", () => {
             expect(uploadResult).toEqual({
                 summaryFileName: fileNames.summaryFileName,
                 participantsFileName: fileNames.participantsFileName,
+                participantsCsvFileName: fileNames.participantsCsvFileName,
                 summaryFileId: "summary-file-id",
                 participantsFileId: "participants-file-id",
+                participantsCsvFileId: "participants-csv-file-id",
+            });
+
+            // Summary boxFiles should track all three artifacts.
+            expect(summary.boxFiles).toEqual({
+                summary:         { fileName: fileNames.summaryFileName,         fileId: "summary-file-id" },
+                participants:    { fileName: fileNames.participantsFileName,    fileId: "participants-file-id" },
+                participantsCsv: { fileName: fileNames.participantsCsvFileName, fileId: "participants-csv-file-id" },
             });
 
             // Last call is the summary version upload that self-references the Box file ID.
@@ -711,7 +813,7 @@ describe("dataDestructionAudit", () => {
             expect(audit.parseEmailRecipients(null)).toEqual([]);
         });
 
-        it("sends summary + NDJSON attachments through the injected SendGrid client", async () => {
+        it("sends summary + NDJSON + CSV attachments through the injected SendGrid client", async () => {
             process.env.GCLOUD_SENDGRID_SECRET = "projects/p/secrets/sendgrid/versions/1";
 
             const sgClient = { setApiKey: vi.fn(), send: vi.fn().mockResolvedValue() };
@@ -730,6 +832,7 @@ describe("dataDestructionAudit", () => {
             const result = await audit.emailAuditArtifacts({
                 summary,
                 participantsNdjson: '{"x":1}\n',
+                participantsCsv: 'runId,connectId\nr-1,1001\n',
                 fileNames,
                 settings: { emailRecipients: ["team@example.com", "lead@example.com"] },
                 getSecretFn,
@@ -741,14 +844,23 @@ describe("dataDestructionAudit", () => {
             const msg = sgClient.send.mock.calls[0][0];
             expect(msg.to).toEqual(["team@example.com", "lead@example.com"]);
             expect(msg.subject).toContain("PROD");
-            expect(msg.attachments).toHaveLength(2);
+            expect(msg.attachments).toHaveLength(3);
             expect(msg.attachments.map((a) => a.filename)).toEqual([
                 fileNames.summaryFileName,
                 fileNames.participantsFileName,
+                fileNames.participantsCsvFileName,
             ]);
             const ndjsonAttachment = msg.attachments.find((a) => a.filename === fileNames.participantsFileName);
             expect(Buffer.from(ndjsonAttachment.content, "base64").toString()).toBe('{"x":1}\n');
+            const csvAttachment = msg.attachments.find((a) => a.filename === fileNames.participantsCsvFileName);
+            expect(csvAttachment.type).toBe("text/csv");
+            expect(Buffer.from(csvAttachment.content, "base64").toString()).toBe('runId,connectId\nr-1,1001\n');
             expect(result.recipients).toEqual(["team@example.com", "lead@example.com"]);
+            expect(result.attachments).toEqual([
+                fileNames.summaryFileName,
+                fileNames.participantsFileName,
+                fileNames.participantsCsvFileName,
+            ]);
         });
 
         it("throws when settings has no recipients configured", async () => {
@@ -782,6 +894,7 @@ describe("dataDestructionAudit", () => {
                     startedAt: "t", participantCounts: { total: 0, status: { pass: 0, warn: 0, fail: 0, error: 0 } },
                 },
                 participantsNdjson: "",
+                participantsCsv: "runId\n",
                 fileNames: audit.buildAuditFileNames("20260514"),
                 settings: { emailRecipients: ["a@b.com"] },
                 getSecretFn: vi.fn().mockResolvedValue("k"),
@@ -894,8 +1007,10 @@ describe("dataDestructionAudit", () => {
             const uploadAuditArtifacts = vi.fn().mockResolvedValue({
                 summaryFileName: "s.json",
                 participantsFileName: "p.ndjson",
+                participantsCsvFileName: "p.csv",
                 summaryFileId: "s",
                 participantsFileId: "p",
+                participantsCsvFileId: "pc",
             });
             const emailAuditArtifacts = vi.fn().mockRejectedValue(new Error("no recipients"));
 
@@ -906,8 +1021,9 @@ describe("dataDestructionAudit", () => {
             });
 
             expect(result.summary.boxFiles).toEqual({
-                summary: { fileName: "s.json", fileId: "s" },
-                participants: { fileName: "p.ndjson", fileId: "p" },
+                summary:         { fileName: "s.json",   fileId: "s" },
+                participants:    { fileName: "p.ndjson", fileId: "p" },
+                participantsCsv: { fileName: "p.csv",    fileId: "pc" },
             });
             expect(result.summary.emailDelivery.error).toBe("no recipients");
         });

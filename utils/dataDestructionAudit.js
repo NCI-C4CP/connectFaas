@@ -33,8 +33,9 @@ const getAuditDateStamp = (date = new Date()) => getEasternDateKey(date).replace
 const buildAuditFileNames = (date = new Date()) => {
     const dateStamp = typeof date === "string" ? date : getAuditDateStamp(date);
     return {
-        summaryFileName: `${dateStamp}_data_destruction_summary.json`,
-        participantsFileName: `${dateStamp}_data_destruction_participants.ndjson`,
+        summaryFileName:           `${dateStamp}_data_destruction_summary.json`,
+        participantsFileName:      `${dateStamp}_data_destruction_participants.ndjson`,
+        participantsCsvFileName:   `${dateStamp}_data_destruction_participants.csv`,
     };
 };
 
@@ -161,13 +162,8 @@ const getDataDestructionCollectionQuerySpec = (collection, participant) => {
     };
 };
 
-const getQuerySnapshot = async (collection, field, value) => {
-    let query = db.collection(collection).where(field, "==", value);
-    if (typeof query.select === "function") {
-        query = query.select();
-    }
-    return query.get();
-};
+const findRelatedDocsForCleanup = async (collection, field, value) =>
+    db.collection(collection).where(field, "==", value).select().get();
 
 const deleteRefsInBatches = async (refs) => {
     let deletedCount = 0;
@@ -207,7 +203,7 @@ const auditRelatedCollections = async ({ participant, mode, dryRun }) => {
         }
 
         try {
-            const snapshot = await getQuerySnapshot(collection, spec.field, spec.value);
+            const snapshot = await findRelatedDocsForCleanup(collection, spec.field, spec.value);
             if (snapshot.size === 0) continue;
 
             const docs = snapshot.docs.map((doc) => ({
@@ -290,8 +286,7 @@ const auditPathologyReports = async ({ participant, mode, dryRun, bucketExistsCa
 
         const docsByBucket = new Map();
         for (const doc of snapshot.docs) {
-            const docData = typeof doc.data === "function" ? doc.data() : {};
-            const { bucketName } = docData;
+            const { bucketName } = doc.data();
 
             if (!isValidPathologyBucketName(bucketName)) {
                 pathologyReports.invalidMetadataCount++;
@@ -438,7 +433,6 @@ const resolveParticipantStatus = ({
     if (collectionErrors.length > 0 || storageErrors.length > 0) return "error";
 
     if (
-        validation.missingRequiredStubFields.length > 0 ||
         validation.unexpectedStubFields.length > 0 ||
         validation.unexpectedNestedFields.length > 0 ||
         orphanedCollections.length > 0 ||
@@ -520,7 +514,6 @@ const auditParticipantDataDestruction = async ({ doc, mode, dryRun, runId, proje
         pathologyReports: pathologyResult.pathologyReports,
         unexpectedStubFields: validation.unexpectedStubFields,
         unexpectedNestedFields: validation.unexpectedNestedFields,
-        missingRequiredStubFields: validation.missingRequiredStubFields,
         missingDefaultRetainedFields: validation.missingDefaultRetainedFields,
         collectionErrors,
         storageErrors,
@@ -543,7 +536,6 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
         pathologyStorageFiles: 0,
         unexpectedStubFields: 0,
         unexpectedNestedFields: 0,
-        missingRequiredStubFields: 0,
         missingDefaultRetainedFields: 0,
         collectionErrors: 0,
         storageErrors: 0,
@@ -565,7 +557,6 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
         findingCounts.pathologyStorageFiles += result.pathologyReports.storageFileCount;
         findingCounts.unexpectedStubFields += result.unexpectedStubFields.length;
         findingCounts.unexpectedNestedFields += result.unexpectedNestedFields.length;
-        findingCounts.missingRequiredStubFields += result.missingRequiredStubFields.length;
         findingCounts.missingDefaultRetainedFields += result.missingDefaultRetainedFields.length;
         findingCounts.collectionErrors += result.collectionErrors.length;
         findingCounts.storageErrors += result.storageErrors.length;
@@ -744,6 +735,7 @@ const uploadBoxFile = async ({
 const uploadAuditArtifacts = async ({
     summary,
     participantsNdjson,
+    participantsCsv,
     fileNames,
     settings = {},
     getSecretFn = getSecret,
@@ -758,8 +750,9 @@ const uploadAuditArtifacts = async ({
     const accessToken = await getBoxAccessToken({ enterpriseId, getSecretFn, fetchFn });
 
     summary.boxFiles = {
-        summary: { fileName: fileNames.summaryFileName, fileId: null },
-        participants: { fileName: fileNames.participantsFileName, fileId: null },
+        summary:         { fileName: fileNames.summaryFileName,         fileId: null },
+        participants:    { fileName: fileNames.participantsFileName,    fileId: null },
+        participantsCsv: { fileName: fileNames.participantsCsvFileName, fileId: null },
     };
 
     const participantUpload = await uploadBoxFile({
@@ -771,6 +764,16 @@ const uploadAuditArtifacts = async ({
         fetchFn,
     });
     summary.boxFiles.participants.fileId = participantUpload.fileId;
+
+    const participantCsvUpload = await uploadBoxFile({
+        accessToken,
+        folderId,
+        fileName: fileNames.participantsCsvFileName,
+        content: participantsCsv,
+        contentType: "text/csv",
+        fetchFn,
+    });
+    summary.boxFiles.participantsCsv.fileId = participantCsvUpload.fileId;
 
     const summaryUpload = await uploadBoxFile({
         accessToken,
@@ -794,8 +797,10 @@ const uploadAuditArtifacts = async ({
     return {
         summaryFileName: fileNames.summaryFileName,
         participantsFileName: fileNames.participantsFileName,
+        participantsCsvFileName: fileNames.participantsCsvFileName,
         summaryFileId: summaryUpload.fileId,
         participantsFileId: participantUpload.fileId,
+        participantsCsvFileId: participantCsvUpload.fileId,
     };
 };
 
@@ -866,6 +871,7 @@ const extractBoxFolderIdFromSettings = (settings = {}) => {
 const emailAuditArtifacts = async ({
     summary,
     participantsNdjson,
+    participantsCsv,
     fileNames,
     settings = {},
     getSecretFn = getSecret,
@@ -910,6 +916,7 @@ const emailAuditArtifacts = async ({
             `Attachments:`,
             `  - ${fileNames.summaryFileName}`,
             `  - ${fileNames.participantsFileName}`,
+            `  - ${fileNames.participantsCsvFileName}`,
         ].join("\n"),
         attachments: [
             {
@@ -924,18 +931,125 @@ const emailAuditArtifacts = async ({
                 type: "application/x-ndjson",
                 disposition: "attachment",
             },
+            {
+                content: Buffer.from(participantsCsv).toString("base64"),
+                filename: fileNames.participantsCsvFileName,
+                type: "text/csv",
+                disposition: "attachment",
+            },
         ],
     };
 
     await sgClient.send(msg);
 
-    return { recipients, attachments: [fileNames.summaryFileName, fileNames.participantsFileName] };
+    return {
+        recipients,
+        attachments: [
+            fileNames.summaryFileName,
+            fileNames.participantsFileName,
+            fileNames.participantsCsvFileName,
+        ],
+    };
 };
 
 const buildParticipantsNdjson = (participantResults) => (
     participantResults.map((result) => JSON.stringify(result)).join("\n") +
     (participantResults.length > 0 ? "\n" : "")
 );
+
+/**
+ * RFC 4180 field escape. Quotes the value if it contains a comma, newline, CR, or quote;
+ * doubles up internal quotes inside a quoted field.
+ */
+const escapeCsvField = (value) => {
+    if (value === null || value === undefined) return "";
+    const str = String(value);
+    if (/[",\n\r]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+};
+
+const csvRow = (values) => values.map(escapeCsvField).join(",");
+
+/**
+ * Column order pinned so the data team's downstream consumers don't break when we
+ * add fields. New columns should append to this list (never re-order).
+ */
+const PARTICIPANT_CSV_COLUMNS = [
+    "runId",
+    "connectId",
+    "participantDocId",
+    "tier",
+    "mode",
+    "dryRun",
+    "policyVersion",
+    "destructionAt",
+    "status",
+    "orphanedCollectionDocCount",
+    "orphanedCollections",
+    "pathologyMetadataCount",
+    "pathologyStorageFileCount",
+    "unexpectedStubFieldCount",
+    "unexpectedStubFields",
+    "unexpectedNestedFieldCount",
+    "unexpectedNestedFields",
+    "missingDefaultRetainedFieldCount",
+    "missingDefaultRetainedFields",
+    "coverageGapCount",
+    "coverageGaps",
+    "collectionErrorCount",
+    "collectionErrors",
+    "storageErrorCount",
+    "storageErrors",
+    "cleanupActionCount",
+    "warningCount",
+    "warnings",
+    "checkedAt",
+];
+
+const buildParticipantsCsv = (participantResults) => {
+    const header = PARTICIPANT_CSV_COLUMNS.join(",");
+    if (participantResults.length === 0) return `${header}\n`;
+
+    const rows = participantResults.map((r) => {
+        const orphanedCount = r.orphanedCollections.reduce((sum, item) => sum + item.count, 0);
+        const orphanedNames = r.orphanedCollections.map((item) => item.collection).join(";");
+        const coverageGaps = r.coverageGaps || [];
+        return csvRow([
+            r.runId,
+            r.connectId,
+            r.participantDocId,
+            r.tier,
+            r.mode,
+            r.dryRun,
+            r.policyVersion,
+            r.policyResolution?.destructionAt ?? "",
+            r.status,
+            orphanedCount,
+            orphanedNames,
+            r.pathologyReports.metadataCount,
+            r.pathologyReports.storageFileCount,
+            r.unexpectedStubFields.length,
+            r.unexpectedStubFields.join(";"),
+            r.unexpectedNestedFields.length,
+            r.unexpectedNestedFields.join(";"),
+            r.missingDefaultRetainedFields.length,
+            r.missingDefaultRetainedFields.join(";"),
+            coverageGaps.length,
+            coverageGaps.map((g) => g.collection).join(";"),
+            r.collectionErrors.length,
+            r.collectionErrors.join(";"),
+            r.storageErrors.length,
+            r.storageErrors.join(";"),
+            r.cleanupActions.length,
+            (r.warnings || []).length,
+            (r.warnings || []).join(";"),
+            r.checkedAt,
+        ]);
+    });
+    return [header, ...rows].join("\n") + "\n";
+};
 
 /**
  * Main audit workflow used by the HTTP function and direct unit-test invocation.
@@ -989,20 +1103,23 @@ const runDataDestructionAudit = async (rawOptions = {}, dependencies = {}) => {
 
     const fileNames = buildAuditFileNames(runDate);
     const participantsNdjson = buildParticipantsNdjson(participantResults);
+    const participantsCsv = buildParticipantsCsv(participantResults);
 
     const boxFn = dependencies.uploadAuditArtifacts || uploadAuditArtifacts;
     try {
         const uploadResult = await boxFn({
             summary,
             participantsNdjson,
+            participantsCsv,
             fileNames,
             settings,
             getSecretFn: dependencies.getSecretFn || getSecret,
             fetchFn: dependencies.fetchFn || fetch,
         });
         summary.boxFiles = {
-            summary: { fileName: uploadResult.summaryFileName, fileId: uploadResult.summaryFileId },
-            participants: { fileName: uploadResult.participantsFileName, fileId: uploadResult.participantsFileId },
+            summary:         { fileName: uploadResult.summaryFileName,         fileId: uploadResult.summaryFileId },
+            participants:    { fileName: uploadResult.participantsFileName,    fileId: uploadResult.participantsFileId },
+            participantsCsv: { fileName: uploadResult.participantsCsvFileName, fileId: uploadResult.participantsCsvFileId },
         };
     } catch (error) {
         console.error("Data destruction audit: Box upload failed.", error);
@@ -1015,6 +1132,7 @@ const runDataDestructionAudit = async (rawOptions = {}, dependencies = {}) => {
         const emailResult = await emailFn({
             summary,
             participantsNdjson,
+            participantsCsv,
             fileNames,
             settings,
             getSecretFn: dependencies.getSecretFn || getSecret,
@@ -1100,6 +1218,8 @@ module.exports = {
     auditPathologyReports,
     buildAuditFileNames,
     buildParticipantsNdjson,
+    buildParticipantsCsv,
+    PARTICIPANT_CSV_COLUMNS,
     getAuditDateStamp,
     getBoxAccessToken,
     uploadBoxFile,
