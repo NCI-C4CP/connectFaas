@@ -3334,8 +3334,10 @@ const getNotificationSpecsBySchedule = async (scheduleAt) => {
  * @param {string} scheduleAt Time of day to send notifications, eg. '15:00'
  * @returns
  */
-const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
+const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt, bulkRunStaleAfterDays = 7) => {
   const currDateKey = getEasternDateKey();
+  const now = Date.now();
+  const staleThresholdMs = Math.max(0, Number(bulkRunStaleAfterDays) || 0) * 24 * 60 * 60 * 1000;
   const snapshot = await db
     .collection("notificationSpecifications")
     .where("scheduleAt", "==", scheduleAt)
@@ -3348,10 +3350,22 @@ const getNotificationSpecsByScheduleOncePerDay = async (scheduleAt) => {
     const lastRunTime = docData.lastRunTime || "2020-01-01";
     const lastRunDateKey = docData.lastRunDateKey || getEasternDateKey(new Date(lastRunTime));
     const queuedBulkRunDateKey = docData.queuedBulkRunDateKey || "";
-    // Keep queued bulk runs out of the scheduler's daily selection. The bulk
-    // task chain owns completion, so re-queueing here would cause
-    // duplicate-work risk while a prior run is still in flight.
-    if (docData.id && currDateKey !== lastRunDateKey && currDateKey !== queuedBulkRunDateKey) {
+    const queuedBulkRunUpdatedAt = docData.queuedBulkRunUpdatedAt || "";
+    // Keep queued bulk runs out of the scheduler's daily selection. Any non-empty queuedBulkRunDateKey indicates an in-flight bulk run. Possibly from today,
+    // possibly from a prior day for a large multi-day mailing. Re-queueing here would cause duplicate-work risk while the run is still in flight.
+    // Stale queue markers (queuedBulkRunUpdatedAt older than bulkRunStaleAfterDays) are treated as abandoned and allowed to re-fire.
+    const queuedAgeMs = queuedBulkRunUpdatedAt
+      ? now - new Date(queuedBulkRunUpdatedAt).getTime()
+      : 0;
+    const isQueueStale = queuedBulkRunDateKey
+      && queuedBulkRunUpdatedAt
+      && staleThresholdMs > 0
+      && queuedAgeMs > staleThresholdMs;
+    if (queuedBulkRunDateKey && isQueueStale) {
+      const ageDays = Math.round(queuedAgeMs / (24 * 60 * 60 * 1000));
+      console.warn(`Stale bulk run marker on spec ${docData.id}: queuedBulkRunUpdatedAt=${queuedBulkRunUpdatedAt}, age=${ageDays}d, bulkRunStaleAfterDays=${bulkRunStaleAfterDays}d. Treating as abandoned and re-firing.`);
+    }
+    if (docData.id && currDateKey !== lastRunDateKey && (!queuedBulkRunDateKey || isQueueStale)) {
       notificationSpecArray.push(docData);
     }
   }

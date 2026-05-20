@@ -47,7 +47,6 @@ const BULK_TASK_DISPATCH_DEADLINE_SECONDS = 1800;
 const BULK_TASK_ATTEMPT_LOCK_MS = 10 * 60 * 1000;
 const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
   useCloudTasksBulk: false,
-  nonProdEmailAllowlist: [],
   sendgridDeliveryModeOverride: null,
   bulkMailCategories: Object.freeze(["newsletter", "eNewsletter", "anniversaryNewsletter"]),
   notificationBatchLimit: 1000,             // SendGrid caps a single batch at 1000 recipients, so configured values are clamped to that ceiling.
@@ -56,6 +55,7 @@ const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
   bulkThreshold: 5000,                      // Threshold for upgrading to bulk mail stream. Different sending rules apply.
   bulkDefaultBatchSize: 100,                // Planned non-Microsoft bulk recipient count per Cloud Task.
   bulkMicrosoftBatchSize: 50,               // Planned Microsoft-family bulk recipient count per Cloud Task.
+  bulkRunStaleAfterDays: 7,                 // Days after which an in-flight bulk run's `queuedBulkRunDateKey` is treated as abandoned, so the spec can fire again. Safety net for stuck runs; large multi-day mailings (200K+ on the Microsoft lane) can take 3-4 days legitimately, so the default leaves room.
   sendgridBulkAsmGroupId: null,             // Optional SendGrid ASM unsubscribe group id for bulk mail.
   sendgridBulkAsmGroupsToDisplay: [],       // Optional SendGrid ASM preference-page groups for bulk mail.
   targetRecipientsPerHour: 5000,            // Target recipients per hour for non-Microsoft email domains.
@@ -105,18 +105,6 @@ const parseDeliveryModeSetting = (value, fallback = null) => {
   if (typeof value !== "string") return fallback;
   const normalizedValue = value.toLowerCase();
   return ["noop", "sandbox", "live"].includes(normalizedValue) ? normalizedValue : fallback;
-};
-
-const normalizeNotificationAllowlist = (value) => {
-  if (Array.isArray(value)) {
-    return [...new Set(value.map((email) => normalizeEmailAddress(email)).filter(Boolean))];
-  }
-
-  if (typeof value === "string") {
-    return [...new Set(value.split(",").map((email) => normalizeEmailAddress(email)).filter(Boolean))];
-  }
-
-  return [];
 };
 
 const normalizeStringArraySetting = (value, fallback = []) => {
@@ -173,7 +161,6 @@ const getNotificationDeliverySettings = async () => {
       notifications.useCloudTasksBulk,
       DEFAULT_NOTIFICATION_SETTINGS.useCloudTasksBulk,
     ),
-    nonProdEmailAllowlist: normalizeNotificationAllowlist(notifications.nonProdEmailAllowlist),
     sendgridDeliveryModeOverride: parseDeliveryModeSetting(
       notifications.sendgridDeliveryModeOverride,
       DEFAULT_NOTIFICATION_SETTINGS.sendgridDeliveryModeOverride,
@@ -190,6 +177,10 @@ const getNotificationDeliverySettings = async () => {
     notificationReservationMs: parsePositiveIntSetting(
       notifications.notificationReservationMs,
       DEFAULT_NOTIFICATION_SETTINGS.notificationReservationMs,
+    ),
+    bulkRunStaleAfterDays: parsePositiveIntSetting(
+      notifications.bulkRunStaleAfterDays,
+      DEFAULT_NOTIFICATION_SETTINGS.bulkRunStaleAfterDays,
     ),
     bulkTaskMaxAttempts: parsePositiveIntSetting(
       notifications.bulkTaskMaxAttempts,
@@ -342,29 +333,6 @@ const normalizeRecipientEmail = (recipient) => {
   return "";
 };
 
-const collectRecipientEmails = (message = {}) => {
-  const recipientSet = new Set();
-  const collect = (value) => {
-    if (Array.isArray(value)) {
-      value.forEach(collect);
-      return;
-    }
-    const email = normalizeRecipientEmail(value);
-    if (email) recipientSet.add(email);
-  };
-
-  collect(message.to);
-  collect(message.cc);
-  collect(message.bcc);
-  for (const personalization of message.personalizations || []) {
-    collect(personalization.to);
-    collect(personalization.cc);
-    collect(personalization.bcc);
-  }
-
-  return [...recipientSet];
-};
-
 const createBulkLaneCountMap = () => ({
   [BULK_LANE_DEFAULT]: 0,
   [BULK_LANE_MICROSOFT]: 0,
@@ -438,23 +406,6 @@ const getSendGridDeliveryMode = (notificationSettings = DEFAULT_NOTIFICATION_SET
   return derivedMode;
 };
 
-const enforceNonProdEmailAllowlist = (message, deliveryMode, notificationSettings = DEFAULT_NOTIFICATION_SETTINGS) => {
-  if (sharedUtils.developmentTier === "PROD" || deliveryMode === "noop") {
-    return;
-  }
-
-  const allowlist = new Set(notificationSettings.nonProdEmailAllowlist || []);
-  if (allowlist.size === 0) {
-    throw new Error("connectFaas.notifications.nonProdEmailAllowlist must be configured for non-prod SendGrid sandbox sends.");
-  }
-
-  const disallowedRecipients = collectRecipientEmails(message)
-    .filter((email) => !allowlist.has(email));
-  if (disallowedRecipients.length > 0) {
-    throw new Error(`Blocked non-prod SendGrid ${deliveryMode} send: ${disallowedRecipients.length} non-allowlisted recipient(s)`);
-  }
-};
-
 // Keep the delivery-mode split. It prevents non-prod experiments from training
 // mailbox providers on accidental bulk traffic to real participants.
 const sendViaSendGrid = async (message, { logLabel = "email", notificationSettings = null } = {}) => {
@@ -466,7 +417,6 @@ const sendViaSendGrid = async (message, { logLabel = "email", notificationSettin
   }
 
   try {
-    enforceNonProdEmailAllowlist(message, deliveryMode, resolvedSettings);
     await setupSendGrid();
   } catch (error) {
     error.providerAttempted = false;
@@ -1619,7 +1569,10 @@ async function sendScheduledNotifications(req, res) {
   isSendingNotifications = true;
   try {
     const notificationSettings = await getNotificationDeliverySettings();
-    const notificationSpecArray = await getNotificationSpecsByScheduleOncePerDay(req.body.scheduleAt);
+    const notificationSpecArray = await getNotificationSpecsByScheduleOncePerDay(
+      req.body.scheduleAt,
+      notificationSettings.bulkRunStaleAfterDays,
+    );
     if (notificationSpecArray.length === 0) {
       console.log("Function sendScheduledNotifications() has run earlier today. Exiting...");
       return res.status(208).json(getResponseJSON("Function has run earlier today.", 208));

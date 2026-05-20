@@ -722,6 +722,104 @@ describe("Email Suppression System", () => {
       expect(specs.map((spec) => spec.id)).toEqual(["legacy-eligible"]);
       vi.useRealTimers();
     });
+
+    it("should keep multi-day in-flight bulk runs ineligible until they terminate (not stale)", async () => {
+      // A bulk run that started days ago but hasn't completed yet should still block the
+      // spec from re-firing. This handles long-running mailings (200K
+      // recipients on the Microsoft lane can take ~3 days at 1.5K/hr).
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
+      setupNotificationSpecsCollection([
+        {
+          id: "queued-two-days-ago",
+          scheduleAt: "15:00",
+          isDraft: false,
+          queuedBulkRunDateKey: "2026-03-30",
+          queuedBulkRunUpdatedAt: "2026-03-30T12:00:00.000Z",
+        },
+      ]);
+
+      // Default bulkRunStaleAfterDays = 7. Queue is 2 days old, well within threshold.
+      const specs = await firestoreModule.getNotificationSpecsByScheduleOncePerDay("15:00");
+
+      expect(specs).toEqual([]);
+      vi.useRealTimers();
+    });
+
+    it("should treat queue markers older than bulkRunStaleAfterDays as abandoned and re-fire", async () => {
+      // Safety net for stuck runs: if a queue marker is older than the configured
+      // threshold, treat it as abandoned (worker crash, Cloud Tasks paused, etc.) and
+      // allow the spec to fire again.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      setupNotificationSpecsCollection([
+        {
+          id: "queued-twelve-days-ago",
+          scheduleAt: "15:00",
+          isDraft: false,
+          queuedBulkRunDateKey: "2026-03-20",
+          queuedBulkRunUpdatedAt: "2026-03-20T12:00:00.000Z",
+        },
+      ]);
+
+      // Default bulkRunStaleAfterDays = 7. Queue is 12 days old → stale, eligible.
+      const specs = await firestoreModule.getNotificationSpecsByScheduleOncePerDay("15:00");
+
+      expect(specs.map((spec) => spec.id)).toEqual(["queued-twelve-days-ago"]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Stale bulk run marker on spec queued-twelve-days-ago"),
+      );
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it("should honor a custom bulkRunStaleAfterDays parameter", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      setupNotificationSpecsCollection([
+        {
+          id: "queued-four-days-ago",
+          scheduleAt: "15:00",
+          isDraft: false,
+          queuedBulkRunDateKey: "2026-03-28",
+          queuedBulkRunUpdatedAt: "2026-03-28T12:00:00.000Z",
+        },
+      ]);
+
+      // With bulkRunStaleAfterDays=7, a 4-day queue is fresh.
+      let specs = await firestoreModule.getNotificationSpecsByScheduleOncePerDay("15:00", 7);
+      expect(specs).toEqual([]);
+
+      // With bulkRunStaleAfterDays=3, the same 4-day queue is stale.
+      specs = await firestoreModule.getNotificationSpecsByScheduleOncePerDay("15:00", 3);
+      expect(specs.map((spec) => spec.id)).toEqual(["queued-four-days-ago"]);
+
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it("should not treat a queue marker as stale if queuedBulkRunUpdatedAt is missing", async () => {
+      // If there's no timestamp to compare against, the TTL check can't fire.
+      // Treat the queue as fresh so a stuck spec doesn't quietly re-fire and double-queue.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
+      setupNotificationSpecsCollection([
+        {
+          id: "queued-no-timestamp",
+          scheduleAt: "15:00",
+          isDraft: false,
+          queuedBulkRunDateKey: "2026-03-15", // ancient
+          // queuedBulkRunUpdatedAt intentionally absent
+        },
+      ]);
+
+      const specs = await firestoreModule.getNotificationSpecsByScheduleOncePerDay("15:00");
+
+      expect(specs).toEqual([]);
+      vi.useRealTimers();
+    });
   });
 
   describe("bulk notification run helpers", () => {

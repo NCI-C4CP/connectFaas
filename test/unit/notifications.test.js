@@ -713,7 +713,6 @@ describe("Notifications Unit Tests", () => {
       sharedMock.getSecret.mockResolvedValue("fake-api-key");
       process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-stg-5519";
       sharedMock.developmentTier = "STAGE";
-      setNotificationSettings({ nonProdEmailAllowlist: ["test@example.com"] });
       process.env.GCLOUD_SENDGRID_SECRET = "secret/sendgrid-key";
 
       await notificationsModule.sendEmail("test@example.com", "Subject", "<p>Body</p>");
@@ -730,7 +729,6 @@ describe("Notifications Unit Tests", () => {
       sharedMock.developmentTier = "STAGE";
       setNotificationSettings({
         sendgridDeliveryModeOverride: "live",
-        nonProdEmailAllowlist: ["test@example.com"],
       });
       process.env.GCLOUD_SENDGRID_SECRET = "secret/sendgrid-key";
 
@@ -752,34 +750,6 @@ describe("Notifications Unit Tests", () => {
       expect(sgMailMock.send).not.toHaveBeenCalled();
     });
 
-    it("should block non-allowlisted recipients in non-prod sandbox/live mode", async () => {
-      sharedMock.getSecret.mockResolvedValue("fake-api-key");
-      process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-stg-5519";
-      sharedMock.developmentTier = "STAGE";
-      setNotificationSettings({ nonProdEmailAllowlist: ["allowed@example.com"] });
-      process.env.GCLOUD_SENDGRID_SECRET = "secret/sendgrid-key";
-
-      await expect(
-        notificationsModule.sendEmail("blocked@example.com", "Subject", "<p>Body</p>")
-      ).rejects.toThrow("Blocked non-prod SendGrid sandbox send: 1 non-allowlisted recipient(s)");
-
-      expect(sgMailMock.send).not.toHaveBeenCalled();
-    });
-
-    it("should include cc recipients in the non-prod allowlist check", async () => {
-      sharedMock.getSecret.mockResolvedValue("fake-api-key");
-      process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-stg-5519";
-      sharedMock.developmentTier = "STAGE";
-      setNotificationSettings({ nonProdEmailAllowlist: ["allowed@example.com"] });
-      process.env.GCLOUD_SENDGRID_SECRET = "secret/sendgrid-key";
-
-      await expect(
-        notificationsModule.sendEmail("allowed@example.com", "Subject", "<p>Body</p>", "blocked@example.com")
-      ).rejects.toThrow("Blocked non-prod SendGrid sandbox send: 1 non-allowlisted recipient(s)");
-
-      expect(sgMailMock.send).not.toHaveBeenCalled();
-    });
-
     it("should ignore invalid sendgridDeliveryModeOverride values", async () => {
       sgMailMock.send.mockResolvedValue([{ statusCode: 200 }]);
       sharedMock.getSecret.mockResolvedValue("fake-api-key");
@@ -787,7 +757,6 @@ describe("Notifications Unit Tests", () => {
       sharedMock.developmentTier = "STAGE";
       setNotificationSettings({
         sendgridDeliveryModeOverride: "unsafe-live-ish",
-        nonProdEmailAllowlist: ["test@example.com"],
       });
       process.env.GCLOUD_SENDGRID_SECRET = "secret/sendgrid-key";
 
@@ -1661,7 +1630,6 @@ describe("Notifications Unit Tests", () => {
     it("should default List-Unsubscribe to the webhook handler for bulk mail", async () => {
       process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-dev";
       sharedMock.developmentTier = "STAGE";
-      setNotificationSettings({ nonProdEmailAllowlist: ["user@test.gov"] });
       const spec = makeNotificationSpec({ category: "newsletter" });
       const participants = [makeParticipant()];
       await runHandleNotificationSpec(spec, participants);
@@ -1687,7 +1655,6 @@ describe("Notifications Unit Tests", () => {
     it("should respect SG_UNSUBSCRIBE_URL when provided", async () => {
       process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-dev";
       sharedMock.developmentTier = "STAGE";
-      setNotificationSettings({ nonProdEmailAllowlist: ["user@test.gov"] });
       process.env.SG_UNSUBSCRIBE_URL = "https://myconnect.cancer.gov/unsubscribe";
       const spec = makeNotificationSpec({ category: "newsletter" });
       const participants = [makeParticipant()];
@@ -2458,42 +2425,9 @@ describe("Notifications Unit Tests", () => {
       }));
     });
 
-    it("should fail before provider send when non-prod (STAGE)sandbox planned bulk recipients are not allowlisted", async () => {
+    it("should send planned bulk tasks in sandbox mode (STAGE)", async () => {
       sharedMock.developmentTier = "STAGE";
       process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-stg-5519";
-      setNotificationSettings({});
-      process.env.GCLOUD_UNSUBSCRIBE_SECRET = "secret/unsub-key";
-      sharedMock.getSecret.mockImplementation((key) =>
-        Promise.resolve(key === "secret/unsub-key" ? "test-unsub-secret" : "fake-secret")
-      );
-      const spec = makePlannedBulkSpec({ id: "planned-sandbox-blocked" });
-      mockPlannedBatch({
-        spec,
-        recipients: [makePlannedRecipient("blocked", "blocked@test.gov")],
-        runId: "planned-sandbox-blocked-2026-04-01-run-1",
-      });
-
-      await expect(notificationsModule.processNotificationBatchBulkDefault({
-        data: {
-          runId: "planned-sandbox-blocked-2026-04-01-run-1",
-          batchId: "default-batch-1",
-          lane: "default",
-          specId: spec.id,
-          runDateKey: "2026-04-01",
-          runSequence: 1,
-        },
-      })).rejects.toThrow("Failed sending emails for planned-sandbox-blocked");
-
-      expect(sgMailMock.send).not.toHaveBeenCalled();
-      expect(firestoreMock.markNotificationBatchFailed).toHaveBeenCalledTimes(1);
-      expect(firestoreMock.markBulkNotificationBatchFailed).not.toHaveBeenCalled();
-      expect(firestoreMock.finalizeBulkNotificationRunIfTerminal).not.toHaveBeenCalled();
-    });
-
-    it("should send planned bulk tasks in sandbox mode (STAGE) when recipients are allowlisted", async () => {
-      sharedMock.developmentTier = "STAGE";
-      process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-stg-5519";
-      setNotificationSettings({ nonProdEmailAllowlist: ["allowed@test.gov"] });
       process.env.GCLOUD_UNSUBSCRIBE_SECRET = "secret/unsub-key";
       sharedMock.getSecret.mockImplementation((key) =>
         Promise.resolve(key === "secret/unsub-key" ? "test-unsub-secret" : "fake-secret")
