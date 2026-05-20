@@ -162,6 +162,31 @@ describe("bigquery notification helpers", () => {
     ).rejects.toThrow(/Unsafe BigQuery identifier/);
   });
 
+  it("should trim leading/trailing whitespace on concept-ID references before validation", async () => {
+    // Notification specs sometimes accumulate stray whitespace in concept-ID references
+    querySpy.mockResolvedValueOnce([[]]);
+
+    await bigqueryModule.getParticipantsForNotificationsBQ({
+      notificationSpecId: "spec-whitespace",
+      // Trailing whitespace on a dotted condition key + trailing whitespace on a timeField
+      conditions: [["821247024 ", "equals", 1], [" 359404406", "equals", 104430631]],
+      timeField: "173836415.266600170.541483796.661940160 ",
+      startTimeStr: "2026-04-14T15:00:00.000Z",
+      stopTimeStr: "2026-04-14T14:00:00.000Z",
+      fieldsToFetch: ["token"],
+      limit: 50,
+    });
+
+    const { query } = querySpy.mock.calls[0][0];
+    // The d_-prefixed identifiers must appear with no embedded whitespace
+    expect(query).toContain("d_821247024 = @cond_0");
+    expect(query).toContain("d_359404406 = @cond_1");
+    expect(query).toContain("d_173836415.d_266600170.d_541483796.d_661940160 < @startTimeStr");
+    expect(query).toContain("d_173836415.d_266600170.d_541483796.d_661940160 >= @stopTimeStr");
+    // Sanity: no double-spaces in the WHERE clause (would indicate untrimmed identifier)
+    expect(query).not.toMatch(/d_\d+\s{2,}/);
+  });
+
   it("should return -1 when the shared count query fails", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     querySpy.mockRejectedValueOnce(new Error("BQ unavailable"));
