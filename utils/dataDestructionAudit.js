@@ -185,7 +185,6 @@ const auditRelatedCollections = async ({ participant, mode, dryRun }) => {
     const orphanedCollections = [];
     const collectionErrors = [];
     const warnings = [];
-    const coverageGaps = [];
     const cleanupActions = [];
 
     for (const collection of listOfCollectionsRelatedToDataDestruction) {
@@ -194,9 +193,7 @@ const auditRelatedCollections = async ({ participant, mode, dryRun }) => {
         if (spec.skipped) {
             // DHQ collections are keyed by dhq3Username, which is deliberately not retained on the destroyed stub: dhq3Username is a DHQ-side respondent
             // ID and retaining it would create a re-identification linkage back to the participant.
-            if (DHQ_KEYED_COLLECTIONS.has(collection)) {
-                coverageGaps.push({ collection, reason: spec.skipReason });
-            } else {
+            if (!DHQ_KEYED_COLLECTIONS.has(collection)) {
                 warnings.push(`${collection}: ${spec.skipReason}`);
             }
             continue;
@@ -242,7 +239,6 @@ const auditRelatedCollections = async ({ participant, mode, dryRun }) => {
         orphanedCollections,
         collectionErrors,
         warnings,
-        coverageGaps,
         cleanupActions,
     };
 };
@@ -519,7 +515,6 @@ const auditParticipantDataDestruction = async ({ doc, mode, dryRun, runId, proje
         storageErrors,
         cleanupActions,
         warnings,
-        coverageGaps: relatedResult.coverageGaps,
         checkedAt,
     };
 };
@@ -539,7 +534,6 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
         missingDefaultRetainedFields: 0,
         collectionErrors: 0,
         storageErrors: 0,
-        coverageGaps: 0,
     };
     const cleanupCounts = {
         relatedDocsDeleted: 0,
@@ -560,9 +554,10 @@ const summarizeParticipantResults = ({ participantResults, runId, projectId, tie
         findingCounts.missingDefaultRetainedFields += result.missingDefaultRetainedFields.length;
         findingCounts.collectionErrors += result.collectionErrors.length;
         findingCounts.storageErrors += result.storageErrors.length;
-        findingCounts.coverageGaps += (result.coverageGaps || []).length;
 
         result.cleanupActions.forEach((action) => {
+            // Dry-run actions are plans, not deletions.
+            if (action.dryRun) return;
             if (action.type === "deleteRelatedDocs") cleanupCounts.relatedDocsDeleted += action.count;
             if (action.type === "deletePathologyStorageFiles") cleanupCounts.pathologyStorageFilesDeleted += action.count;
             if (action.type === "deletePathologyMetadata") cleanupCounts.pathologyMetadataDocsDeleted += action.count;
@@ -996,8 +991,6 @@ const PARTICIPANT_CSV_COLUMNS = [
     "unexpectedNestedFields",
     "missingDefaultRetainedFieldCount",
     "missingDefaultRetainedFields",
-    "coverageGapCount",
-    "coverageGaps",
     "collectionErrorCount",
     "collectionErrors",
     "storageErrorCount",
@@ -1015,7 +1008,6 @@ const buildParticipantsCsv = (participantResults) => {
     const rows = participantResults.map((r) => {
         const orphanedCount = r.orphanedCollections.reduce((sum, item) => sum + item.count, 0);
         const orphanedNames = r.orphanedCollections.map((item) => item.collection).join(";");
-        const coverageGaps = r.coverageGaps || [];
         return csvRow([
             r.runId,
             r.connectId,
@@ -1036,8 +1028,6 @@ const buildParticipantsCsv = (participantResults) => {
             r.unexpectedNestedFields.join(";"),
             r.missingDefaultRetainedFields.length,
             r.missingDefaultRetainedFields.join(";"),
-            coverageGaps.length,
-            coverageGaps.map((g) => g.collection).join(";"),
             r.collectionErrors.length,
             r.collectionErrors.join(";"),
             r.storageErrors.length,
@@ -1219,6 +1209,7 @@ module.exports = {
     buildAuditFileNames,
     buildParticipantsNdjson,
     buildParticipantsCsv,
+    summarizeParticipantResults,
     PARTICIPANT_CSV_COLUMNS,
     getAuditDateStamp,
     getBoxAccessToken,

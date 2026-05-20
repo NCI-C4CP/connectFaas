@@ -553,7 +553,6 @@ describe("dataDestructionAudit", () => {
             storageErrors: [],
             cleanupActions: [],
             warnings: [],
-            coverageGaps: [],
             checkedAt: "2026-05-14T05:00:01.000Z",
             ...overrides,
         });
@@ -589,10 +588,6 @@ describe("dataDestructionAudit", () => {
                         { collection: "ssn", queryField: "token", count: 1 },
                     ],
                     unexpectedStubFields: ["123456789", "999000111"],
-                    coverageGaps: [
-                        { collection: "dhqAnalysisResults", reason: "no key" },
-                        { collection: "dhqRawAnswers", reason: "no key" },
-                    ],
                 }),
             ]);
             const row = csv.trim().split("\n")[1];
@@ -600,8 +595,6 @@ describe("dataDestructionAudit", () => {
             expect(row).toContain(",4,notifications;ssn,");
             // unexpectedStubFieldCount = 2; semicolon-joined
             expect(row).toContain(",2,123456789;999000111,");
-            // coverageGapCount = 2; collection names semicolon-joined
-            expect(row).toContain(",2,dhqAnalysisResults;dhqRawAnswers,");
         });
 
         it("RFC 4180 escapes commas, quotes, and newlines in array entries", () => {
@@ -613,8 +606,89 @@ describe("dataDestructionAudit", () => {
                 }),
             ]);
             const row = csv.trim().split("\n").slice(1).join("\n");
-            
+
             expect(row).toContain('"notifications: timeout, then disconnected;ssn: ""quoted msg"";multi\nline"');
+        });
+    });
+
+    describe("summarizeParticipantResults — cleanupCounts dry-run guard", () => {
+        // cleanupCounts.*Deleted must remain at zero when the only cleanup actions are dry-run.
+        const summarize = (participantResults, overrides = {}) => audit.summarizeParticipantResults({
+            participantResults,
+            runId: "run-1",
+            projectId: "p",
+            tier: "DEV",
+            mode: "cleanup",
+            dryRun: true,
+            startedAt: "2026-05-20T00:00:00.000Z",
+            completedAt: "2026-05-20T00:00:01.000Z",
+            ...overrides,
+        });
+
+        const participantResultWithActions = (cleanupActions) => ({
+            runId: "run-1",
+            connectId: 1001,
+            participantDocId: "doc-1001",
+            tier: "DEV",
+            mode: "cleanup",
+            dryRun: true,
+            policyVersion: "v0",
+            policyResolution: { destructionAt: null, effectiveFrom: null, appliedDeltas: [] },
+            status: "fail",
+            orphanedCollections: [],
+            pathologyReports: { metadataCount: 0, storageFileCount: 0, invalidMetadataCount: 0, bucketsChecked: [] },
+            unexpectedStubFields: [],
+            unexpectedNestedFields: [],
+            missingDefaultRetainedFields: [],
+            collectionErrors: [],
+            storageErrors: [],
+            cleanupActions,
+            warnings: [],
+            checkedAt: "2026-05-20T00:00:00.500Z",
+        });
+
+        it("never counts dry-run actions as deletions", () => {
+            const summary = summarize([
+                participantResultWithActions([
+                    { type: "deleteUnexpectedStubFields", collection: "participants", count: 5, dryRun: true },
+                    { type: "deleteRelatedDocs", collection: "notifications", count: 3, dryRun: true },
+                    { type: "deletePathologyStorageFiles", bucketName: "b", count: 7, dryRun: true },
+                    { type: "deletePathologyMetadata", collection: "pathologyReports", count: 2, dryRun: true },
+                ]),
+                participantResultWithActions([
+                    { type: "deleteUnexpectedStubFields", collection: "participants", count: 4, dryRun: true },
+                ]),
+            ]);
+
+            expect(summary.cleanupCounts).toEqual({
+                relatedDocsDeleted: 0,
+                pathologyStorageFilesDeleted: 0,
+                pathologyMetadataDocsDeleted: 0,
+                unexpectedStubFieldsDeleted: 0,
+            });
+        });
+
+        it("counts committed (non-dryRun) actions only", () => {
+            const summary = summarize([
+                participantResultWithActions([
+                    // Mix: committed and dry-run plans. Only committed should aggregate.
+                    { type: "deleteUnexpectedStubFields", collection: "participants", count: 5 },
+                    { type: "deleteRelatedDocs", collection: "notifications", count: 3, dryRun: true },
+                    { type: "deletePathologyStorageFiles", bucketName: "b", count: 7 },
+                    { type: "deletePathologyMetadata", collection: "pathologyReports", count: 2 },
+                ]),
+                participantResultWithActions([
+                    { type: "deleteUnexpectedStubFields", collection: "participants", count: 4 },
+                    { type: "deleteRelatedDocs", collection: "ssn", count: 1 },
+                ]),
+            ], { dryRun: false });
+
+            expect(summary.cleanupCounts).toEqual({
+                relatedDocsDeleted: 1,                // only the count:1 committed; the count:3 was dry-run
+                pathologyStorageFilesDeleted: 7,
+                pathologyMetadataDocsDeleted: 2,
+                unexpectedStubFieldsDeleted: 9,       // 5 + 4 committed
+            });
         });
     });
 
@@ -1106,8 +1180,8 @@ describe("dataDestructionAudit", () => {
             expect(res.status).toHaveBeenCalledWith(200);
         });
 
-        it("records DHQ-keyed orphan-lookup skips as structured coverageGaps", async () => {
-            // Destroyed stub does not retain dhq3Username, so DHQ orphan detection cannot run.
+        it("silently skips DHQ-keyed orphan lookups for destroyed participants (no warning, no error)", async () => {
+            // The destroyed stub does not retain dhq3Username, so DHQ orphan detection cannot run.
             const participantDoc = destroyedParticipantDoc();
             const participantsSnapshot = { empty: false, size: 1, docs: [participantDoc] };
             mocks.firestore.collection.mockImplementation((path) => {
@@ -1122,21 +1196,18 @@ describe("dataDestructionAudit", () => {
 
             const result = await audit.runDataDestructionAudit({}, {
                 uploadAuditArtifacts: vi.fn().mockResolvedValue({
-                    summaryFileName: "s", participantsFileName: "p", summaryFileId: "s", participantsFileId: "p",
+                    summaryFileName: "s", participantsFileName: "p", participantsCsvFileName: "p.csv",
+                    summaryFileId: "s", participantsFileId: "p", participantsCsvFileId: "pc",
                 }),
                 emailAuditArtifacts: vi.fn().mockResolvedValue({ recipients: [], attachments: [] }),
                 now: () => new Date("2026-05-14T05:00:00.000Z"),
             });
 
             const [participantResult] = result.participantResults;
-            const gapCollections = participantResult.coverageGaps.map((gap) => gap.collection);
-            expect(gapCollections).toEqual(expect.arrayContaining([
-                "dhqAnalysisResults",
-                "dhqDetailedAnalysis",
-                "dhqRawAnswers",
-            ]));
-            // Coverage gap count should equal the number of DHQ collections in the audit list.
-            expect(result.summary.findingCounts.coverageGaps).toBe(participantResult.coverageGaps.length);
+            const dhqWarnings = participantResult.warnings.filter((w) => /dhq/i.test(w));
+            expect(dhqWarnings).toEqual([]);
+            expect(participantResult.coverageGaps).toBeUndefined();
+            expect(result.summary.findingCounts.coverageGaps).toBeUndefined();
         });
 
         it("summary aggregates policy versions applied as a histogram", async () => {
