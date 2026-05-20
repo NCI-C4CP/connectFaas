@@ -1034,6 +1034,106 @@ describe('Participant Data Cleanup', () => {
                 );
             });
         });
+
+        describe('post-destruction validation logging', () => {
+            /**
+             * doc(id).get() returns `postUpdateStubData` (the simulated state of the participant doc after
+             * removeParticipantsDataDestruction has written the stub update). doc(id).update() is captured on `updateStub`.
+             */
+            const setupValidationMock = ({ participantDoc, postUpdateStubData, updateStub }) => {
+                const emptySnapshot = { empty: true, size: 0, docs: [] };
+                const chainableQuery = {
+                    where: vi.fn().mockReturnThis(),
+                    select: vi.fn().mockReturnThis(),
+                    limit: vi.fn().mockReturnThis(),
+                    get: vi.fn().mockResolvedValue(emptySnapshot),
+                };
+                const participantsSnapshot = { empty: false, size: 1, docs: [participantDoc] };
+
+                mocks.firestore.collection.mockImplementation((path) => {
+                    if (path === 'participants') {
+                        return {
+                            doc: vi.fn().mockReturnValue({
+                                update: updateStub,
+                                get: vi.fn().mockResolvedValue({
+                                    exists: true,
+                                    data: () => postUpdateStubData,
+                                }),
+                                set: vi.fn().mockResolvedValue(),
+                                delete: vi.fn().mockResolvedValue(),
+                            }),
+                            where: vi.fn().mockReturnValue({
+                                where: vi.fn().mockReturnThis(),
+                                get: vi.fn().mockResolvedValue(participantsSnapshot),
+                            }),
+                            get: vi.fn().mockResolvedValue(participantsSnapshot),
+                        };
+                    }
+                    return {
+                        doc: vi.fn().mockImplementation(() => ({
+                            get: vi.fn().mockResolvedValue({ exists: false, data: () => null }),
+                            set: vi.fn().mockResolvedValue(),
+                            update: vi.fn().mockResolvedValue(),
+                            delete: vi.fn().mockResolvedValue(),
+                        })),
+                        where: vi.fn().mockReturnValue(chainableQuery),
+                        get: vi.fn().mockResolvedValue(emptySnapshot),
+                    };
+                });
+            };
+
+            const cleanStub = (Connect_ID = '1234567890') => ({
+                Connect_ID,
+                token: 'test-token-abc',
+                pin: '123456',
+                query: {},
+                state: {},
+                [dataHasBeenDestroyedCId()]: fieldMapping.yes,
+                [dateTimeDataDestroyedCId()]: '2026-05-18T05:00:00.000Z',
+                [fieldMapping.participationStatus]: fieldMapping.participantMap.dataDestroyedStatus,
+            });
+
+            it('logs a per-participant FAIL and a run-level summary error when the stub has unexpected fields after destruction', async () => {
+                const { doc } = createDestructionParticipant({ Connect_ID: '5550000001' });
+                const updateStub = vi.fn().mockResolvedValue();
+                // Simulate a stub that retained an unexpected (non-stub) field (a destruction process bug left a non-retained CID on the doc).
+                const postUpdateStubData = {
+                    ...cleanStub('5550000001'),
+                    '999000111': 'leftover-pii',
+                };
+
+                setupValidationMock({ participantDoc: doc, postUpdateStubData, updateStub });
+                const errorSpy = vi.spyOn(console, 'error');
+
+                await firestoreModule.removeParticipantsDataDestruction();
+
+                // Destruction is still committed. Validation failure does not revert the write.
+                expect(updateStub).toHaveBeenCalledOnce();
+
+                const messages = errorSpy.mock.calls.map((args) => String(args[0]));
+                // Per-participant fail message includes the Connect_ID and the unexpected field.
+                expect(messages.some((m) => /Post-destruction validation fail for participant 5550000001/.test(m))).toBe(true);
+                expect(messages.some((m) => /999000111/.test(m))).toBe(true);
+                // Summary error fires when validationFailureCount > 0.
+                expect(messages.some((m) => /Data destruction completed with 1 post-destruction validation failure/.test(m))).toBe(true);
+            });
+
+            it('does not emit a validation-failure summary when the stub is clean after destruction', async () => {
+                const { doc } = createDestructionParticipant({ Connect_ID: '5550000002' });
+                const updateStub = vi.fn().mockResolvedValue();
+                const postUpdateStubData = cleanStub('5550000002');
+
+                setupValidationMock({ participantDoc: doc, postUpdateStubData, updateStub });
+                const errorSpy = vi.spyOn(console, 'error');
+
+                await firestoreModule.removeParticipantsDataDestruction();
+
+                expect(updateStub).toHaveBeenCalledOnce();
+                const messages = errorSpy.mock.calls.map((args) => String(args[0]));
+                expect(messages.some((m) => /Post-destruction validation fail/.test(m))).toBe(false);
+                expect(messages.some((m) => /Data destruction completed with .* post-destruction validation failure/.test(m))).toBe(false);
+            });
+        });
     });
 
     describe('removeDocumentFromCollection', () => {
