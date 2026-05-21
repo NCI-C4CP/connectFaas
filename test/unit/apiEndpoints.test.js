@@ -23,6 +23,7 @@ beforeAll(() => {
     const { webhook } = require('../../utils/webhook');
     const { heartbeat } = require('../../utils/heartbeat');
     const { physicalActivity } = require('../../utils/reports');
+    const { auditDataDestruction } = require('../../utils/dataDestructionAudit');
     notifications = require('../../utils/notifications');
     generateUnsubscribeSignature = notifications.generateUnsubscribeSignature;
 
@@ -43,6 +44,7 @@ beforeAll(() => {
         webhook,
         heartbeat,
         physicalActivity,
+        auditDataDestruction,
     };
 
     firestore = require('../../utils/firestore');
@@ -114,6 +116,7 @@ describe('API Endpoint Method Guards', () => {
             ['updateParticipantData', () => api.updateParticipantData, 'GET', 'Only POST requests are accepted!'],
             ['getBigQueryData', () => api.getBigQueryData, 'POST', 'Only GET requests are accepted!'],
             ['webhook', () => api.webhook, 'GET', 'Only POST requests are accepted!'],
+            ['auditDataDestruction', () => api.auditDataDestruction, 'GET', 'Method not allowed. Use POST.'],
         ];
 
         for (const [name, getHandler, method, expectedMessage] of methodCases) {
@@ -739,6 +742,7 @@ describe('Index onRequest Wrapper Handlers', () => {
     const notificationsPath = require.resolve('../../utils/notifications.js');
     const eventsPath = require.resolve('../../utils/events.js');
     const participantDataCleanupPath = require.resolve('../../utils/participantDataCleanup.js');
+    const dataDestructionAuditPath = require.resolve('../../utils/dataDestructionAudit.js');
     const dhqPath = require.resolve('../../utils/dhq.js');
 
     const loadIndexWithOnRequestMocks = () => {
@@ -748,6 +752,7 @@ describe('Index onRequest Wrapper Handlers', () => {
         const originalNotifications = require.cache[notificationsPath];
         const originalEvents = require.cache[eventsPath];
         const originalParticipantDataCleanup = require.cache[participantDataCleanupPath];
+        const originalDataDestructionAudit = require.cache[dataDestructionAuditPath];
         const originalDhq = require.cache[dhqPath];
 
         const onRequestSpy = vi.fn((handler) => handler);
@@ -805,6 +810,16 @@ describe('Index onRequest Wrapper Handlers', () => {
                 return Promise.resolve(res.status(200).json({
                     code: 200,
                     handler: 'participantDataCleanup',
+                    method: req.method,
+                }));
+            }),
+        };
+
+        const dataDestructionAuditStubs = {
+            auditDataDestruction: vi.fn((req, res) => {
+                return Promise.resolve(res.status(200).json({
+                    code: 200,
+                    handler: 'auditDataDestruction',
                     method: req.method,
                 }));
             }),
@@ -880,6 +895,13 @@ describe('Index onRequest Wrapper Handlers', () => {
             exports: participantDataCleanupStubs,
         };
 
+        require.cache[dataDestructionAuditPath] = {
+            id: dataDestructionAuditPath,
+            filename: dataDestructionAuditPath,
+            loaded: true,
+            exports: dataDestructionAuditStubs,
+        };
+
         require.cache[dhqPath] = {
             id: dhqPath,
             filename: dhqPath,
@@ -927,6 +949,12 @@ describe('Index onRequest Wrapper Handlers', () => {
                 delete require.cache[participantDataCleanupPath];
             }
 
+            if (originalDataDestructionAudit) {
+                require.cache[dataDestructionAuditPath] = originalDataDestructionAudit;
+            } else {
+                delete require.cache[dataDestructionAuditPath];
+            }
+
             if (originalDhq) {
                 require.cache[dhqPath] = originalDhq;
             } else {
@@ -941,6 +969,7 @@ describe('Index onRequest Wrapper Handlers', () => {
             notificationStubs,
             eventStubs,
             participantDataCleanupStubs,
+            dataDestructionAuditStubs,
             dhqStubs,
             restore,
         };
@@ -953,6 +982,7 @@ describe('Index onRequest Wrapper Handlers', () => {
             notificationStubs,
             eventStubs,
             participantDataCleanupStubs,
+            dataDestructionAuditStubs,
             dhqStubs,
             restore,
         } = loadIndexWithOnRequestMocks();
@@ -964,6 +994,7 @@ describe('Index onRequest Wrapper Handlers', () => {
                 eventStubs.firestoreExport,
                 eventStubs.exportNotificationsToBucket,
                 participantDataCleanupStubs.participantDataCleanup,
+                dataDestructionAuditStubs.auditDataDestruction,
                 dhqStubs.generateDHQReports,
                 dhqStubs.processDHQReports,
                 dhqStubs.scheduledSyncDHQ3Status,
@@ -989,6 +1020,7 @@ describe('Index onRequest Wrapper Handlers', () => {
             notificationStubs,
             eventStubs,
             participantDataCleanupStubs,
+            dataDestructionAuditStubs,
             dhqStubs,
             restore,
         } = loadIndexWithOnRequestMocks();
@@ -1022,6 +1054,11 @@ describe('Index onRequest Wrapper Handlers', () => {
             expect(participantDataCleanupStubs.participantDataCleanup).toHaveBeenCalledTimes(1);
             expect(participantDataCleanupRes.statusCode).toBe(200);
             expect(participantDataCleanupRes._getJSONData().handler).toBe('participantDataCleanup');
+
+            const auditDataDestructionRes = await invoke(indexExports.auditDataDestruction, 'POST');
+            expect(dataDestructionAuditStubs.auditDataDestruction).toHaveBeenCalledTimes(1);
+            expect(auditDataDestructionRes.statusCode).toBe(200);
+            expect(auditDataDestructionRes._getJSONData().handler).toBe('auditDataDestruction');
 
             const generateReportsRes = await invoke(indexExports.generateDHQReports, 'POST');
             expect(dhqStubs.generateDHQReports).toHaveBeenCalledTimes(1);
