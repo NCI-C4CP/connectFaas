@@ -336,8 +336,6 @@ const getFilteredParticipants = async (req, res, authObj) => {
     const isParent = obj.isParent ?? false;
     const siteCodes = obj.siteCodes ?? obj.siteCode;
 
-    if (req.query.limit && parseInt(req.query.limit) > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
-
     const filterableParams = ['firstName', 'lastName', 'email', 'phone', 'dob', 'connectId', 'token', 'studyId', 'checkedIn'];
     const helpMessage = "Filterable params include: 'firstName', 'lastName', 'email', 'phone', 'dob', 'connectId', 'token', 'studyId', and 'checkedIn'. The optional 'selectedFields' " +
     "param narrows results to specific fields. Omit selectedFields to return all data. Use dot notation to query nested data with selectedFields. Ex: 'selectedFields=399159511,996038075,130371375.266600170' " +
@@ -347,8 +345,11 @@ const getFilteredParticipants = async (req, res, authObj) => {
 
     const queries = req.query;
     const source = queries.source;
+    const parsedLimit = parseInt(queries.limit, 10);
+    const limit = Number.isNaN(parsedLimit) ? 100 : parsedLimit;
     delete queries.api;
     delete queries.source;
+    delete queries.limit;
 
     // Separate selectedFields from filter queries. These are handled separately, after the fetch operation.
     let selectedFields = [];
@@ -359,6 +360,7 @@ const getFilteredParticipants = async (req, res, authObj) => {
 
     if (Object.keys(queries).length === 0) return res.status(400).json(getResponseJSON(`Please include parameters to filter data. ${helpMessage}`, 400));
     if (!Object.keys(queries).every(param => filterableParams.includes(param))) return res.status(400).json(getResponseJSON(`Invalid filter parameter. ${helpMessage}`, 400));
+    if (limit && limit > 1000) return res.status(400).json(getResponseJSON('Bad request, the limit cannot exceed more than 1000 records!', 400));
 
     // Return only verified and active participants for sites using the getFilteredParticipants API directly.
     if (source === 'dashboard' || source === 'biospecimen') {
@@ -373,7 +375,7 @@ const getFilteredParticipants = async (req, res, authObj) => {
         const { filterDB } = require('./firestore');
         const { filterSelectedFields } = require('./shared');
 
-        let foundParticipantList = await filterDB(queries, siteCodes, isParent);
+        let foundParticipantList = await filterDB(queries, siteCodes, isParent, limit);
 
         if(foundParticipantList instanceof Error){
             return res.status(500).json(getResponseJSON(`${foundParticipantList.message} ${helpMessage}`, 500));
