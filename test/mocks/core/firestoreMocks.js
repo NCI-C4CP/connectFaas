@@ -122,6 +122,7 @@ class FirestoreMocks {
     createMockTransaction() {
         const transaction = {
             get: vi.fn(),
+            getAll: vi.fn().mockResolvedValue([]),
             set: vi.fn(),
             update: vi.fn(),
             delete: vi.fn(),

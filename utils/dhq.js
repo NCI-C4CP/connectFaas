@@ -3,6 +3,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { getResponseJSON, getSecret, developmentTier } = require("./shared");
 const { extractZipFiles, validateCSVRow, streamCSVRows } = require('./fileProcessing');
 const { normalizeIso8601Timestamp } = require('./validation');
+const { sendEmail } = require('./notifications');
 const fieldMapping = require('./fieldToConceptIdMapping');
 const db = admin.firestore();
 
@@ -650,11 +651,6 @@ const scheduledCountDHQ3Credentials = async (req, res) => {
 
         // Create an email warning for the CCC team. This will run daily until the credentials are replenished.
         console.warn(`Running credential count is below threshold: ${runningCredentialCount} Credentials remaining. Sending warning email.`);
-
-        const sendGridSecret = await getSecret(process.env.GCLOUD_SENDGRID_SECRET);
-        const sgMail = require('@sendgrid/mail');
-        sgMail.setApiKey(sendGridSecret);
-
         const emailTo = 'ConnectCC@nih.gov';
 
         const developmentTier = process.env.GCLOUD_PROJECT === 'nih-nci-dceg-connect-prod-6d04'
@@ -677,11 +673,7 @@ const scheduledCountDHQ3Credentials = async (req, res) => {
                 <p>Connect for Cancer Prevention Study Team</p>`,
         };
 
-        sgMail.send(warningEmail).then(() => {
-            console.log('Email sent to ' + emailTo)
-        }).catch((error) => {
-            throw new Error(`Error: scheduledCountDHQ3Credentials Failed to send warning email: ${error.message}`);
-        });
+        await sendEmail(emailTo, warningEmail.subject, warningEmail.html);
 
         return res.status(200).json(getResponseJSON(`Available DHQ credentials check completed successfully. Low credential warning email sent to ${emailTo}`, 200));
 

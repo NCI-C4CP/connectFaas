@@ -288,6 +288,7 @@ const listOfCollectionsRelatedToDataDestruction = [
     "module3_v1",
     "module4_v1",
     "notifications",
+    "emailAddressStatus",
     "promis_v1",
     "mouthwash_v1",
     "ssn",
@@ -2402,6 +2403,19 @@ const getAdjustedTime = (inputTime, days = 0, hours = 0, minutes = 0) => {
   return adjustedTime;
 };
 
+// Returns YYYY-MM-DD in US Eastern time. Used as the run-date key for `notificationBulkRuns/{runId}`.
+// Multiple scheduler invocations on the same calendar day (US Eastern) reuse the same plan.
+// Cloud Scheduler is configured to fire at a consistent ET time well clear of the midnight boundary.
+const getEasternDateKey = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(date);
+};
+
 const safeJSONParse = (str) => {
     try {
         return JSON.parse(str);
@@ -2549,11 +2563,12 @@ module.exports = {
     delay,
     backoffMs,
     getAdjustedTime,
+    getEasternDateKey,
     handleNorcBirthdayCard,
     safeJSONParse,
     parseResponseJson,
     parseRequestBody,
     uspsUrl,
     sanitizeObject,
-    developmentTier
+    developmentTier,
 };

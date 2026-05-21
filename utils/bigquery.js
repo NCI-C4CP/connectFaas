@@ -1,5 +1,6 @@
 const {BigQuery, BigQueryDate} = require('@google-cloud/bigquery');
 const bigquery = new BigQuery();
+const fieldMapping = require('./fieldToConceptIdMapping');
 
 const getTable = async (tableName, isParent, siteCode) => {
     try {
@@ -26,8 +27,160 @@ const stringToOperatorConvt = {
   lessequals: "<=",
 };
 
+// Validate to a safe character set.
+// concept IDs (optionally prefixed by `d_` after `convertToBigqueryKey`)
+// And dotted nested paths like `state.uid`.
+const SAFE_BQ_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+const assertSafeBqIdentifier = (value, label) => {
+  if (typeof value !== "string" || !SAFE_BQ_IDENTIFIER_PATTERN.test(value)) {
+    throw new Error(`Unsafe BigQuery identifier for ${label}: ${JSON.stringify(value)}`);
+  }
+  return value;
+};
+
 /**
- * Get participant data fields from BigQuery, based on conditions.
+ * Convert notification-spec filters into BigQuery WHERE-clause fragments and
+ * a parameter map. Used by both recipient-count and recipient-fetch helpers.
+ * @param {object} params
+ * @param {Array<string|Array>} params.conditions Notification eligibility conditions.
+ * @param {string} params.startTimeStr Upper-bound timestamp for the time field.
+ * @param {string} params.stopTimeStr Lower-bound timestamp for the time field.
+ * @param {string} params.timeField Firestore/BigQuery field used for time-window filtering.
+ * @returns {{ fragments: string[], params: Record<string, unknown>, types: Record<string, string> }}
+ */
+const buildNotificationEligibilityConditions = ({
+  conditions = [],
+  startTimeStr = "",
+  stopTimeStr = "",
+  timeField = "",
+}) => {
+  const fragments = [];
+  const params = {};
+  const types = {};
+  let nextParamIndex = 0;
+
+  for (const condition of conditions) {
+    if (typeof condition === "string") {
+      // Pre-formed SQL fragments are trusted (they come from the admin-managed notificationSpec doc).
+      fragments.push(`(${condition})`);
+    } else if (Array.isArray(condition) && condition.length === 3) {
+      const [key, operatorStr, value] = condition;
+      const operator = stringToOperatorConvt[operatorStr];
+      if (!operator) continue;
+
+      const bqKey = assertSafeBqIdentifier(convertToBigqueryKey(key), "condition key");
+      const paramName = `cond_${nextParamIndex++}`;
+      params[paramName] = value;
+      types[paramName] = typeof value === "number" ? "FLOAT64" : "STRING";
+      fragments.push(`${bqKey} ${operator} @${paramName}`);
+    }
+  }
+
+  if (timeField) {
+    const bqTimeField = assertSafeBqIdentifier(convertToBigqueryKey(timeField), "time field");
+    if (startTimeStr) {
+      params.startTimeStr = startTimeStr;
+      types.startTimeStr = "STRING";
+      fragments.push(`${bqTimeField} < @startTimeStr`);
+    }
+    if (stopTimeStr) {
+      params.stopTimeStr = stopTimeStr;
+      types.stopTimeStr = "STRING";
+      fragments.push(`${bqTimeField} >= @stopTimeStr`);
+    }
+  }
+
+  return { fragments, params, types };
+};
+
+/**
+ * Build the shared BigQuery SQL used by notification recipient fetches and
+ * recipient counts. Count mode intentionally omits pagination clauses so both
+ * helpers stay aligned on eligibility.
+ * Returns a parameterized query payload that callers pass directly to `bigquery.query()`.
+ * @param {object} params
+ * @param {string} params.notificationSpecId Notification specification ID.
+ * @param {string} params.selectSql SELECT clause used for non-count queries.
+ * @param {Array<string|Array>} params.conditions Notification eligibility conditions.
+ * @param {string} params.startTimeStr Upper-bound timestamp for the time field.
+ * @param {string} params.stopTimeStr Lower-bound timestamp for the time field.
+ * @param {string} params.timeField Firestore/BigQuery field used for time-window filtering.
+ * @param {string} params.previousToken Token cursor for the next page.
+ * @param {?number} params.limit Maximum row count for fetch queries.
+ * @param {boolean} params.countOnly Whether to emit the COUNT(*) query variant.
+ * @returns {{ query: string, params: Record<string, unknown>, types: Record<string, string> }}
+ */
+const buildNotificationEligibilityQuery = ({
+  notificationSpecId = "",
+  selectSql = "token",
+  conditions = [],
+  startTimeStr = "",
+  stopTimeStr = "",
+  timeField = "",
+  previousToken = "",
+  limit = null,
+  countOnly = false,
+}) => {
+  const eligibility = buildNotificationEligibilityConditions({
+    conditions,
+    startTimeStr,
+    stopTimeStr,
+    timeField,
+  });
+  const fragments = [...eligibility.fragments];
+  const params = { ...eligibility.params, notificationSpecId, conceptIdYes: fieldMapping.yes };
+  const types = { ...eligibility.types, notificationSpecId: "STRING", conceptIdYes: "INT64" };
+
+  if (!countOnly && previousToken) {
+    fragments.push(`token > @previousToken`);
+    params.previousToken = previousToken;
+    types.previousToken = "STRING";
+  }
+
+  // The LEFT JOIN identifies tokens that should NOT be re-fetched. A token
+  // is excluded when any of the following is true (notifications spec doc)
+  //   - isSent IS NULL or `yes` (concept ID 353358909): legacy record or successfully sent
+  //   - processingState = 'send_failed' (permanent failure)
+  // Records in `reserved`/`provider_send_in_flight`/`provider_acceptance_unknown` remain re-fetchable.
+  // The per-record state machine handles re-reservation and duplicate-prevention safely.
+  let query = `SELECT ${countOnly ? "COUNT(*) AS cnt" : selectSql}
+    FROM \`Connect.participants\`
+    LEFT JOIN (
+      SELECT DISTINCT token, TRUE AS alreadyHandled
+      FROM
+        \`Connect.notifications\`
+      WHERE
+        notificationSpecificationsID = @notificationSpecId
+        AND (IFNULL(isSent, @conceptIdYes) = @conceptIdYes OR processingState = 'send_failed'))
+    USING (token)
+    WHERE ${fragments.length === 0 ? "1=1" : fragments.join(" AND ")}
+    AND alreadyHandled IS NULL`;
+
+  if (!countOnly) {
+    const numericLimit = Number(limit);
+    if (!Number.isFinite(numericLimit) || numericLimit <= 0 || !Number.isInteger(numericLimit)) {
+      throw new Error(`Unsafe BigQuery limit: ${JSON.stringify(limit)}`);
+    }
+    query += ` ORDER BY token LIMIT ${numericLimit}`;
+  }
+
+  return { query, params, types };
+};
+
+/**
+ * Fetch one token-ordered page of notification-eligible participants from BigQuery.
+ * The query excludes recipients already present in `Connect.notifications` for the
+ * same notification spec.
+ * @param {object} params
+ * @param {string} params.notificationSpecId Notification specification ID.
+ * @param {Array<string|Array>} params.conditions Notification eligibility conditions.
+ * @param {string} params.startTimeStr Upper-bound timestamp for the time field.
+ * @param {string} params.stopTimeStr Lower-bound timestamp for the time field.
+ * @param {string} params.timeField Firestore/BigQuery field used for time-window filtering.
+ * @param {string[]} params.fieldsToFetch Fields to select from BigQuery.
+ * @param {number} params.limit Maximum number of rows to return.
+ * @param {string} params.previousToken Token cursor for the next page.
+ * @returns {Promise<object[]>} Firestore-shaped participant rows.
  */
 async function getParticipantsForNotificationsBQ({
   notificationSpecId = "",
@@ -43,43 +196,62 @@ async function getParticipantsForNotificationsBQ({
 
   const bqFieldArray = fieldsToFetch
     .map(convertToBigqueryKey)
-    .map((field) => `${field} AS ${field.replace(/\./g, "_DOT_")}`);
-  let bqConditionArray = [];
-
-  for (const condition of conditions) {
-    if (typeof condition === "string") {
-      bqConditionArray.push(`(${condition})`);
-    } else if (Array.isArray(condition) && condition.length === 3) {
-      const [key, operatorStr, value] = condition;
-      const operator = stringToOperatorConvt[operatorStr];
-      if (!operator) continue;
-
-      const bqKey = convertToBigqueryKey(key);
-      bqConditionArray.push(`${bqKey} ${operator} ${typeof value === "number" ? value : `"${value}"`}`);
-    }
-  }
-
-  if (timeField) {
-    const bqTimeField = convertToBigqueryKey(timeField);
-    if (startTimeStr) bqConditionArray.push(`${bqTimeField} < "${startTimeStr}"`);
-    if (stopTimeStr) bqConditionArray.push(`${bqTimeField} >= "${stopTimeStr}"`);
-  }
-
-  const queryStr = `SELECT ${bqFieldArray.length === 0 ? "token" : bqFieldArray.join(", ")}
-    FROM \`Connect.participants\` 
-    LEFT JOIN (
-      SELECT DISTINCT token, TRUE AS isSent
-      FROM
-        \`Connect.notifications\`
-      WHERE
-        notificationSpecificationsID = "${notificationSpecId}")
-    USING (token)
-    WHERE ${bqConditionArray.length === 0 ? "1=1" : bqConditionArray.join(" AND ")}
-    AND isSent IS NULL AND token > "${previousToken}" ORDER BY token LIMIT ${limit}`;
-  const [rows] = await bigquery.query(queryStr);
+    .map((field) => `${assertSafeBqIdentifier(field, "select field")} AS ${field.replace(/\./g, "_DOT_")}`);
+  const { query, params, types } = buildNotificationEligibilityQuery({
+    notificationSpecId,
+    selectSql: bqFieldArray.length === 0 ? "token" : bqFieldArray.join(", "),
+    conditions,
+    startTimeStr,
+    stopTimeStr,
+    timeField,
+    previousToken,
+    limit,
+  });
+  const [rows] = await bigquery.query({ query, params, types });
   if (rows.length === 0) return [];
 
   return rows.map(convertToFirestoreData);
+}
+
+/**
+ * Count notification-eligible participants using the same eligibility query as
+ * `getParticipantsForNotificationsBQ()`, but without pagination clauses.
+ * Returns three distinct sentinel values so callers can distinguish:
+ *   -  0  : query ran successfully, no recipients matched
+ *   - >0  : query ran successfully, this many recipients matched
+ *   - -1  : query failed (network, BigQuery error, etc.)
+ *   - -2  : spec is misconfigured (missing id or empty conditions). Query never ran
+ * @param {object} params
+ * @param {string} params.notificationSpecId Notification specification ID.
+ * @param {Array<string|Array>} params.conditions Notification eligibility conditions.
+ * @param {string} params.startTimeStr Upper-bound timestamp for the time field.
+ * @param {string} params.stopTimeStr Lower-bound timestamp for the time field.
+ * @param {string} params.timeField Firestore/BigQuery field used for time-window filtering.
+ * @returns {Promise<number>} See sentinel meanings above.
+ */
+async function countParticipantsForNotificationsBQ({
+  notificationSpecId = "",
+  conditions = [],
+  startTimeStr = "",
+  stopTimeStr = "",
+  timeField = "",
+}) {
+  if (!notificationSpecId || !Array.isArray(conditions) || conditions.length === 0) return -2;
+  const { query, params, types } = buildNotificationEligibilityQuery({
+    notificationSpecId,
+    conditions,
+    startTimeStr,
+    stopTimeStr,
+    timeField,
+    countOnly: true,
+  });
+  try {
+    const [rows] = await bigquery.query({ query, params, types });
+    return rows.length > 0 ? Number(rows[0].cnt) : 0;
+  } catch (error) {
+    console.error("Error in countParticipantsForNotificationsBQ().", error);
+    return -1; // Caller treats -1 as "query failed"
+  }
 }
 
 async function getParticipantsForRequestAKitBQ(conditions = [], sorts = [], limit, selectFields = []) {
@@ -160,7 +332,9 @@ function convertToFirestoreData(bqData) {
 }
 
 function convertToBigqueryKey(str) {
-  return str.replace(/(?<=^|\.)(\d)/g, "d_$1");
+  // Trim before the d_ prefix transform. Notification specs occasionally accumulate
+  // stray leading/trailing whitespace in concept-ID references (likely copy/paste typos).
+  return String(str).trim().replace(/(?<=^|\.)(\d)/g, "d_$1");
 }
 
 function convertToFirestoreKey(str) {
@@ -584,6 +758,7 @@ const getPhysicalActivityData = async (expression) => {
 module.exports = {
     getTable,
     getParticipantsForNotificationsBQ,
+    countParticipantsForNotificationsBQ,
     getParticipantsForRequestAKitBQ,
     getStatsFromBQ,
     getCollectionStats,
