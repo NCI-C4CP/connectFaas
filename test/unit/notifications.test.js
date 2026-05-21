@@ -779,6 +779,90 @@ describe("Notifications Unit Tests", () => {
 
       expect(sgMailMock.send).toHaveBeenCalledTimes(1);
     });
+
+    describe("CC dedupe vs primary recipient", () => {
+      // SendGrid rejects a personalization with the same address in
+      // both `to` and `cc` ("Each email address ... should be unique...").
+      beforeEach(() => {
+        sgMailMock.send.mockResolvedValue([{ statusCode: 202 }]);
+        sharedMock.getSecret.mockResolvedValue("fake-api-key");
+        sharedMock.developmentTier = "PROD";
+        process.env.GCLOUD_SENDGRID_SECRET = "secret/sendgrid-key";
+      });
+
+      it("drops a single-string cc that matches to (exact)", async () => {
+        await notificationsModule.sendEmail("connectcc@nih.gov", "Subject", "<p>Body</p>", "connectcc@nih.gov");
+        const msg = sgMailMock.send.mock.calls[0][0];
+        expect(msg.cc).toBeUndefined();
+      });
+
+      it("drops a single-string cc that matches to (case-insensitive + whitespace)", async () => {
+        await notificationsModule.sendEmail("connectcc@nih.gov", "Subject", "<p>Body</p>", "  ConnectCC@NIH.gov  ");
+        const msg = sgMailMock.send.mock.calls[0][0];
+        expect(msg.cc).toBeUndefined();
+      });
+
+      it("keeps a single-string cc that differs from to", async () => {
+        await notificationsModule.sendEmail("kpsite@example.com", "Subject", "<p>Body</p>", "connectcc@nih.gov");
+        const msg = sgMailMock.send.mock.calls[0][0];
+        expect(msg.cc).toBe("connectcc@nih.gov");
+      });
+
+      it("filters an array cc to remove only the entries matching to", async () => {
+        await notificationsModule.sendEmail(
+          "kpsite@example.com",
+          "Subject",
+          "<p>Body</p>",
+          ["connectcc@nih.gov", "kpsite@example.com", "ops@nih.gov"],
+        );
+        const msg = sgMailMock.send.mock.calls[0][0];
+        expect(msg.cc).toEqual(["connectcc@nih.gov", "ops@nih.gov"]);
+      });
+
+      it("drops cc entirely when every array entry matches to", async () => {
+        await notificationsModule.sendEmail(
+          "connectcc@nih.gov",
+          "Subject",
+          "<p>Body</p>",
+          ["connectcc@nih.gov", "ConnectCC@nih.gov"],
+        );
+        const msg = sgMailMock.send.mock.calls[0][0];
+        expect(msg.cc).toBeUndefined();
+      });
+
+      it("drops cc when value is falsy or empty array", async () => {
+        await notificationsModule.sendEmail("kpsite@example.com", "Subject", "<p>Body</p>", "");
+        expect(sgMailMock.send.mock.calls[0][0].cc).toBeUndefined();
+
+        await notificationsModule.sendEmail("kpsite@example.com", "Subject", "<p>Body</p>", []);
+        expect(sgMailMock.send.mock.calls[1][0].cc).toBeUndefined();
+
+        await notificationsModule.sendEmail("kpsite@example.com", "Subject", "<p>Body</p>");
+        expect(sgMailMock.send.mock.calls[2][0].cc).toBeUndefined();
+      });
+    });
+
+    describe("dedupeCcAgainstTo helper", () => {
+      it("returns undefined for falsy cc inputs", () => {
+        const { dedupeCcAgainstTo } = notificationsModule;
+        expect(dedupeCcAgainstTo(undefined, "a@x.com")).toBeUndefined();
+        expect(dedupeCcAgainstTo(null, "a@x.com")).toBeUndefined();
+        expect(dedupeCcAgainstTo("", "a@x.com")).toBeUndefined();
+        expect(dedupeCcAgainstTo([], "a@x.com")).toBeUndefined();
+      });
+
+      it("compares emails case-insensitively and trim-tolerantly", () => {
+        const { dedupeCcAgainstTo } = notificationsModule;
+        expect(dedupeCcAgainstTo("  A@X.com ", "a@x.com")).toBeUndefined();
+        expect(dedupeCcAgainstTo(["A@X.COM", "b@x.com"], "a@x.com")).toEqual(["b@x.com"]);
+      });
+
+      it("preserves the original cc shape (string vs array) when no dedupe applies", () => {
+        const { dedupeCcAgainstTo } = notificationsModule;
+        expect(dedupeCcAgainstTo("b@x.com", "a@x.com")).toBe("b@x.com");
+        expect(dedupeCcAgainstTo(["b@x.com", "c@x.com"], "a@x.com")).toEqual(["b@x.com", "c@x.com"]);
+      });
+    });
   });
 
   describe("sendScheduledNotifications", () => {

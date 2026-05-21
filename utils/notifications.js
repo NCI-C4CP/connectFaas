@@ -1021,6 +1021,38 @@ const retrieveNotifications = async (req, res, uid) => {
   }
 };
 
+/**
+ * Normalize an email address for duplicate comparison.
+ */
+const normalizeEmailForCompare = (email) => {
+    if (typeof email !== "string") return null;
+    const trimmed = email.trim();
+    return trimmed ? trimmed.toLowerCase() : null;
+};
+
+/**
+ * Remove any CC entry that duplicates the primary `to` recipient. SendGrid
+ * rejects a personalization where the same address appears in both `to` and
+ * `cc`/`bcc` ("Each email address in the personalization block should be
+ * unique").
+ */
+const dedupeCcAgainstTo = (cc, toEmail) => {
+    if (!cc) return undefined;
+    const toKey = normalizeEmailForCompare(toEmail);
+
+    if (Array.isArray(cc)) {
+        const filtered = cc.filter((entry) => {
+            const key = normalizeEmailForCompare(entry);
+            return key && key !== toKey;
+        });
+        return filtered.length > 0 ? filtered : undefined;
+    }
+
+    const ccKey = normalizeEmailForCompare(cc);
+    if (!ccKey || ccKey === toKey) return undefined;
+    return cc;
+};
+
 const sendEmail = async (emailTo, messageSubject, html, cc) => {
     const notificationSettings = await getNotificationDeliverySettings();
     const msg = {
@@ -1032,12 +1064,29 @@ const sendEmail = async (emailTo, messageSubject, html, cc) => {
         subject: messageSubject,
         html: html,
     };
-    if(cc) msg.cc = cc;
+    const dedupedCc = dedupeCcAgainstTo(cc, emailTo);
+    if (dedupedCc) msg.cc = dedupedCc;
     msg.text = htmlToPlaintext(html);
     try {
         await sendViaSendGrid(msg, { logLabel: "sendEmail", notificationSettings });
     } catch (error) {
-        console.error("Email send failed:", { message: error?.message, code: error?.code });
+        let bodyDetail;
+        try {
+            bodyDetail = error?.response?.body
+                ? JSON.stringify(error.response.body)
+                : undefined;
+        } catch {
+            bodyDetail = "<unserializable response body>";
+        }
+        console.error("Email send failed:", {
+            message: error?.message,
+            code: error?.code,
+            to: emailTo,
+            cc: cc || undefined,
+            from: msg.from?.email,
+            subject: messageSubject,
+            body: bodyDetail,
+        });
         throw error;
     }
 }
@@ -3070,6 +3119,7 @@ module.exports = {
   retrieveNotificationSchema,
   getParticipantNotification,
   sendEmail,
+  dedupeCcAgainstTo,
   getSiteNotification,
   sendEmailLink,
   dryRunNotificationSchema,
