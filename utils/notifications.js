@@ -68,7 +68,7 @@ const validateBulkWorkerUri = (uri, lane, source) => {
   if (!parsed.hostname.endsWith(".run.app")) {
     console.warn(`Bulk worker URI for lane "${lane}" from ${source} hostname "${parsed.hostname}" does not end with ".run.app". Verify this is the correct Cloud Run URL.`);
   }
-  
+
   return trimmed;
 };
 
@@ -1624,8 +1624,7 @@ const enqueuePlannedBulkBatchTask = async ({
       console.log(`Planned bulk notification task already exists: ${taskId}`);
       return { taskId, alreadyExisted: true };
     }
-    // Include the URI we tried in the error log. If the dispatch fails due to a wrong URL,
-    // this is the breadcrumb that ties the task identity to the URL used, which Cloud Tasks does not surface.
+    // If the dispatch fails due to a wrong URL, this is the breadcrumb that ties the task identity to the URL used (Cloud Tasks does not surface).
     console.error(`Failed to enqueue planned bulk task ${taskId} (runId=${run.id}, batchId=${batchDoc.id}, lane=${batchDoc.lane}, uri=${uri}): ${error.message || error.code || "(no message)"}`);
     throw error;
   }
