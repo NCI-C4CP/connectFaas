@@ -270,6 +270,8 @@ describe("Notifications Unit Tests", () => {
     process.env.TWILIO_ACCOUNT_SID = "secret/twilio-account";
     process.env.TWILIO_AUTH_TOKEN = "secret/twilio-auth";
     process.env.TWILIO_MESSAGING_SERVICE_SID = "secret/twilio-service";
+    process.env.BULK_WORKER_URI_DEFAULT = "https://processnotificationbatchbulkdefault-test-uc.a.run.app";
+    process.env.BULK_WORKER_URI_MICROSOFT = "https://processnotificationbatchbulkmicrosoft-test-uc.a.run.app";
 
     // Mock global fetch
     fetchStub = vi.fn();
@@ -919,6 +921,7 @@ describe("Notifications Unit Tests", () => {
         specId: "spec-bulk-threshold",
         runSequence: 3,
       });
+      expect(opts.uri).toBe("https://processnotificationbatchbulkdefault-test-uc.a.run.app");
       expect(firestoreMock.saveBulkNotificationRunPlan).toHaveBeenCalledTimes(1);
       const [{ runDoc, batchDocs }] = firestoreMock.saveBulkNotificationRunPlan.mock.calls[0];
       expect(runDoc).toMatchObject({
@@ -3332,6 +3335,131 @@ describe("SmsBatchSender", () => {
 
       await sender.waitForSpec("spec1");
       expect(delayFn).toHaveBeenCalled();
+    });
+  });
+});
+
+// Error contract helpers.
+describe("buildBulkWorkerUri / validateBulkWorkerUri", () => {
+  const { buildBulkWorkerUri, validateBulkWorkerUri } = require("../../utils/notifications");
+
+  const DEV_DEFAULT_URI = "https://processnotificationbatchbulkdefault-cbodno4evq-uc.a.run.app";
+  const DEV_MS_URI = "https://processnotificationbatchbulkmicrosoft-cbodno4evq-uc.a.run.app";
+
+  const originalEnv = {};
+  beforeEach(() => {
+    originalEnv.default = process.env.BULK_WORKER_URI_DEFAULT;
+    originalEnv.microsoft = process.env.BULK_WORKER_URI_MICROSOFT;
+    originalEnv.project = process.env.GCLOUD_PROJECT;
+    delete process.env.BULK_WORKER_URI_DEFAULT;
+    delete process.env.BULK_WORKER_URI_MICROSOFT;
+    process.env.GCLOUD_PROJECT = "nih-nci-dceg-connect-dev";
+  });
+  afterEach(() => {
+    if (originalEnv.default === undefined) delete process.env.BULK_WORKER_URI_DEFAULT;
+    else process.env.BULK_WORKER_URI_DEFAULT = originalEnv.default;
+    if (originalEnv.microsoft === undefined) delete process.env.BULK_WORKER_URI_MICROSOFT;
+    else process.env.BULK_WORKER_URI_MICROSOFT = originalEnv.microsoft;
+    if (originalEnv.project === undefined) delete process.env.GCLOUD_PROJECT;
+    else process.env.GCLOUD_PROJECT = originalEnv.project;
+  });
+
+  describe("resolution order", () => {
+    it("reads from appSettings.notifications.bulkWorkerUriDefault when no env override", () => {
+      const settings = { bulkWorkerUriDefault: DEV_DEFAULT_URI };
+      expect(buildBulkWorkerUri("default", settings)).toBe(DEV_DEFAULT_URI);
+    });
+
+    it("reads from appSettings.notifications.bulkWorkerUriMicrosoft when no env override", () => {
+      const settings = { bulkWorkerUriMicrosoft: DEV_MS_URI };
+      expect(buildBulkWorkerUri("microsoft", settings)).toBe(DEV_MS_URI);
+    });
+
+    it("env var override wins over appSettings for default lane", () => {
+      const settings = { bulkWorkerUriDefault: DEV_DEFAULT_URI };
+      process.env.BULK_WORKER_URI_DEFAULT = "https://override-default-uc.a.run.app";
+      expect(buildBulkWorkerUri("default", settings)).toBe("https://override-default-uc.a.run.app");
+    });
+
+    it("env var override wins over appSettings for microsoft lane", () => {
+      const settings = { bulkWorkerUriMicrosoft: DEV_MS_URI };
+      process.env.BULK_WORKER_URI_MICROSOFT = "https://override-ms-uc.a.run.app";
+      expect(buildBulkWorkerUri("microsoft", settings)).toBe("https://override-ms-uc.a.run.app");
+    });
+
+    it("trims whitespace from the resolved URI", () => {
+      const settings = { bulkWorkerUriDefault: `  ${DEV_DEFAULT_URI}  ` };
+      expect(buildBulkWorkerUri("default", settings)).toBe(DEV_DEFAULT_URI);
+    });
+  });
+
+  describe("not-found diagnostics", () => {
+    it("throws naming the appSettings field, project, and gcloud lookup command when URI missing", () => {
+      // No env override, no appSettings field — the worst-case diagnostic test.
+      expect(() => buildBulkWorkerUri("default", {})).toThrow(/bulkWorkerUriDefault/);
+      expect(() => buildBulkWorkerUri("default", {})).toThrow(/nih-nci-dceg-connect-dev/);
+      expect(() => buildBulkWorkerUri("default", {})).toThrow(/gcloud run services describe processnotificationbatchbulkdefault/);
+      expect(() => buildBulkWorkerUri("default", {})).toThrow(/appName == "connectFaas"/);
+    });
+
+    it("error message names the microsoft lane and its lookup command separately", () => {
+      expect(() => buildBulkWorkerUri("microsoft", {})).toThrow(/bulkWorkerUriMicrosoft/);
+      expect(() => buildBulkWorkerUri("microsoft", {})).toThrow(/processnotificationbatchbulkmicrosoft/);
+    });
+
+    it("throws for an unknown lane with a list of accepted lanes", () => {
+      expect(() => buildBulkWorkerUri("unrecognized-lane", {})).toThrow(/Unknown bulk lane/);
+      expect(() => buildBulkWorkerUri("unrecognized-lane", {})).toThrow(/default/);
+      expect(() => buildBulkWorkerUri("unrecognized-lane", {})).toThrow(/microsoft/);
+    });
+
+    it("treats explicit null/empty string in appSettings the same as missing", () => {
+      expect(() => buildBulkWorkerUri("default", { bulkWorkerUriDefault: null })).toThrow(/bulkWorkerUriDefault/);
+      expect(() => buildBulkWorkerUri("default", { bulkWorkerUriDefault: "" })).toThrow(/bulkWorkerUriDefault/);
+    });
+  });
+
+  describe("wrong-URI diagnostics", () => {
+    it("rejects non-string URIs (e.g. accidentally storing a number in Firestore)", () => {
+      expect(() => buildBulkWorkerUri("default", { bulkWorkerUriDefault: 12345 })).toThrow(/must be a string/);
+    });
+
+    it("rejects http:// URIs and names the source", () => {
+      expect(() => validateBulkWorkerUri("http://example.run.app", "default", "test source")).toThrow(/must use https/);
+      expect(() => validateBulkWorkerUri("http://example.run.app", "default", "test source")).toThrow(/test source/);
+    });
+
+    it("rejects malformed URLs", () => {
+      expect(() => validateBulkWorkerUri("not a url at all", "default", "test source")).toThrow(/not a valid URL/);
+    });
+
+    it("rejects whitespace-only URIs", () => {
+      expect(() => validateBulkWorkerUri("   ", "default", "test source")).toThrow(/is empty/);
+    });
+
+    it("error from env-var override names the env var (not the appSettings field)", () => {
+      process.env.BULK_WORKER_URI_DEFAULT = "ftp://wrong-protocol.run.app";
+      expect(() => buildBulkWorkerUri("default", {})).toThrow(/BULK_WORKER_URI_DEFAULT env var/);
+    });
+
+    it("error from appSettings names the field (not an env var)", () => {
+      const settings = { bulkWorkerUriDefault: "ftp://wrong-protocol.run.app" };
+      expect(() => buildBulkWorkerUri("default", settings)).toThrow(/appSettings\.notifications\.bulkWorkerUriDefault/);
+    });
+
+    it("warns (does not throw) for a URI that's https but not a .run.app hostname", () => {
+      // Custom domains are technically valid; flag for operator review without blocking dispatch.
+      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(() =>
+          validateBulkWorkerUri("https://custom-domain.example.com", "default", "test source"),
+        ).not.toThrow();
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("does not end with \".run.app\""),
+        );
+      } finally {
+        consoleWarnSpy.mockRestore();
+      }
     });
   });
 });

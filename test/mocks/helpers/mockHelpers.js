@@ -60,6 +60,29 @@ class MockHelpers {
                 },
                 Transaction: function Transaction() {},
                 Filter: {},
+                Timestamp: {
+                    fromMillis: vi.fn((ms) => ({
+                        _seconds: Math.floor(ms / 1000),
+                        _nanoseconds: 0,
+                        toMillis: () => ms,
+                        toDate: () => new Date(ms),
+                    })),
+                    fromDate: vi.fn((date) => ({
+                        _seconds: Math.floor(date.getTime() / 1000),
+                        _nanoseconds: 0,
+                        toMillis: () => date.getTime(),
+                        toDate: () => date,
+                    })),
+                    now: vi.fn(() => {
+                        const ms = Date.now();
+                        return {
+                            _seconds: Math.floor(ms / 1000),
+                            _nanoseconds: 0,
+                            toMillis: () => ms,
+                            toDate: () => new Date(ms),
+                        };
+                    }),
+                },
             },
         };
 

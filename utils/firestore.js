@@ -1,5 +1,5 @@
 const admin = require('firebase-admin');
-const { Transaction, FieldPath, FieldValue, Filter } = require('firebase-admin/firestore');
+const { Transaction, FieldPath, FieldValue, Filter, Timestamp } = require('firebase-admin/firestore');
 admin.initializeApp();
 const storage = admin.storage();
 const db = admin.firestore();
@@ -3564,6 +3564,11 @@ const BULK_RUN_BATCH_COLLECTION = "batches";
 const BULK_RUN_TERMINAL_STATUSES = new Set(["complete", "failed"]);
 const DEFAULT_BULK_BATCH_ATTEMPT_DURATION_MS = 30 * 60 * 1000;
 
+// Retention for bulk run history. Run docs and their `batches` subdocs: 45 day TTL policy using `expiresAt` Timestamp. 
+const BULK_RUN_TTL_DAYS = 45;
+const BULK_RUN_TTL_MS = BULK_RUN_TTL_DAYS * 24 * 60 * 60 * 1000;
+const buildBulkRunExpiresAt = () => Timestamp.fromMillis(Date.now() + BULK_RUN_TTL_MS);
+
 const getBulkRunRef = (runId) => db.collection(BULK_RUN_COLLECTION).doc(runId);
 const getBulkRunBatchRef = (runId, batchId) =>
   getBulkRunRef(runId).collection(BULK_RUN_BATCH_COLLECTION).doc(batchId);
@@ -3687,6 +3692,8 @@ const saveBulkNotificationRunPlan = async ({
   }
 
   const now = new Date().toISOString();
+  // Shared expiresAt for the run doc and its batch subdocs (Firestore TTL policy).
+  const expiresAt = buildBulkRunExpiresAt();
   const runRef = getBulkRunRef(runDoc.id);
   const batchIds = batchDocs.map((batchDoc) => batchDoc.id).filter(Boolean);
   const batchIdsByLane = batchDocs.reduce((acc, batchDoc) => {
@@ -3707,6 +3714,7 @@ const saveBulkNotificationRunPlan = async ({
     batchCount: batchIds.length,
     status: runDoc.status || "planned",
     updatedAt: now,
+    expiresAt,
   }, { merge: true });
 
   for (let i = 0; i < batchDocs.length; i += 450) {
@@ -3720,6 +3728,7 @@ const saveBulkNotificationRunPlan = async ({
         runId: runDoc.id,
         status: batchDoc.status || "planned",
         updatedAt: now,
+        expiresAt,
       }, { merge: true });
     }
     await batch.commit();
