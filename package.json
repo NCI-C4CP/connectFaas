@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Connect FAAS API for DCEG's Cohort Study",
   "main": "index.js",
+  "engines": {
+    "node": "24"
+  },
   "scripts": {
     "test": "vitest run",
     "test:all": "vitest run",
