@@ -183,6 +183,25 @@ const siteNotificationsHandler = async (Connect_ID, concept, siteCode, obj) => {
     await handleSiteNotifications(Connect_ID, concept, siteEmail, obj.id, obj.acronym, siteCode);
 }
 
+/**
+ * Best-effort wrapper around siteNotificationsHandler. Site notifications are
+ * informational and should not block a participant's status update (destruction request, withdraw,
+ * revoke, deceased report) must succeed even if the notification email fails.
+ */
+const trySiteNotification = async (Connect_ID, concept, siteCode, obj) => {
+    try {
+        await siteNotificationsHandler(Connect_ID, concept, siteCode, obj);
+    } catch (error) {
+        console.error("Site notification failed (non-fatal). Participant update will still proceed.", {
+            connectId: Connect_ID,
+            concept,
+            siteCode,
+            error: error?.message,
+            code: error?.code,
+        });
+    }
+}
+
 const updateParticipantData = async (req, res, authObj) => {
     const { getParticipantData, updateParticipantDataByDocId, writeBirthdayCard, writeCancerOccurrences } = require('./firestore');
     const { checkForQueryFields, flattenObject, initializeTimestamps, userProfileHistoryKeys } = require('./shared');
@@ -302,16 +321,16 @@ const updateParticipantData = async (req, res, authObj) => {
 
         // Handle site notifications
         if(dataObj['831041022'] && dataObj['747006172'] && dataObj['773707518'] && dataObj['831041022'] === 353358909 && dataObj['747006172'] === 353358909 && dataObj['773707518'] === 353358909){ // Data Destruction
-            await siteNotificationsHandler(docData['Connect_ID'], '831041022', docData['827220437'], obj);
+            await trySiteNotification(docData['Connect_ID'], '831041022', docData['827220437'], obj);
         }
         else if (dataObj['747006172'] && dataObj['773707518'] && dataObj['747006172'] === 353358909 && dataObj['773707518'] === 353358909) { // Withdraw Consent
-            await siteNotificationsHandler(docData['Connect_ID'], '747006172', docData['827220437'], obj);
+            await trySiteNotification(docData['Connect_ID'], '747006172', docData['827220437'], obj);
         }
         else if(dataObj['773707518'] && dataObj['773707518'] === 353358909) { // Revocation only email
-            await siteNotificationsHandler(docData['Connect_ID'], '773707518', docData['827220437'], obj);
+            await trySiteNotification(docData['Connect_ID'], '773707518', docData['827220437'], obj);
         }
         else if (dataObj['987563196'] && dataObj['987563196'] === 353358909) {
-            await siteNotificationsHandler(docData['Connect_ID'], '987563196', docData['827220437'], obj);
+            await trySiteNotification(docData['Connect_ID'], '987563196', docData['827220437'], obj);
         }
         
         // Flatten dataObj and docData for comparison & validation with JSON file.

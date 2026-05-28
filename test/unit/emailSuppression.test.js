@@ -927,6 +927,26 @@ describe("Email Suppression System", () => {
         status: "planned",
         updatedAt: "2026-04-01T12:00:00.000Z",
       }), { merge: true });
+
+      // TTL contract: the run doc and every batch doc has an `expiresAt` timestamp set 45 days from write time.
+      const expectedExpiresAtSeconds = Math.floor(
+        new Date("2026-05-16T12:00:00.000Z").getTime() / 1000,
+      );
+      expect(runSetSpies.get("run-save-plan")).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiresAt: expect.objectContaining({ _seconds: expectedExpiresAtSeconds }),
+        }),
+        { merge: true },
+      );
+      // Spot-check that batch docs received the same expiresAt (TTL doesn't cascade).
+      expect(firstBatch.set).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.objectContaining({
+          expiresAt: expect.objectContaining({ _seconds: expectedExpiresAtSeconds }),
+        }),
+        { merge: true },
+      );
       vi.useRealTimers();
     });
 

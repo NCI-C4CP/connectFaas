@@ -21,7 +21,7 @@ let isTwilioSetup = false;
 let twilioAuthToken = "";
 // Per-instance guard. Cloud Functions Gen2 may spawn multiple instances, each with its own copy of this flag.
 // Coordination across instances relies on three layers:
-//    - (1) `sendScheduledNotificationsGen2` is configured with `--ingress-settings=internal-only` so only Cloud Scheduler can invoke it.
+//    - (1) `sendScheduledNotifications` is deployed with `--ingress=internal` so only Cloud Scheduler can invoke it.
 //    - (2) Cloud Scheduler is configured to fire once per day.
 //    - (3) the per-recipient `notifications` doc state machine and the per-batch `notificationBulkRuns` queued markers prevent duplicate sends even if a second invocation slips through.
 // per-recipient `notifications` doc state machine and the per-batch `notificationBulkRuns` queued markers prevent duplicate sends even if a
@@ -40,6 +40,66 @@ const BULK_LANE_CONFIG = Object.freeze({
   }),
 });
 const BULK_TASK_DISPATCH_DEADLINE_SECONDS = 1800;
+const BULK_WORKER_URI_SETTINGS_KEYS = Object.freeze({
+  [BULK_LANE_DEFAULT]: "bulkWorkerUriDefault",
+  [BULK_LANE_MICROSOFT]: "bulkWorkerUriMicrosoft",
+});
+
+// Validates a bulk worker URI before it's passed to Cloud Tasks.
+const validateBulkWorkerUri = (uri, lane, source) => {
+  if (typeof uri !== "string") {
+    throw new Error(
+      `Bulk worker URI for lane "${lane}" from ${source} must be a string. Got: ${typeof uri} (${JSON.stringify(uri)}).`,
+    );
+  }
+  const trimmed = uri.trim();
+  if (!trimmed) {
+    throw new Error(`Bulk worker URI for lane "${lane}" from ${source} is empty.`);
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch (err) {
+    throw new Error(`Bulk worker URI for lane "${lane}" from ${source} is not a valid URL: "${uri}". ${err.message}`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Bulk worker URI for lane "${lane}" from ${source} must use https. Got: "${uri}".`);
+  }
+  if (!parsed.hostname.endsWith(".run.app")) {
+    console.warn(`Bulk worker URI for lane "${lane}" from ${source} hostname "${parsed.hostname}" does not end with ".run.app". Verify this is the correct Cloud Run URL.`);
+  }
+
+  return trimmed;
+};
+
+const buildBulkWorkerUri = (lane, notificationSettings = {}) => {
+  const envVarName = `BULK_WORKER_URI_${String(lane).toUpperCase()}`;
+  const envOverride = process.env[envVarName];
+  if (envOverride) {
+    return validateBulkWorkerUri(envOverride, lane, `${envVarName} env var`);
+  }
+
+  const settingsKey = BULK_WORKER_URI_SETTINGS_KEYS[lane];
+  if (!settingsKey) {
+    throw new Error(
+      `Unknown bulk lane: "${lane}". Expected one of: ${Object.keys(BULK_WORKER_URI_SETTINGS_KEYS).join(", ")}.`,
+    );
+  }
+  const uri = notificationSettings[settingsKey];
+  if (!uri) {
+    const project = process.env.GCLOUD_PROJECT || "(GCLOUD_PROJECT unset)";
+    const serviceName = `processnotificationbatchbulk${lane}`;
+    throw new Error(
+      `Bulk worker URI not configured for lane "${lane}". ` +
+      `Expected appSettings.notifications.${settingsKey} (on the Firestore doc where appName == "connectFaas") ` +
+      `to contain the Cloud Run URL for service "${serviceName}" in project "${project}". ` +
+      `Look it up with: gcloud run services describe ${serviceName} --region=us-central1 --project=${project} --format='value(status.url)' ` +
+      `and write the result into Firestore. See the "Pre-deploy: bulk worker URI configuration" section of the rollout doc.`,
+    );
+  }
+  return validateBulkWorkerUri(uri, lane, `appSettings.notifications.${settingsKey}`);
+};
+
 // Firestore-visible attempt lock duration. Kept much shorter than the Cloud Tasks dispatch deadline so a crashed attempt's lock expires before
 // the queue's max-attempts (5) × min-backoff (60s) retry budget is exhausted.
 // A successful send completes in seconds. This value only needs to cover slow batches.
@@ -63,6 +123,17 @@ const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
   microsoftBulkDomains: Object.freeze(["outlook.com", "hotmail.com", "live.com", "msn.com"]),
   sendRetryMax: 5,                          // Maximum number of retries for send operations.
   emailBatchDelayMs: 1000,                  // Delay between email batches to avoid overwhelming the API. Used for transactional mail stream.
+  // Bulk Cloud Tasks worker dispatch URIs.
+  // Gotcha warning: The Firebase Admin SDK auto-derives a URL
+  // assuming the firebase-deploy pattern, but our workers are deployed via
+  // `gcloud run deploy --function=` and live at Cloud Run URLs that include a
+  // per-project hash. Populate these per environment in the Firestore appSettings
+  // doc (appName == "connectFaas") with the output of:
+  //   gcloud run services describe processnotificationbatchbulkdefault \
+  //     --region=us-central1 --project=<PROJECT> --format='value(status.url)'
+  // (and the equivalent for processnotificationbatchbulkmicrosoft).
+  bulkWorkerUriDefault: null,
+  bulkWorkerUriMicrosoft: null,
 });
 // HMAC signature for unsubscribe URLs prevents unauthorized suppression of arbitrary emails.
 // Secret is resolved from Secret Manager via resolveUnsubscribeSecret() before use.
@@ -227,6 +298,14 @@ const getNotificationDeliverySettings = async () => {
       notifications.emailBatchDelayMs,
       DEFAULT_NOTIFICATION_SETTINGS.emailBatchDelayMs,
     ),
+    bulkWorkerUriDefault:
+      typeof notifications.bulkWorkerUriDefault === "string"
+        ? notifications.bulkWorkerUriDefault
+        : DEFAULT_NOTIFICATION_SETTINGS.bulkWorkerUriDefault,
+    bulkWorkerUriMicrosoft:
+      typeof notifications.bulkWorkerUriMicrosoft === "string"
+        ? notifications.bulkWorkerUriMicrosoft
+        : DEFAULT_NOTIFICATION_SETTINGS.bulkWorkerUriMicrosoft,
   };
 };
 
@@ -1021,6 +1100,38 @@ const retrieveNotifications = async (req, res, uid) => {
   }
 };
 
+/**
+ * Normalize an email address for duplicate comparison.
+ */
+const normalizeEmailForCompare = (email) => {
+    if (typeof email !== "string") return null;
+    const trimmed = email.trim();
+    return trimmed ? trimmed.toLowerCase() : null;
+};
+
+/**
+ * Remove any CC entry that duplicates the primary `to` recipient. SendGrid
+ * rejects a personalization where the same address appears in both `to` and
+ * `cc`/`bcc` ("Each email address in the personalization block should be
+ * unique").
+ */
+const dedupeCcAgainstTo = (cc, toEmail) => {
+    if (!cc) return undefined;
+    const toKey = normalizeEmailForCompare(toEmail);
+
+    if (Array.isArray(cc)) {
+        const filtered = cc.filter((entry) => {
+            const key = normalizeEmailForCompare(entry);
+            return key && key !== toKey;
+        });
+        return filtered.length > 0 ? filtered : undefined;
+    }
+
+    const ccKey = normalizeEmailForCompare(cc);
+    if (!ccKey || ccKey === toKey) return undefined;
+    return cc;
+};
+
 const sendEmail = async (emailTo, messageSubject, html, cc) => {
     const notificationSettings = await getNotificationDeliverySettings();
     const msg = {
@@ -1032,12 +1143,29 @@ const sendEmail = async (emailTo, messageSubject, html, cc) => {
         subject: messageSubject,
         html: html,
     };
-    if(cc) msg.cc = cc;
+    const dedupedCc = dedupeCcAgainstTo(cc, emailTo);
+    if (dedupedCc) msg.cc = dedupedCc;
     msg.text = htmlToPlaintext(html);
     try {
         await sendViaSendGrid(msg, { logLabel: "sendEmail", notificationSettings });
     } catch (error) {
-        console.error("Email send failed:", { message: error?.message, code: error?.code });
+        let bodyDetail;
+        try {
+            bodyDetail = error?.response?.body
+                ? JSON.stringify(error.response.body)
+                : undefined;
+        } catch {
+            bodyDetail = "<unserializable response body>";
+        }
+        console.error("Email send failed:", {
+            message: error?.message,
+            code: error?.code,
+            to: emailTo,
+            cc: cc || undefined,
+            from: msg.from?.email,
+            subject: messageSubject,
+            body: bodyDetail,
+        });
         throw error;
     }
 }
@@ -1461,6 +1589,7 @@ const enqueuePlannedBulkBatchTask = async ({
   queue,
   run,
   batchDoc,
+  notificationSettings,
 }) => {
   const taskId = buildPlannedBulkNotificationTaskId(run.id, batchDoc.lane, batchDoc.batchNumber);
   const payload = {
@@ -1471,11 +1600,23 @@ const enqueuePlannedBulkBatchTask = async ({
     runDateKey: run.runDateKey,
     runSequence: run.runSequence,
   };
+
+  // Resolve the dispatch URI before calling queue.enqueue so a misconfigured appSettings field surfaces in our logs, rather
+  // than later as a silent 404 inside Cloud Tasks. Any throw here is fatal for this task.
+  let uri;
+  try {
+    uri = buildBulkWorkerUri(batchDoc.lane, notificationSettings);
+  } catch (error) {
+    console.error(`Cannot enqueue planned bulk task ${taskId} (runId=${run.id}, batchId=${batchDoc.id}, lane=${batchDoc.lane}): ${error.message}`);
+    throw error;
+  }
+
   try {
     await queue.enqueue(payload, {
       scheduleDelaySeconds: batchDoc.scheduleDelaySeconds || 0,
       dispatchDeadlineSeconds: BULK_TASK_DISPATCH_DEADLINE_SECONDS,
       id: taskId,
+      uri,
     });
     return { taskId, alreadyExisted: false };
   } catch (error) {
@@ -1483,6 +1624,8 @@ const enqueuePlannedBulkBatchTask = async ({
       console.log(`Planned bulk notification task already exists: ${taskId}`);
       return { taskId, alreadyExisted: true };
     }
+    // If the dispatch fails due to a wrong URL, this is the breadcrumb that ties the task identity to the URL used (Cloud Tasks does not surface).
+    console.error(`Failed to enqueue planned bulk task ${taskId} (runId=${run.id}, batchId=${batchDoc.id}, lane=${batchDoc.lane}, uri=${uri}): ${error.message || error.code || "(no message)"}`);
     throw error;
   }
 };
@@ -1490,6 +1633,7 @@ const enqueuePlannedBulkBatchTask = async ({
 const enqueueBulkRunPlanTasks = async ({
   run,
   batchDocs,
+  notificationSettings,
 }) => {
   const { getFunctions } = require("firebase-admin/functions");
   const functions = getFunctions();
@@ -1505,7 +1649,7 @@ const enqueueBulkRunPlanTasks = async ({
   const results = await runWithConcurrency(candidates, ENQUEUE_CONCURRENCY, async (batchDoc) => {
     const queueName = getPlannedBulkTaskQueueName(batchDoc.lane);
     const queue = functions.taskQueue(queueName);
-    const { taskId, alreadyExisted } = await enqueuePlannedBulkBatchTask({ queue, run, batchDoc });
+    const { taskId, alreadyExisted } = await enqueuePlannedBulkBatchTask({ queue, run, batchDoc, notificationSettings });
     const scheduleDelaySeconds = batchDoc.scheduleDelaySeconds || 0;
     // On a fresh enqueue we record the calculated scheduledFor.
     // On resume (Cloud Tasks already has the task from a prior partial run),
@@ -1658,6 +1802,7 @@ async function sendScheduledNotifications(req, res) {
           const enqueued = await enqueueBulkRunPlanTasks({
             run,
             batchDocs: plannedBatches,
+            notificationSettings,
           });
           enqueuedBulkTaskCount += enqueued.length;
           console.log(
@@ -3070,6 +3215,7 @@ module.exports = {
   retrieveNotificationSchema,
   getParticipantNotification,
   sendEmail,
+  dedupeCcAgainstTo,
   getSiteNotification,
   sendEmailLink,
   dryRunNotificationSchema,
@@ -3084,4 +3230,6 @@ module.exports = {
   processNotificationBatchBulkDefault,
   processNotificationBatchBulkMicrosoft,
   processPlannedBulkNotificationBatch,
+  buildBulkWorkerUri,
+  validateBulkWorkerUri,
 };

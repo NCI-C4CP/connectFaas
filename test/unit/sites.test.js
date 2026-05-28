@@ -170,6 +170,63 @@ describe('test changed functions', () => {
             expect(checkDerivedVariablesSpy).toHaveBeenCalledWith('participant-token', siteCode);
         });
 
+        it('records the participant update even when the site-notification email throws (best-effort policy)', async () => {
+            vi.spyOn(firestore, 'getParticipantData').mockResolvedValue({
+                id: 'participant-doc',
+                data: {
+                    'Connect_ID': '1234567890',
+                    [fieldMapping.healthCareProvider]: siteCode,
+                },
+            });
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId').mockResolvedValue();
+            vi.spyOn(validation, 'checkDerivedVariables').mockResolvedValue();
+            vi.spyOn(firestore, 'getSiteEmail').mockResolvedValue('site-and-cc-same@example.com');
+
+            const siteNotifications = require('../../utils/siteNotifications');
+            const sendGridErr = Object.assign(new Error('Bad Request'), { code: 400 });
+            const handleSiteNotificationsSpy = vi.spyOn(siteNotifications, 'handleSiteNotifications')
+                .mockRejectedValue(sendGridErr);
+            const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+            // Payload that triggers the data-destruction site notification path
+            // (all three: destroyData + withdrawConsent + revokeHIPAA = yes).
+            const req = createRequest({
+                data: [{
+                    token: 'participant-token',
+                    '831041022': 353358909,  // destroyData = yes
+                    '747006172': 353358909,  // withdrawConsent = yes
+                    '773707518': 353358909,  // revokeHIPAA = yes
+                }],
+            });
+            const res = createResponse();
+
+            await updateParticipantData(req, res, authObj);
+
+            // The site notification was attempted (and threw under the hood).
+            expect(handleSiteNotificationsSpy).toHaveBeenCalledTimes(1);
+
+            // The participant write STILL happened — that's the whole point of best-effort.
+            expect(updateParticipantDataByDocIdSpy).toHaveBeenCalledTimes(1);
+
+            // The endpoint returns success (200), not 500/206 from a propagated email failure.
+            expect(res.statusCode).toBe(200);
+
+            // The failure was logged with the "non-fatal" structured marker for ops alerts.
+            const nonFatalLog = consoleErrorSpy.mock.calls.find(([msg]) =>
+                typeof msg === 'string' && msg.includes('Site notification failed (non-fatal)')
+            );
+            expect(nonFatalLog).toBeDefined();
+            // Structured context should carry the concept + the SendGrid error code/message.
+            const logContext = nonFatalLog[1];
+            expect(logContext).toMatchObject({
+                concept: '831041022',
+                code: 400,
+                error: 'Bad Request',
+            });
+
+            consoleErrorSpy.mockRestore();
+        });
+
         it('adds a reinvitation timestamp for eligible active recruits', async () => {
             vi.spyOn(firestore, 'getParticipantData').mockResolvedValue({
                 id: 'participant-doc',
