@@ -196,14 +196,14 @@ describe('Validation Derived Variable Helpers', () => {
             const getParticipantDataSpy = vi.spyOn(firestore, 'getParticipantData').mockResolvedValue(false);
             const getSpecimenCollectionsSpy = vi.spyOn(firestore, 'getSpecimenCollections');
             const retrieveUserSurveysSpy = vi.spyOn(firestore, 'retrieveUserSurveys');
-            const updateParticipantDataSpy = vi.spyOn(firestore, 'updateParticipantData');
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId');
 
             await validation.checkDerivedVariables('missing-token', 'missing-site');
 
             expect(getParticipantDataSpy).toHaveBeenCalledWith('missing-token', 'missing-site');
             expect(getSpecimenCollectionsSpy).not.toHaveBeenCalled();
             expect(retrieveUserSurveysSpy).not.toHaveBeenCalled();
-            expect(updateParticipantDataSpy).not.toHaveBeenCalled();
+            expect(updateParticipantDataByDocIdSpy).not.toHaveBeenCalled();
         });
 
         it('should return early when participant has no uid in state', async () => {
@@ -215,29 +215,29 @@ describe('Validation Derived Variable Helpers', () => {
             });
             const getSpecimenCollectionsSpy = vi.spyOn(firestore, 'getSpecimenCollections').mockResolvedValue([]);
             const retrieveUserSurveysSpy = vi.spyOn(firestore, 'retrieveUserSurveys');
-            const updateParticipantDataSpy = vi.spyOn(firestore, 'updateParticipantData');
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId');
 
             await validation.checkDerivedVariables('token', 'site');
 
             expect(getSpecimenCollectionsSpy).toHaveBeenCalledTimes(1);
             expect(retrieveUserSurveysSpy).not.toHaveBeenCalled();
-            expect(updateParticipantDataSpy).not.toHaveBeenCalled();
+            expect(updateParticipantDataByDocIdSpy).not.toHaveBeenCalled();
         });
 
         it('should not write participant updates when derived updates are empty', async () => {
             vi.spyOn(firestore, 'getParticipantData').mockResolvedValue({
                 id: 'participant-doc',
                 data: {
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes,
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes,
                         },
                     },
-                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.allBaselineSurveysCompleted]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.collectionDetails]: {},
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
                         uid: 'participant-uid',
@@ -246,20 +246,20 @@ describe('Validation Derived Variable Helpers', () => {
             });
             vi.spyOn(firestore, 'getSpecimenCollections').mockResolvedValue([]);
             vi.spyOn(firestore, 'retrieveUserSurveys').mockResolvedValue({});
-            const updateParticipantDataSpy = vi.spyOn(firestore, 'updateParticipantData');
+            const updateParticipantDataByDocIdSpy = vi.spyOn(firestore, 'updateParticipantDataByDocId');
 
             await validation.checkDerivedVariables('token', 'site');
 
-            expect(updateParticipantDataSpy).not.toHaveBeenCalled();
+            expect(updateParticipantDataByDocIdSpy).not.toHaveBeenCalled();
         });
 
         const testInfo = [
             {
                 label: 'incentiveEligible only, blood and urine refusal',
                 participantInfo: {
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.no // incentiveEligible
                         }
                     },
                     // bloodUrine refusal updates
@@ -267,11 +267,11 @@ describe('Validation Derived Variable Helpers', () => {
                         [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
                         [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
                     },
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                    [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleBackgroundOverallHealth]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleMedReproHealth]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleSmokeAlcoholSun]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleLiveAndWork]: fieldToConceptIdMapping.submitted, //module4
+                    [fieldToConceptIdMapping.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
                     state: {
                         uid: uuid.v4()
                     }
@@ -280,18 +280,18 @@ describe('Validation Derived Variable Helpers', () => {
                 surveys: {},
                 updatesHolder: undefined,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.eligibleForIncentive}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.norcPaymentEligibility}`]: fieldToConceptIdMapping.yes
                 }
             },
             {
                 label: 'incentiveEligible only, no blood and urine refusal',
                 participantInfo: {
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.no // incentiveEligible
                         }
                     },
                     // no bloodUrine refusal updates
@@ -302,12 +302,12 @@ describe('Validation Derived Variable Helpers', () => {
                     // Interestingly, this only works if this is explicitly set to no
                     // If it is undefined it is treated as yes
                     // and if it is yes it is never changed
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
-                    [fieldToConceptIdMapping.dataDestruction.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleBackgroundOverallHealth]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleMedReproHealth]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleSmokeAlcoholSun]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleLiveAndWork]: fieldToConceptIdMapping.submitted, //module4
+                    [fieldToConceptIdMapping.baselineBloodSampleCollected]: fieldToConceptIdMapping.yes, // Baseline blood sample collected
                     state: {
                         uid: uuid.v4()
                     }
@@ -317,16 +317,16 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 expected: {
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.eligibleForIncentive}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.norcPaymentEligibility}`]: fieldToConceptIdMapping.yes
                 }
             },
             {
                 label: 'incentiveEligible only, clinical blood collection case, blood and urine refusal',
                 participantInfo: {
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.no // incentiveEligible
                         }
                     },
                     // bloodUrine refusal updates
@@ -334,10 +334,10 @@ describe('Validation Derived Variable Helpers', () => {
                         [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
                         [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
                     },
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleBackgroundOverallHealth]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleMedReproHealth]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleSmokeAlcoholSun]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleLiveAndWork]: fieldToConceptIdMapping.submitted, //module4
                     // Second bloodCollected case
                     // This also triggers the calculateBaselineOrderPlaced case, resulting in additional update keys
                     // This combination will result in calculateBaselineOrderPlaced of true
@@ -354,10 +354,10 @@ describe('Validation Derived Variable Helpers', () => {
                 surveys: {},
                 updatesHolder: undefined,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.eligibleForIncentive}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.norcPaymentEligibility}`]: fieldToConceptIdMapping.yes,
                     '173836415.266600170.880794013': 104430631,
                     '173836415.266600170.156605577': fieldToConceptIdMapping.yes
                 }
@@ -365,9 +365,9 @@ describe('Validation Derived Variable Helpers', () => {
             {
                 label: 'bloodCollected values not set, but research blood specimen for participant submitted',
                 participantInfo: {
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.no // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.no // incentiveEligible
                         }
                     },
                     // bloodUrine refusal updates
@@ -375,10 +375,10 @@ describe('Validation Derived Variable Helpers', () => {
                         [fieldToConceptIdMapping.baselineBloodSampleRefused]: fieldToConceptIdMapping.yes,
                         [fieldToConceptIdMapping.baselineUrineSampleRefused]: fieldToConceptIdMapping.yes
                     },
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted, // module1
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted, //module2
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted, //module3
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted, //module4
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleBackgroundOverallHealth]: fieldToConceptIdMapping.submitted, // module1
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleMedReproHealth]: fieldToConceptIdMapping.submitted, //module2
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleSmokeAlcoholSun]: fieldToConceptIdMapping.submitted, //module3
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleLiveAndWork]: fieldToConceptIdMapping.submitted, //module4
                     state: {
                         uid: uuid.v4()
                     }
@@ -393,23 +393,23 @@ describe('Validation Derived Variable Helpers', () => {
                 surveys: {},
                 updatesHolder: undefined,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.incentiveEligible}`]: fieldToConceptIdMapping.yes,
-                    [`${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.norcIncentiveEligible}`]: fieldToConceptIdMapping.yes
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.eligibleForIncentive}`]: fieldToConceptIdMapping.yes,
+                    [`${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.norcPaymentEligibility}`]: fieldToConceptIdMapping.yes
                 }
             },
             {
                 label: 'menstrualCycleSurveyEligible only, first if case',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
-                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
                         uid: uuid.v4()
@@ -424,8 +424,8 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
                   }
             },
@@ -433,13 +433,13 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'menstrualCycleSurveyEligible only, second if case',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
-                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.menstrualSurveyEligible]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
                         uid: uuid.v4()
@@ -454,8 +454,8 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.menstrualSurveyEligible]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
                   }
             },
@@ -463,17 +463,17 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'allBaselineComplete only',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
-                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleBackgroundOverallHealth]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleMedReproHealth]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleSmokeAlcoholSun]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleLiveAndWork]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.submitted,
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
                         uid: uuid.v4()
@@ -484,8 +484,8 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.yes,
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.allBaselineSurveysCompleted]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
                   }
             },
@@ -493,17 +493,17 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'only some baseline complete',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
-                    [fieldToConceptIdMapping.dataDestruction.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleBackgroundAndOverallHealthFlag]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleMedications]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleSmoking]: fieldToConceptIdMapping.submitted,
-                    [fieldToConceptIdMapping.dataDestruction.baselineSurveyStatusModuleWhereYouLiveAndWorkFlag]: fieldToConceptIdMapping.notStarted,
-                    [fieldToConceptIdMapping.dataDestruction.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.notStarted,
+                    [fieldToConceptIdMapping.allBaselineSurveysCompleted]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleBackgroundOverallHealth]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleMedReproHealth]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleSmokeAlcoholSun]: fieldToConceptIdMapping.submitted,
+                    [fieldToConceptIdMapping.baselineSurveyStatusModuleLiveAndWork]: fieldToConceptIdMapping.notStarted,
+                    [fieldToConceptIdMapping.bloodUrineMouthwashCombinedResearchSurveyFlag]: fieldToConceptIdMapping.notStarted,
                     [fieldToConceptIdMapping.activityParticipantRefusal]: {},
                     state: {
                         uid: uuid.v4()
@@ -514,7 +514,7 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no
                   }
             },
@@ -522,9 +522,9 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'bloodUrineNotRefused - baseline blood and urine refused',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
@@ -541,7 +541,7 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes
                 }
             },
@@ -549,9 +549,9 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'bloodUrineNotRefused - neither baseline blood nor urine refused',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
@@ -568,16 +568,16 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
             },
             {
                 label: 'bloodUrineNotRefused - baseline blood refused but not urine',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
@@ -594,16 +594,16 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes
                 }
             },
             {
                 label: 'bloodUrineNotRefused - baseline urine refused but not blood',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
@@ -620,16 +620,16 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes
                 }
             },
             {
                 label: 'bloodUrineNotRefused - baselineBloodAndUrineIsRefused already marked as yes, both baseline blood and urine refused',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
@@ -646,16 +646,16 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.yes
                 }
             },
             {
                 label: 'bloodUrineNotRefused - baselineBloodAndUrineIsRefused already marked as yes, neither baseline blood nor urine refused',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.yes,
@@ -672,16 +672,16 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no
                 }
             },
             {
                 label: 'calculateBaselineOrderPlaced, blood order placed',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.collectionDetails]: {
@@ -700,7 +700,7 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.yes,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
@@ -710,9 +710,9 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'calculateBaselineOrderPlaced, scenario 1',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.collectionDetails]: {
@@ -731,7 +731,7 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
@@ -741,9 +741,9 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'calculateBaselineOrderPlaced, scenario 2',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.collectionDetails]: {
@@ -761,7 +761,7 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
@@ -771,9 +771,9 @@ describe('Validation Derived Variable Helpers', () => {
                 label: 'calculateBaselineOrderPlaced, scenario 3',
                 participantInfo: {
                     // This path must be set or else it will cause an error trying to read the property
-                    [fieldToConceptIdMapping.dataDestruction.incentive]: {
+                    [fieldToConceptIdMapping.paymentRound]: {
                         [fieldToConceptIdMapping.baseline]: {
-                            [fieldToConceptIdMapping.dataDestruction.incentiveEligible]: fieldToConceptIdMapping.yes // incentiveEligible
+                            [fieldToConceptIdMapping.eligibleForIncentive]: fieldToConceptIdMapping.yes // incentiveEligible
                         }
                     },
                     [fieldToConceptIdMapping.collectionDetails]: {
@@ -791,7 +791,7 @@ describe('Validation Derived Variable Helpers', () => {
                 updatesHolder: undefined,
                 skipDateComparison: true,
                 expected: {
-                    [fieldToConceptIdMapping.dataDestruction.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
+                    [fieldToConceptIdMapping.anyRefusalOrWithdrawal]: fieldToConceptIdMapping.no,
                     [fieldToConceptIdMapping.baselineBloodAndUrineIsRefused]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.baselineBloodOrUrineOrderPlaced}`]: fieldToConceptIdMapping.no,
                     [`${fieldToConceptIdMapping.collectionDetails}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.bloodOrUrineCollected}`]: fieldToConceptIdMapping.no
@@ -810,7 +810,7 @@ describe('Validation Derived Variable Helpers', () => {
             */
         ];
 
-        const incentiveEligibleTimestampKey = `${fieldToConceptIdMapping.dataDestruction.incentive}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.dataDestruction.dateIncentiveEligible}`;
+        const incentiveEligibleTimestampKey = `${fieldToConceptIdMapping.paymentRound}.${fieldToConceptIdMapping.baseline}.${fieldToConceptIdMapping.timestampPaymentEligibilityForRound}`;
 
         for (let i = 0; i < testInfo.length; i += 1) {
             const thisTest = testInfo[i];
@@ -823,7 +823,7 @@ describe('Validation Derived Variable Helpers', () => {
                 }));
                 vi.spyOn(firestore, 'getSpecimenCollections').mockImplementation(() => thisTest.specimens);
                 vi.spyOn(firestore, 'retrieveUserSurveys').mockImplementation(() => thisTest.surveys);
-                vi.spyOn(firestore, 'updateParticipantData').mockImplementation((doc, updates) => {
+                vi.spyOn(firestore, 'updateParticipantDataByDocId').mockImplementation((doc, updates) => {
                     updatesHolder = updates;
                 });
 
