@@ -37,4 +37,4 @@ substitutions:
   _ROLE: roles/run.invoker
   _SERVICE: getparticipants
   _SOURCE: .
-  _TIMEOUT: 120s
+  _TIMEOUT: 300s
