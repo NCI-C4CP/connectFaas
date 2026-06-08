@@ -1,5 +1,6 @@
 const rules = require("../updateParticipantData.json");
 const submitRules = require("../submitParticipantData.json");
+const geocodedAddressRules = require("../geocodedAddresses.json");
 const { getResponseJSON, setHeaders, logIPAddress, validPhoneFormat, validEmailFormat, refusalWithdrawalConcepts } = require('./shared');
 const { validateIso8601Timestamp } = require('./validation');
 const fieldMapping = require('./fieldToConceptIdMapping');
@@ -775,12 +776,150 @@ const getBigQueryData = async (req, res) => {
     return res.status(error ? 500 : 200).json(error ? getResponseJSON(error, 500) : {code: 200, results: responseArray});
 }
 
+/**
+ * Validate a single field value for the geocodedAddresses endpoint.
+ * @param {string|number} value - The non-blank value to validate.
+ * @param {string} path - The concept ID key (e.g. '758212868').
+ * @param {object} rule - The validation rule from geocodedAddresses.json.
+ * @returns {string|null} An error message string on failure, or null on success.
+ */
+const validateGeocodedAddressData = (value, path, rule) => {
+    switch (rule.dataType) {
+        case 'string':
+            if (typeof value !== 'string') {
+                return `Data mismatch: ${path} must be a string.`;
+            }
+            if (rule.maxLength && value.length > rule.maxLength) {
+                return `Data mismatch: ${path} must be at most ${rule.maxLength} characters. It is currently ${value.length} characters.`;
+            }
+            if (rule.values && !rule.values.includes(value)) {
+                return `Data mismatch: ${path} must be one of the following values: ${rule.values.join(', ')}.`;
+            }
+            break;
+
+        case 'number':
+            if (typeof value !== 'number') {
+                return `Data mismatch: ${path} must be a number.`;
+            }
+            if (rule.maxLength && value.toString().length > rule.maxLength) {
+                return `Data mismatch: ${path} must be at most ${rule.maxLength} digits. It is currently ${value.toString().length} digits.`;
+            }
+            if (rule.values && !rule.values.includes(value)) {
+                return `Data mismatch: ${path} must be one of the following values: ${rule.values.join(', ')}.`;
+            }
+            break;
+
+        default:
+            if (typeof value !== rule.dataType) {
+                return `Data mismatch: ${path} must be a ${rule.dataType}.`;
+            }
+            break;
+    }
+
+    return null;
+};
+
+const geocodedAddresses = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+
+    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
+
+    if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+    }
+
+    const { APIAuthorization } = require('./shared');
+    const authorized = await APIAuthorization(req);
+    if (authorized instanceof Error) {
+        return res.status(500).json(getResponseJSON(authorized.message, 500));
+    }
+
+    if (!authorized) {
+        return res.status(401).json(getResponseJSON('Authorization failed!', 401));
+    }
+
+    if (authorized.acronym !== 'NORC') {
+        return res.status(403).json(getResponseJSON('You are not authorized!', 403));
+    }
+
+    if (req.body.data === undefined) return res.status(400).json(getResponseJSON('Bad request. Data is not defined in request body.', 400));
+    if (!Array.isArray(req.body.data)) return res.status(400).json(getResponseJSON('Bad request. Data must be an array.', 400));
+    if (req.body.data.length === 0) return res.status(400).json(getResponseJSON('Bad request. Data array does not have any elements.', 400));
+    if (req.body.data.length > 1000) return res.status(400).json(getResponseJSON('Bad request. Data contains more than acceptable limit of 1000 records.', 400));
+
+    const dataArray = req.body.data;
+    let responseArray = [];
+    let batchError = false;
+
+    for (let dataObj of dataArray) {
+        if (dataObj.Connect_ID === undefined || dataObj.Connect_ID === null || dataObj.Connect_ID === '') {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': 'UNDEFINED', 'Errors': 'Connect_ID not defined in data object.'}});
+            continue;
+        }
+
+        const connectId = dataObj.Connect_ID;
+
+        const { getParticipantDataByConnectID } = require('./firestore');
+        const record = await getParticipantDataByConnectID(connectId);
+
+        if (!record) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'Participant with this Connect_ID does not exist.'}});
+            continue;
+        }
+
+        const docData = record.data;
+
+        // Reject if participant data has been destroyed.
+        const dataHasBeenDestroyed = fieldMapping.participantMap.dataHasBeenDestroyed.toString();
+        if (docData[dataHasBeenDestroyed] === fieldMapping.yes) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'Data Destroyed'}});
+            continue;
+        }
+
+        // Validate each field against geocodedAddresses rules.
+        // Blank/null/undefined values are skipped (not validated, not stored).
+        const errors = [];
+        for (const [key, value] of Object.entries(dataObj)) {
+            if (key === 'Connect_ID') continue;
+
+            if (value === undefined || value === null || value === '') {
+                continue;
+            }
+
+            const rule = geocodedAddressRules[key];
+            if (!rule) {
+                errors.push(`Error: No validation rule exists for "${key}".`);
+                continue;
+            }
+
+            const error = validateGeocodedAddressData(value, key, rule);
+            if (error) errors.push(error);
+        }
+
+        if (errors.length !== 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': errors}});
+            continue;
+        }
+
+        // TODO: Storage logic will be implemented in a future step.
+        responseArray.push({'Success': {'Connect_ID': connectId, 'Errors': 'None'}});
+    }
+
+    return res.status(batchError ? 206 : 200).json({code: batchError ? 206 : 200, results: responseArray});
+};
 
 module.exports = {
     getBigQueryData,
+    geocodedAddresses,
     submitParticipantsData,
     updateParticipantData,
     updateRecruit,
     updateUserAuthentication,
-    participantDataCorrection
+    participantDataCorrection,
+    validateGeocodedAddressData
 }
