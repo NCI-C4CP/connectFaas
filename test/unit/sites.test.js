@@ -277,12 +277,19 @@ describe('geocodedAddresses', () => {
 
     const createResponse = () => httpMocks.createResponse();
 
+    // Build the Map that getParticipantsDataByConnectIds resolves to, keyed by Connect_ID.
+    const participantMapOf = (...records) => {
+        const map = new Map();
+        for (const record of records) map.set(record.data.Connect_ID, record);
+        return map;
+    };
+
     it('returns 200 and stores valid rows', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'participant-doc',
             data: { Connect_ID: 1234567890 },
-        });
+        }));
         const writeSpy = vi.spyOn(firestore, 'writeGeocodedAddresses').mockResolvedValue();
 
         const req = createGeoRequest({
@@ -311,12 +318,11 @@ describe('geocodedAddresses', () => {
 
     it('returns 206 with mixed valid and invalid rows (partial acceptance)', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID')
-            .mockResolvedValueOnce({
-                id: 'doc-1',
-                data: { Connect_ID: 1111111111 },
-            })
-            .mockResolvedValueOnce(null);
+        // Only 1111111111 exists; 9999999999 is absent from the map.
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
+            id: 'doc-1',
+            data: { Connect_ID: 1111111111 },
+        }));
         const writeSpy = vi.spyOn(firestore, 'writeGeocodedAddresses').mockResolvedValue();
 
         const req = createGeoRequest({
@@ -339,6 +345,7 @@ describe('geocodedAddresses', () => {
 
     it('rejects rows with missing Connect_ID', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf());
 
         const req = createGeoRequest({
             data: [{ '202200799': 'CA' }],
@@ -354,13 +361,13 @@ describe('geocodedAddresses', () => {
 
     it('rejects rows for destroyed participants', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-destroyed',
             data: {
                 Connect_ID: 5555555555,
                 [fieldMapping.participantMap.dataHasBeenDestroyed]: fieldMapping.yes,
             },
-        });
+        }));
 
         const req = createGeoRequest({
             data: [{ Connect_ID: 5555555555, '202200799': 'TX' }],
@@ -375,10 +382,10 @@ describe('geocodedAddresses', () => {
 
     it('rejects rows with validation errors (wrong type)', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
 
         const req = createGeoRequest({
             data: [{
@@ -397,10 +404,10 @@ describe('geocodedAddresses', () => {
 
     it('rejects rows with validation errors (exceeds maxLength)', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
 
         const req = createGeoRequest({
             data: [{
@@ -414,15 +421,37 @@ describe('geocodedAddresses', () => {
 
         expect(res.statusCode).toBe(206);
         const errors = res._getJSONData().results[0]['Invalid Request'].Errors;
-        expect(errors[0]).toContain('at most 2 characters');
+        expect(errors[0]).toContain('less than 2 characters');
+    });
+
+    it('rejects rows with number fields exceeding maxLength', async () => {
+        vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
+            id: 'doc-1',
+            data: { Connect_ID: 1111111111 },
+        }));
+
+        const req = createGeoRequest({
+            data: [{
+                Connect_ID: 1111111111,
+                '758212868': 123456, // rule: number, maxLength 5 -> 6 digits is too long
+            }],
+        });
+        const res = createResponse();
+
+        await geocodedAddresses(req, res);
+
+        expect(res.statusCode).toBe(206);
+        const errors = res._getJSONData().results[0]['Invalid Request'].Errors;
+        expect(errors[0]).toContain('less than 5 digits');
     });
 
     it('rejects rows with unknown concept IDs', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
 
         const req = createGeoRequest({
             data: [{
@@ -441,10 +470,10 @@ describe('geocodedAddresses', () => {
 
     it('skips blank fields without error and stores non-blank fields', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
         const writeSpy = vi.spyOn(firestore, 'writeGeocodedAddresses').mockResolvedValue();
 
         const req = createGeoRequest({
@@ -468,10 +497,10 @@ describe('geocodedAddresses', () => {
 
     it('returns 500 if Firestore write fails', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
         vi.spyOn(firestore, 'writeGeocodedAddresses').mockRejectedValue(new Error('Firestore unavailable'));
 
         const req = createGeoRequest({
@@ -486,10 +515,10 @@ describe('geocodedAddresses', () => {
 
     it('rejects rows where all fields are blank', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
 
         const req = createGeoRequest({
             data: [{
@@ -506,10 +535,10 @@ describe('geocodedAddresses', () => {
         expect(res._getJSONData().results[0]['Invalid Request'].Errors).toBe('No non-blank fields provided.');
     });
 
-    it('handles getParticipantDataByConnectID throwing (e.g. duplicate Connect_ID)', async () => {
+    it('returns 500 if the participant batch lookup fails', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockRejectedValue(
-            new Error('Multiple participants found with connectId 1111111111')
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockRejectedValue(
+            new Error('Firestore unavailable')
         );
 
         const req = createGeoRequest({
@@ -519,17 +548,15 @@ describe('geocodedAddresses', () => {
 
         await geocodedAddresses(req, res);
 
-        expect(res.statusCode).toBe(206);
-        const result = res._getJSONData().results[0];
-        expect(result['Server Error'].Errors).toContain('Multiple participants found');
+        expect(res.statusCode).toBe(500);
     });
 
     it('normalizes Connect_ID to number for consistent hashing', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
-        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
             id: 'doc-1',
             data: { Connect_ID: 1111111111 },
-        });
+        }));
         const writeSpy = vi.spyOn(firestore, 'writeGeocodedAddresses').mockResolvedValue();
 
         const req = createGeoRequest({

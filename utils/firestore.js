@@ -7106,9 +7106,40 @@ const getEmailSuppressions = async (emailArray, mailStream) => {
 };
 
 /**
+ * Fetch participant records for a batch of Connect_IDs up front, instead of a
+ * sequential lookup per row. Firestore caps 'in' queries at 30 values, so the
+ * IDs are de-duplicated and chunked, and the chunk queries run in parallel.
+ * @param {Array<number|string>} connectIds
+ * @returns {Promise<Map<number, {id: string, data: object}>>} Map keyed by Connect_ID (number).
+ */
+const getParticipantsDataByConnectIds = async (connectIds) => {
+    const uniqueIds = [...new Set(connectIds.map(id => +id))];
+    const chunkSize = 30;
+    const queries = [];
+
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+        const chunk = uniqueIds.slice(i, i + chunkSize);
+        queries.push(db.collection('participants').where('Connect_ID', 'in', chunk).get());
+    }
+
+    const snapshots = await Promise.all(queries);
+    const participantMap = new Map();
+    for (const snapshot of snapshots) {
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            participantMap.set(data.Connect_ID, { id: doc.id, data });
+        });
+    }
+
+    return participantMap;
+};
+
+/**
  * Generate a deterministic document ID for a geocoded address row.
  * The hash is derived from Connect_ID + all non-blank field values (sorted by key)
- * so identical payloads on retry produce the same doc ID (idempotent upsert).
+ * so the same address for a participant always maps to the same doc, preventing
+ * duplicate documents for an identical address (participants may still have
+ * multiple distinct address documents in this collection).
  * @param {number|string} connectId
  * @param {object} fields - The address fields (excluding Connect_ID), already stripped of blanks.
  * @returns {string} A hex hash string suitable as a Firestore document ID.
@@ -7336,6 +7367,7 @@ module.exports = {
     getMySamples,
     getAllMySamples,
     updateMySamples,
+    getParticipantsDataByConnectIds,
     generateGeocodedAddressDocId,
     writeGeocodedAddresses,
 };

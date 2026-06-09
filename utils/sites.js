@@ -585,6 +585,9 @@ const validateUpdateParticipantData = (value, existingValue, path, rule) => {
             if (typeof value !== 'number') {
                 return `Data mismatch: ${path} must be a number.`;
             }
+            if (rule.maxLength && value.toString().length > rule.maxLength) {
+                return `Data mismatch: ${path} must be less than ${rule.maxLength} digits. It is currently ${value.toString().length} digits.`;
+            }
             if (rule.values && !rule.values.includes(value)) {
                 return `Data mismatch: ${path} must be one of the following values: ${rule.values.join(', ')}.`;
             }
@@ -776,49 +779,6 @@ const getBigQueryData = async (req, res) => {
     return res.status(error ? 500 : 200).json(error ? getResponseJSON(error, 500) : {code: 200, results: responseArray});
 }
 
-/**
- * Validate a single field value for the geocodedAddresses endpoint.
- * @param {string|number} value - The non-blank value to validate.
- * @param {string} path - The concept ID key (e.g. '758212868').
- * @param {object} rule - The validation rule from geocodedAddresses.json.
- * @returns {string|null} An error message string on failure, or null on success.
- */
-const validateGeocodedAddressData = (value, path, rule) => {
-    switch (rule.dataType) {
-        case 'string':
-            if (typeof value !== 'string') {
-                return `Data mismatch: ${path} must be a string.`;
-            }
-            if (rule.maxLength && value.length > rule.maxLength) {
-                return `Data mismatch: ${path} must be at most ${rule.maxLength} characters. It is currently ${value.length} characters.`;
-            }
-            if (rule.values && !rule.values.includes(value)) {
-                return `Data mismatch: ${path} must be one of the following values: ${rule.values.join(', ')}.`;
-            }
-            break;
-
-        case 'number':
-            if (typeof value !== 'number') {
-                return `Data mismatch: ${path} must be a number.`;
-            }
-            if (rule.maxLength && value.toString().length > rule.maxLength) {
-                return `Data mismatch: ${path} must be at most ${rule.maxLength} digits. It is currently ${value.toString().length} digits.`;
-            }
-            if (rule.values && !rule.values.includes(value)) {
-                return `Data mismatch: ${path} must be one of the following values: ${rule.values.join(', ')}.`;
-            }
-            break;
-
-        default:
-            if (typeof value !== rule.dataType) {
-                return `Data mismatch: ${path} must be a ${rule.dataType}.`;
-            }
-            break;
-    }
-
-    return null;
-};
-
 const geocodedAddresses = async (req, res) => {
     logIPAddress(req);
     setHeaders(res);
@@ -839,6 +799,9 @@ const geocodedAddresses = async (req, res) => {
         return res.status(401).json(getResponseJSON('Authorization failed!', 401));
     }
 
+    // NORC is the geocoding vendor for the whole study and is intentionally
+    // authorized to submit geocoded addresses for participants at any site,
+    // so the participant lookup below is deliberately not scoped by site code.
     if (authorized.acronym !== 'NORC') {
         return res.status(403).json(getResponseJSON('You are not authorized!', 403));
     }
@@ -848,12 +811,29 @@ const geocodedAddresses = async (req, res) => {
     if (req.body.data.length === 0) return res.status(400).json(getResponseJSON('Bad request. Data array does not have any elements.', 400));
     if (req.body.data.length > 500) return res.status(400).json(getResponseJSON('Bad request. Data contains more than acceptable limit of 500 records.', 400));
 
-    const { getParticipantDataByConnectID, writeGeocodedAddresses } = require('./firestore');
+    const { getParticipantsDataByConnectIds, writeGeocodedAddresses } = require('./firestore');
 
     const dataArray = req.body.data;
-    let responseArray = [];
+    const responseArray = [];
     let batchError = false;
     const validRows = [];
+
+    // Fetch every participant record up front in batched queries rather than a
+    // sequential lookup per row.
+    const connectIdsToFetch = dataArray
+        .map(dataObj => dataObj.Connect_ID)
+        .filter(id => id !== undefined && id !== null && id !== '')
+        .map(id => +id);
+
+    let participantMap;
+    try {
+        participantMap = await getParticipantsDataByConnectIds(connectIdsToFetch);
+    } catch (e) {
+        console.error(`Error looking up participants for geocoded addresses: ${e}`);
+        return res.status(500).json(getResponseJSON('Internal server error while looking up participants.', 500));
+    }
+
+    const dataHasBeenDestroyed = fieldMapping.participantMap.dataHasBeenDestroyed.toString();
 
     for (let dataObj of dataArray) {
         if (dataObj.Connect_ID === undefined || dataObj.Connect_ID === null || dataObj.Connect_ID === '') {
@@ -863,16 +843,7 @@ const geocodedAddresses = async (req, res) => {
         }
 
         const connectId = +dataObj.Connect_ID;
-
-        let record;
-        try {
-            record = await getParticipantDataByConnectID(connectId);
-        } catch (e) {
-            console.error(`Error looking up participant with Connect_ID ${connectId}: ${e}`);
-            batchError = true;
-            responseArray.push({'Server Error': {'Connect_ID': connectId, 'Errors': `Please retry this row. Error: ${e.message}`}});
-            continue;
-        }
+        const record = participantMap.get(connectId);
 
         if (!record) {
             batchError = true;
@@ -880,50 +851,33 @@ const geocodedAddresses = async (req, res) => {
             continue;
         }
 
-        const docData = record.data;
-
         // Reject if participant data has been destroyed.
-        const dataHasBeenDestroyed = fieldMapping.participantMap.dataHasBeenDestroyed.toString();
-        if (docData[dataHasBeenDestroyed] === fieldMapping.yes) {
+        if (record.data[dataHasBeenDestroyed] === fieldMapping.yes) {
             batchError = true;
             responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'Data Destroyed'}});
             continue;
         }
 
-        // Validate each field against geocodedAddresses rules.
-        // Blank/null/undefined values are skipped (not validated, not stored).
-        const errors = [];
+        // Collect the non-blank fields to store. Blank/null/undefined values are
+        // skipped (neither validated nor stored).
         const storedFields = {};
         for (const [key, value] of Object.entries(dataObj)) {
             if (key === 'Connect_ID') continue;
-
-            if (value === undefined || value === null || value === '') {
-                continue;
-            }
-
-            const rule = geocodedAddressRules[key];
-            if (!rule) {
-                errors.push(`Error: No validation rule exists for "${key}".`);
-                continue;
-            }
-
-            const error = validateGeocodedAddressData(value, key, rule);
-            if (error) {
-                errors.push(error);
-            } else {
-                storedFields[key] = value;
-            }
-        }
-
-        if (errors.length !== 0) {
-            batchError = true;
-            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': errors}});
-            continue;
+            if (value === undefined || value === null || value === '') continue;
+            storedFields[key] = value;
         }
 
         if (Object.keys(storedFields).length === 0) {
             batchError = true;
             responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'No non-blank fields provided.'}});
+            continue;
+        }
+
+        // Validate with the shared rules engine against geocodedAddresses.json.
+        const errors = flatValidationHandler(storedFields, {}, geocodedAddressRules, validateUpdateParticipantData);
+        if (errors.length !== 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': errors}});
             continue;
         }
 
@@ -951,6 +905,5 @@ module.exports = {
     updateParticipantData,
     updateRecruit,
     updateUserAuthentication,
-    participantDataCorrection,
-    validateGeocodedAddressData
+    participantDataCorrection
 }
