@@ -7113,7 +7113,11 @@ const getEmailSuppressions = async (emailArray, mailStream) => {
  * @returns {Promise<Map<number, {id: string, data: object}>>} Map keyed by Connect_ID (number).
  */
 const getParticipantsDataByConnectIds = async (connectIds) => {
-    const uniqueIds = [...new Set(connectIds.map(id => +id))];
+    const uniqueIds = [...new Set(connectIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id)))];
+    if (uniqueIds.length === 0) return new Map();
+
     const chunkSize = 30;
     const queries = [];
 
