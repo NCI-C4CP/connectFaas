@@ -7139,8 +7139,7 @@ const writeGeocodedAddresses = async (rows) => {
         const docData = {
             Connect_ID: +connectId,
             ...fields,
-            d_generated_hash: docId,
-            d_received_timestamp: new Date().toISOString(),
+            received_timestamp: new Date().toISOString(),
         };
         batch.set(docRef, docData, { merge: true });
         counter++;

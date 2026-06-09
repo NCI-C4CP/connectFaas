@@ -483,4 +483,64 @@ describe('geocodedAddresses', () => {
 
         expect(res.statusCode).toBe(500);
     });
+
+    it('rejects rows where all fields are blank', async () => {
+        vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
+        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+            id: 'doc-1',
+            data: { Connect_ID: 1111111111 },
+        });
+
+        const req = createGeoRequest({
+            data: [{
+                Connect_ID: 1111111111,
+                '826796611': '',
+                '202200799': null,
+            }],
+        });
+        const res = createResponse();
+
+        await geocodedAddresses(req, res);
+
+        expect(res.statusCode).toBe(206);
+        expect(res._getJSONData().results[0]['Invalid Request'].Errors).toBe('No non-blank fields provided.');
+    });
+
+    it('handles getParticipantDataByConnectID throwing (e.g. duplicate Connect_ID)', async () => {
+        vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
+        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockRejectedValue(
+            new Error('Multiple participants found with connectId 1111111111')
+        );
+
+        const req = createGeoRequest({
+            data: [{ Connect_ID: 1111111111, '202200799': 'CA' }],
+        });
+        const res = createResponse();
+
+        await geocodedAddresses(req, res);
+
+        expect(res.statusCode).toBe(206);
+        const result = res._getJSONData().results[0];
+        expect(result['Server Error'].Errors).toContain('Multiple participants found');
+    });
+
+    it('normalizes Connect_ID to number for consistent hashing', async () => {
+        vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
+        vi.spyOn(firestore, 'getParticipantDataByConnectID').mockResolvedValue({
+            id: 'doc-1',
+            data: { Connect_ID: 1111111111 },
+        });
+        const writeSpy = vi.spyOn(firestore, 'writeGeocodedAddresses').mockResolvedValue();
+
+        const req = createGeoRequest({
+            data: [{ Connect_ID: '1111111111', '202200799': 'CA' }],
+        });
+        const res = createResponse();
+
+        await geocodedAddresses(req, res);
+
+        expect(res.statusCode).toBe(200);
+        expect(writeSpy.mock.calls[0][0][0].connectId).toBe(1111111111);
+        expect(typeof writeSpy.mock.calls[0][0][0].connectId).toBe('number');
+    });
 });

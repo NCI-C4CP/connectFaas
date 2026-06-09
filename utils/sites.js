@@ -862,9 +862,17 @@ const geocodedAddresses = async (req, res) => {
             continue;
         }
 
-        const connectId = dataObj.Connect_ID;
+        const connectId = +dataObj.Connect_ID;
 
-        const record = await getParticipantDataByConnectID(connectId);
+        let record;
+        try {
+            record = await getParticipantDataByConnectID(connectId);
+        } catch (e) {
+            console.error(`Error looking up participant with Connect_ID ${connectId}: ${e}`);
+            batchError = true;
+            responseArray.push({'Server Error': {'Connect_ID': connectId, 'Errors': `Please retry this row. Error: ${e.message}`}});
+            continue;
+        }
 
         if (!record) {
             batchError = true;
@@ -910,6 +918,12 @@ const geocodedAddresses = async (req, res) => {
         if (errors.length !== 0) {
             batchError = true;
             responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': errors}});
+            continue;
+        }
+
+        if (Object.keys(storedFields).length === 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'No non-blank fields provided.'}});
             continue;
         }
 
