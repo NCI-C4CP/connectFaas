@@ -7105,6 +7105,60 @@ const getEmailSuppressions = async (emailArray, mailStream) => {
   return suppressedSet;
 };
 
+/**
+ * Generate a deterministic document ID for a geocoded address row.
+ * The hash is derived from Connect_ID + all non-blank field values (sorted by key)
+ * so identical payloads on retry produce the same doc ID (idempotent upsert).
+ * @param {number|string} connectId
+ * @param {object} fields - The address fields (excluding Connect_ID), already stripped of blanks.
+ * @returns {string} A hex hash string suitable as a Firestore document ID.
+ */
+const generateGeocodedAddressDocId = (connectId, fields) => {
+    const crypto = require('crypto');
+    const sortedEntries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
+    const payload = `${connectId}:${JSON.stringify(sortedEntries)}`;
+    return crypto.createHash('sha256').update(payload).digest('hex');
+};
+
+/**
+ * Write a batch of validated geocoded address rows to the geocodedAddresses collection.
+ * Uses deterministic doc IDs so retries are idempotent (set with merge).
+ * Respects the Firestore batch limit of 500 operations per commit.
+ * @param {Array<{connectId: number|string, fields: object}>} rows - Array of validated row objects.
+ * @returns {Promise<void>}
+ */
+const writeGeocodedAddresses = async (rows) => {
+    const batchLimit = 500;
+    let batch = db.batch();
+    let counter = 0;
+    const batchPromises = [];
+
+    for (const { connectId, fields } of rows) {
+        const docId = generateGeocodedAddressDocId(connectId, fields);
+        const docRef = db.collection('geocodedAddresses').doc(docId);
+        const docData = {
+            Connect_ID: +connectId,
+            ...fields,
+            d_generated_hash: docId,
+            d_received_timestamp: new Date().toISOString(),
+        };
+        batch.set(docRef, docData, { merge: true });
+        counter++;
+
+        if (counter >= batchLimit) {
+            batchPromises.push(batch.commit());
+            batch = db.batch();
+            counter = 0;
+        }
+    }
+
+    if (counter > 0) {
+        batchPromises.push(batch.commit());
+    }
+
+    await Promise.all(batchPromises);
+};
+
 module.exports = {
     db,
     storage,
@@ -7283,4 +7337,6 @@ module.exports = {
     getMySamples,
     getAllMySamples,
     updateMySamples,
+    generateGeocodedAddressDocId,
+    writeGeocodedAddresses,
 };

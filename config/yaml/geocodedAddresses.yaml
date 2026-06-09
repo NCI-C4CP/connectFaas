@@ -14,7 +14,6 @@ steps:
     '--memory=${_MEMORY}',
     '--timeout=${_TIMEOUT}',
     '--allow-unauthenticated',
-    '--env-vars-file=${_VARIABLES}'
   ]
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -29,7 +28,7 @@ steps:
   ]
 
 substitutions:
-  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20
+  _BASE_IMAGE: us-central1-docker.pkg.dev/serverless-runtimes/google-24-full/runtimes/nodejs24
   _FUNCTION: geocodedAddresses
   _MEMBER: allUsers
   _MEMORY: 1024Mi

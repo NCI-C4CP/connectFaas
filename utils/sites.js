@@ -846,11 +846,14 @@ const geocodedAddresses = async (req, res) => {
     if (req.body.data === undefined) return res.status(400).json(getResponseJSON('Bad request. Data is not defined in request body.', 400));
     if (!Array.isArray(req.body.data)) return res.status(400).json(getResponseJSON('Bad request. Data must be an array.', 400));
     if (req.body.data.length === 0) return res.status(400).json(getResponseJSON('Bad request. Data array does not have any elements.', 400));
-    if (req.body.data.length > 1000) return res.status(400).json(getResponseJSON('Bad request. Data contains more than acceptable limit of 1000 records.', 400));
+    if (req.body.data.length > 500) return res.status(400).json(getResponseJSON('Bad request. Data contains more than acceptable limit of 500 records.', 400));
+
+    const { getParticipantDataByConnectID, writeGeocodedAddresses } = require('./firestore');
 
     const dataArray = req.body.data;
     let responseArray = [];
     let batchError = false;
+    const validRows = [];
 
     for (let dataObj of dataArray) {
         if (dataObj.Connect_ID === undefined || dataObj.Connect_ID === null || dataObj.Connect_ID === '') {
@@ -861,7 +864,6 @@ const geocodedAddresses = async (req, res) => {
 
         const connectId = dataObj.Connect_ID;
 
-        const { getParticipantDataByConnectID } = require('./firestore');
         const record = await getParticipantDataByConnectID(connectId);
 
         if (!record) {
@@ -883,6 +885,7 @@ const geocodedAddresses = async (req, res) => {
         // Validate each field against geocodedAddresses rules.
         // Blank/null/undefined values are skipped (not validated, not stored).
         const errors = [];
+        const storedFields = {};
         for (const [key, value] of Object.entries(dataObj)) {
             if (key === 'Connect_ID') continue;
 
@@ -897,7 +900,11 @@ const geocodedAddresses = async (req, res) => {
             }
 
             const error = validateGeocodedAddressData(value, key, rule);
-            if (error) errors.push(error);
+            if (error) {
+                errors.push(error);
+            } else {
+                storedFields[key] = value;
+            }
         }
 
         if (errors.length !== 0) {
@@ -906,8 +913,18 @@ const geocodedAddresses = async (req, res) => {
             continue;
         }
 
-        // TODO: Storage logic will be implemented in a future step.
+        validRows.push({ connectId, fields: storedFields });
         responseArray.push({'Success': {'Connect_ID': connectId, 'Errors': 'None'}});
+    }
+
+    // Write all valid rows to Firestore in batched commits.
+    if (validRows.length > 0) {
+        try {
+            await writeGeocodedAddresses(validRows);
+        } catch (e) {
+            console.error(`Error writing geocoded addresses to Firestore: ${e}`);
+            return res.status(500).json(getResponseJSON('Internal server error while storing geocoded address data.', 500));
+        }
     }
 
     return res.status(batchError ? 206 : 200).json({code: batchError ? 206 : 200, results: responseArray});
