@@ -202,7 +202,7 @@ describe('API Endpoint Method Guards', () => {
             expect(res.statusCode).toBe(400);
         });
 
-        it('should reject requests exceeding 1000 records with 400', async () => {
+        it('should reject requests exceeding 500 records with 400', async () => {
             const shared = require('../../utils/shared');
             vi.spyOn(shared, 'APIAuthorization').mockResolvedValue({
                 acronym: 'NORC',
@@ -211,10 +211,10 @@ describe('API Endpoint Method Guards', () => {
 
             const res = await invoke(api.geocodedAddresses, 'POST', {
                 headers: { authorization: 'Bearer fake-token' },
-                body: { data: Array(1001).fill({ Connect_ID: 123 }) },
+                body: { data: Array(501).fill({ Connect_ID: 123 }) },
             });
             expect(res.statusCode).toBe(400);
-            expect(res._getJSONData().message).toContain('1000');
+            expect(res._getJSONData().message).toContain('500');
         });
     });
 
