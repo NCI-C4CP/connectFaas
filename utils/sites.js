@@ -841,13 +841,20 @@ const geocodedAddresses = async (req, res) => {
     const dataHasBeenDestroyed = fieldMapping.participantMap.dataHasBeenDestroyed.toString();
 
     for (let dataObj of dataArray) {
-        if (dataObj.Connect_ID === undefined || dataObj.Connect_ID === null || dataObj.Connect_ID === '') {
+        const rawConnectId = dataObj.Connect_ID;
+        if (rawConnectId === undefined || rawConnectId === null || rawConnectId === '') {
             batchError = true;
             responseArray.push({'Invalid Request': {'Connect_ID': 'UNDEFINED', 'Errors': 'Connect_ID not defined in data object.'}});
             continue;
         }
 
-        const connectId = +dataObj.Connect_ID;
+        const connectId = Number(typeof rawConnectId === 'string' ? rawConnectId.trim() : rawConnectId);
+        if (!Number.isFinite(connectId)) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': rawConnectId, 'Errors': 'Connect_ID must be a valid number.'}});
+            continue;
+        }
+
         const record = participantMap.get(connectId);
 
         if (!record) {
