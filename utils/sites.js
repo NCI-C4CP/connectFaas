@@ -821,10 +821,15 @@ const geocodedAddresses = async (req, res) => {
     // Fetch every participant record up front in batched queries rather than a
     // sequential lookup per row.
     const connectIdsToFetch = dataArray
-        .map(dataObj => dataObj.Connect_ID)
-        .filter(id => id !== undefined && id !== null && id !== '')
-        .map(id => +id);
-
+        .map((dataObj) => {
+            const raw = dataObj.Connect_ID;
+            if (raw === undefined || raw === null) return null;
+            const trimmed = typeof raw === 'string' ? raw.trim() : raw;
+            if (trimmed === '') return null;
+            const num = Number(trimmed);
+            return Number.isFinite(num) ? num : null;
+        })
+        .filter((id) => id !== null);
     let participantMap;
     try {
         participantMap = await getParticipantsDataByConnectIds(connectIdsToFetch);
