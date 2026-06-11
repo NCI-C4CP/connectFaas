@@ -202,7 +202,22 @@ const persistToken = async (token, expiresInSeconds, issuedAt) => {
     return token;
 };
 
-const requestNewUSPSToken = async (clientId, clientSecret) => {
+const requestNewUSPSToken = async () => {
+    const clientIdKey = process.env.USPS_CLIENT_ID;
+    const clientSecretKey = process.env.USPS_CLIENT_SECRET;
+    if (!clientIdKey || !clientSecretKey) {
+        throw new Error("USPS credentials are not configured in environment variables.");
+    }
+
+    const [clientId, clientSecret] = await Promise.all([
+        getSecret(clientIdKey),
+        getSecret(clientSecretKey),
+    ]);
+
+    if (!clientId || !clientSecret) {
+        throw new Error("USPS credentials could not be loaded from Secret Manager.");
+    }
+
     const authorizationData = {
         grant_type: "client_credentials", 
         client_id: clientId,
@@ -223,7 +238,7 @@ const requestNewUSPSToken = async (clientId, clientSecret) => {
             signal: controller.signal,
         });
         
-        const resJson = await res.json();
+        const resJson = await parseResponseJson(res);
         if (!res.ok) {
             throw new Error(
                 `USPS auth failed (${res.status}): ${resJson?.error_description || resJson?.error || "unauthorized"}`
@@ -264,35 +279,13 @@ const getUSPSToken = async (forceRefresh = false) => {
         }
     }
 
-    const clientIdKey = process.env.USPS_CLIENT_ID;
-    const clientSecretKey = process.env.USPS_CLIENT_SECRET;
-    if (!clientIdKey || !clientSecretKey) {
-        throw new Error("USPS credentials are not configured in environment variables.");
-    }
-
-    const [clientId, clientSecret] = await Promise.all([
-        getSecret(clientIdKey),
-        getSecret(clientSecretKey),
-    ]);
-
-    if (!clientId || !clientSecret) {
-        console.error("USPS credentials are not configured in environment variables.");
-        return null;
-    }
-
-    let ownsTokenRequest = false;
     if (!tokenRequestPromise) {
-        tokenRequestPromise = requestNewUSPSToken(clientId, clientSecret);
-        ownsTokenRequest = true;
+        tokenRequestPromise = requestNewUSPSToken().finally(() => {
+            tokenRequestPromise = null;
+        });
     }
 
-    try {
-        return await tokenRequestPromise;
-    } finally {
-        if (ownsTokenRequest) {
-            tokenRequestPromise = null;
-        }
-    }
+    return await tokenRequestPromise;
 };
 
 /**
