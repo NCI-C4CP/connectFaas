@@ -1,7 +1,8 @@
 {
     "758212868": {
         "dataType": "number",
-        "maxLength": 5
+        "maxLength": 6,
+        "required": true
     },
     "403294814": {
         "dataType": "number",
@@ -40,19 +41,19 @@
         "maxLength": 13
     },
     "951694129": {
-        "dataType": "string",
-        "maxLength": 14
+        "dataType": "number",
+        "values": [728662578, 717366608, 495372270, 703385619, 343111826, 503218834]
     },
     "123987148": {
         "dataType": "number",
         "values": [104430631, 353358909]
     },
     "473216280": {
-        "dataType": "string",
-        "maxLength": 9
+        "dataType": "number",
+        "values": [768887460, 926338735]
     },
     "881949895": {
-        "dataType": "number",
+        "dataType": "string",
         "maxLength": 11
     },
     "552433369": {
@@ -65,7 +66,8 @@
     },
     "625954624": {
         "dataType": "string",
-        "maxLength": 32
+        "maxLength": 32,
+        "required": true
     },
     "185323683": {
         "dataType": "string",

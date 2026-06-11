@@ -885,6 +885,16 @@ const geocodedAddresses = async (req, res) => {
             continue;
         }
 
+        // Enforce required fields from geocodedAddresses.json.
+        const missingRequired = Object.entries(geocodedAddressRules)
+            .filter(([key, rule]) => rule.required && !(key in storedFields))
+            .map(([key]) => key);
+        if (missingRequired.length > 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': `Missing required field(s): ${missingRequired.join(', ')}.`}});
+            continue;
+        }
+
         // Validate with the shared rules engine against geocodedAddresses.json.
         const errors = flatValidationHandler(storedFields, {}, geocodedAddressRules, validateUpdateParticipantData);
         if (errors.length !== 0) {

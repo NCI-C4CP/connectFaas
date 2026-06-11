@@ -265,6 +265,9 @@ describe('test changed functions', () => {
 describe('geocodedAddresses', () => {
     const norcAuth = { acronym: 'NORC', siteCode: 123456 };
 
+    // Valid values for the two required fields (758212868 and 625954624).
+    const requiredFields = { '758212868': 12345, '625954624': 'geocode-id-abc123' };
+
     const createGeoRequest = (body) => httpMocks.createRequest({
         method: 'POST',
         headers: {
@@ -295,6 +298,7 @@ describe('geocodedAddresses', () => {
         const req = createGeoRequest({
             data: [{
                 Connect_ID: 1234567890,
+                ...requiredFields,
                 '826796611': '123 Main St',
                 '202200799': 'IL',
             }],
@@ -310,6 +314,7 @@ describe('geocodedAddresses', () => {
         expect(writeSpy).toHaveBeenCalledWith([{
             connectId: 1234567890,
             fields: {
+                ...requiredFields,
                 '826796611': '123 Main St',
                 '202200799': 'IL',
             },
@@ -327,7 +332,7 @@ describe('geocodedAddresses', () => {
 
         const req = createGeoRequest({
             data: [
-                { Connect_ID: 1111111111, '202200799': 'NY' },
+                { Connect_ID: 1111111111, ...requiredFields, '202200799': 'NY' },
                 { Connect_ID: 9999999999 },
             ],
         });
@@ -390,6 +395,7 @@ describe('geocodedAddresses', () => {
         const req = createGeoRequest({
             data: [{
                 Connect_ID: 1111111111,
+                ...requiredFields,
                 '202200799': 12345,
             }],
         });
@@ -412,6 +418,7 @@ describe('geocodedAddresses', () => {
         const req = createGeoRequest({
             data: [{
                 Connect_ID: 1111111111,
+                ...requiredFields,
                 '202200799': 'ABC',
             }],
         });
@@ -434,7 +441,8 @@ describe('geocodedAddresses', () => {
         const req = createGeoRequest({
             data: [{
                 Connect_ID: 1111111111,
-                '758212868': 123456, // rule: number, maxLength 5 -> 6 digits is too long
+                '758212868': 1234567, // rule: number, maxLength 6 -> 7 digits is too long
+                '625954624': 'geocode-id-abc123',
             }],
         });
         const res = createResponse();
@@ -443,7 +451,7 @@ describe('geocodedAddresses', () => {
 
         expect(res.statusCode).toBe(206);
         const errors = res._getJSONData().results[0]['Invalid Request'].Errors;
-        expect(errors[0]).toContain('less than 5 digits');
+        expect(errors[0]).toContain('less than 6 digits');
     });
 
     it('rejects rows with unknown concept IDs', async () => {
@@ -456,6 +464,7 @@ describe('geocodedAddresses', () => {
         const req = createGeoRequest({
             data: [{
                 Connect_ID: 1111111111,
+                ...requiredFields,
                 '999999999': 'unknown field',
             }],
         });
@@ -479,6 +488,7 @@ describe('geocodedAddresses', () => {
         const req = createGeoRequest({
             data: [{
                 Connect_ID: 1111111111,
+                ...requiredFields,
                 '826796611': '456 Oak Ave',
                 '202200799': '',
                 '565540989': null,
@@ -491,7 +501,7 @@ describe('geocodedAddresses', () => {
         expect(res.statusCode).toBe(200);
         expect(writeSpy).toHaveBeenCalledWith([{
             connectId: 1111111111,
-            fields: { '826796611': '456 Oak Ave' },
+            fields: { ...requiredFields, '826796611': '456 Oak Ave' },
         }]);
     });
 
@@ -504,7 +514,7 @@ describe('geocodedAddresses', () => {
         vi.spyOn(firestore, 'writeGeocodedAddresses').mockRejectedValue(new Error('Firestore unavailable'));
 
         const req = createGeoRequest({
-            data: [{ Connect_ID: 1111111111, '202200799': 'CA' }],
+            data: [{ Connect_ID: 1111111111, ...requiredFields, '202200799': 'CA' }],
         });
         const res = createResponse();
 
@@ -535,6 +545,30 @@ describe('geocodedAddresses', () => {
         expect(res._getJSONData().results[0]['Invalid Request'].Errors).toBe('No non-blank fields provided.');
     });
 
+    it('rejects rows missing required fields', async () => {
+        vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
+        vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockResolvedValue(participantMapOf({
+            id: 'doc-1',
+            data: { Connect_ID: 1111111111 },
+        }));
+
+        const req = createGeoRequest({
+            data: [{
+                Connect_ID: 1111111111,
+                '202200799': 'CA',
+            }],
+        });
+        const res = createResponse();
+
+        await geocodedAddresses(req, res);
+
+        expect(res.statusCode).toBe(206);
+        const error = res._getJSONData().results[0]['Invalid Request'].Errors;
+        expect(error).toContain('Missing required field(s)');
+        expect(error).toContain('758212868');
+        expect(error).toContain('625954624');
+    });
+
     it('returns 500 if the participant batch lookup fails', async () => {
         vi.spyOn(shared, 'APIAuthorization').mockResolvedValue(norcAuth);
         vi.spyOn(firestore, 'getParticipantsDataByConnectIds').mockRejectedValue(
@@ -560,7 +594,7 @@ describe('geocodedAddresses', () => {
         const writeSpy = vi.spyOn(firestore, 'writeGeocodedAddresses').mockResolvedValue();
 
         const req = createGeoRequest({
-            data: [{ Connect_ID: '1111111111', '202200799': 'CA' }],
+            data: [{ Connect_ID: '1111111111', ...requiredFields, '202200799': 'CA' }],
         });
         const res = createResponse();
 
