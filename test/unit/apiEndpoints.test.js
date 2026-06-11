@@ -16,7 +16,7 @@ beforeAll(() => {
     const { incentiveCompleted, eligibleForIncentive } = require('../../utils/incentive');
     const { getToken } = require('../../utils/validation');
     const { getFilteredParticipants, getParticipants, identifyParticipant } = require('../../utils/submission');
-    const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('../../utils/sites');
+    const { submitParticipantsData, updateParticipantData, getBigQueryData, geocodedAddresses } = require('../../utils/sites');
     const { dashboard } = require('../../utils/dashboard');
     const { connectApp } = require('../../utils/connectApp');
     const { biospecimenAPIs } = require('../../utils/biospecimen');
@@ -37,6 +37,7 @@ beforeAll(() => {
         submitParticipantsData,
         updateParticipantData,
         getBigQueryData,
+        geocodedAddresses,
         getParticipantNotification: notifications.getParticipantNotification,
         dashboard,
         app: connectApp,
@@ -93,6 +94,7 @@ describe('API Endpoint Method Guards', () => {
             ['biospecimen', () => api.biospecimen],
             ['heartbeat', () => api.heartbeat],
             ['physicalActivity', () => api.physicalActivity],
+            ['geocodedAddresses', () => api.geocodedAddresses],
         ];
 
         for (const [name, getHandler] of optionsCases) {
@@ -117,6 +119,7 @@ describe('API Endpoint Method Guards', () => {
             ['getBigQueryData', () => api.getBigQueryData, 'POST', 'Only GET requests are accepted!'],
             ['webhook', () => api.webhook, 'GET', 'Only POST requests are accepted!'],
             ['auditDataDestruction', () => api.auditDataDestruction, 'GET', 'Method not allowed. Use POST.'],
+            ['geocodedAddresses', () => api.geocodedAddresses, 'GET', 'Only POST requests are accepted!'],
         ];
 
         for (const [name, getHandler, method, expectedMessage] of methodCases) {
@@ -160,6 +163,59 @@ describe('API Endpoint Method Guards', () => {
                 expect(res.statusCode).toBe(401);
             });
         }
+    });
+
+    describe('geocodedAddresses authorization', () => {
+        it('should reject unauthenticated requests with 401', async () => {
+            const res = await invoke(api.geocodedAddresses, 'POST', {
+                body: { data: [{ Connect_ID: 123 }] },
+            });
+            expect(res.statusCode).toBe(401);
+        });
+
+        it('should reject non-NORC sites with 403', async () => {
+            const shared = require('../../utils/shared');
+            vi.spyOn(shared, 'APIAuthorization').mockResolvedValue({
+                acronym: 'HP',
+                siteCode: 531629870,
+            });
+
+            const res = await invoke(api.geocodedAddresses, 'POST', {
+                headers: { authorization: 'Bearer fake-token' },
+                body: { data: [{ Connect_ID: 123 }] },
+            });
+            expect(res.statusCode).toBe(403);
+            expect(res._getJSONData().message).toBe('You are not authorized!');
+        });
+
+        it('should reject requests with no data array with 400', async () => {
+            const shared = require('../../utils/shared');
+            vi.spyOn(shared, 'APIAuthorization').mockResolvedValue({
+                acronym: 'NORC',
+                siteCode: 123456,
+            });
+
+            const res = await invoke(api.geocodedAddresses, 'POST', {
+                headers: { authorization: 'Bearer fake-token' },
+                body: {},
+            });
+            expect(res.statusCode).toBe(400);
+        });
+
+        it('should reject requests exceeding 500 records with 400', async () => {
+            const shared = require('../../utils/shared');
+            vi.spyOn(shared, 'APIAuthorization').mockResolvedValue({
+                acronym: 'NORC',
+                siteCode: 123456,
+            });
+
+            const res = await invoke(api.geocodedAddresses, 'POST', {
+                headers: { authorization: 'Bearer fake-token' },
+                body: { data: Array(501).fill({ Connect_ID: 123 }) },
+            });
+            expect(res.statusCode).toBe(400);
+            expect(res._getJSONData().message).toContain('500');
+        });
     });
 
     describe('heartbeat success path', () => {

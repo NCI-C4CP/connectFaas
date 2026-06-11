@@ -1,5 +1,6 @@
 const rules = require("../updateParticipantData.json");
 const submitRules = require("../submitParticipantData.json");
+const geocodedAddressRules = require("../geocodedAddresses.json");
 const { getResponseJSON, setHeaders, logIPAddress, validPhoneFormat, validEmailFormat, refusalWithdrawalConcepts } = require('./shared');
 const { validateIso8601Timestamp } = require('./validation');
 const fieldMapping = require('./fieldToConceptIdMapping');
@@ -584,6 +585,9 @@ const validateUpdateParticipantData = (value, existingValue, path, rule) => {
             if (typeof value !== 'number') {
                 return `Data mismatch: ${path} must be a number.`;
             }
+            if (rule.maxLength && value.toString().length > rule.maxLength) {
+                return `Data mismatch: ${path} must be less than ${rule.maxLength} digits. It is currently ${value.toString().length} digits.`;
+            }
             if (rule.values && !rule.values.includes(value)) {
                 return `Data mismatch: ${path} must be one of the following values: ${rule.values.join(', ')}.`;
             }
@@ -775,9 +779,150 @@ const getBigQueryData = async (req, res) => {
     return res.status(error ? 500 : 200).json(error ? getResponseJSON(error, 500) : {code: 200, results: responseArray});
 }
 
+const geocodedAddresses = async (req, res) => {
+    logIPAddress(req);
+    setHeaders(res);
+
+    if (req.method === 'OPTIONS') return res.status(200).json({code: 200});
+
+    if (req.method !== 'POST') {
+        return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+    }
+
+    const { APIAuthorization } = require('./shared');
+    const authorized = await APIAuthorization(req);
+    if (authorized instanceof Error) {
+        return res.status(500).json(getResponseJSON(authorized.message, 500));
+    }
+
+    if (!authorized) {
+        return res.status(401).json(getResponseJSON('Authorization failed!', 401));
+    }
+
+    // NORC is the geocoding vendor for the whole study and is intentionally
+    // authorized to submit geocoded addresses for participants at any site,
+    // so the participant lookup below is deliberately not scoped by site code.
+    if (authorized.acronym !== 'NORC') {
+        return res.status(403).json(getResponseJSON('You are not authorized!', 403));
+    }
+
+    if (req.body.data === undefined) return res.status(400).json(getResponseJSON('Bad request. Data is not defined in request body.', 400));
+    if (!Array.isArray(req.body.data)) return res.status(400).json(getResponseJSON('Bad request. Data must be an array.', 400));
+    if (req.body.data.length === 0) return res.status(400).json(getResponseJSON('Bad request. Data array does not have any elements.', 400));
+    if (req.body.data.length > 500) return res.status(400).json(getResponseJSON('Bad request. Data contains more than acceptable limit of 500 records.', 400));
+
+    const { getParticipantsDataByConnectIds, writeGeocodedAddresses } = require('./firestore');
+
+    const dataArray = req.body.data;
+    const responseArray = [];
+    let batchError = false;
+    const validRows = [];
+
+    // Fetch every participant record up front in batched queries rather than a
+    // sequential lookup per row.
+    const connectIdsToFetch = dataArray
+        .map((dataObj) => {
+            const raw = dataObj.Connect_ID;
+            if (raw === undefined || raw === null) return null;
+            const trimmed = typeof raw === 'string' ? raw.trim() : raw;
+            if (trimmed === '') return null;
+            const num = Number(trimmed);
+            return Number.isFinite(num) ? num : null;
+        })
+        .filter((id) => id !== null);
+    let participantMap;
+    try {
+        participantMap = await getParticipantsDataByConnectIds(connectIdsToFetch);
+    } catch (e) {
+        console.error(`Error looking up participants for geocoded addresses: ${e}`);
+        return res.status(500).json(getResponseJSON('Internal server error while looking up participants.', 500));
+    }
+
+    const dataHasBeenDestroyed = fieldMapping.participantMap.dataHasBeenDestroyed.toString();
+
+    for (let dataObj of dataArray) {
+        const rawConnectId = dataObj.Connect_ID;
+        if (rawConnectId === undefined || rawConnectId === null || rawConnectId === '') {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': 'UNDEFINED', 'Errors': 'Connect_ID not defined in data object.'}});
+            continue;
+        }
+
+        const connectId = Number(typeof rawConnectId === 'string' ? rawConnectId.trim() : rawConnectId);
+        if (!Number.isFinite(connectId)) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': rawConnectId, 'Errors': 'Connect_ID must be a valid number.'}});
+            continue;
+        }
+
+        const record = participantMap.get(connectId);
+
+        if (!record) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'Participant with this Connect_ID does not exist.'}});
+            continue;
+        }
+
+        // Reject if participant data has been destroyed.
+        if (record.data[dataHasBeenDestroyed] === fieldMapping.yes) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'Data Destroyed'}});
+            continue;
+        }
+
+        // Collect the non-blank fields to store. Blank/null/undefined values are
+        // skipped (neither validated nor stored).
+        const storedFields = {};
+        for (const [key, value] of Object.entries(dataObj)) {
+            if (key === 'Connect_ID') continue;
+            if (value === undefined || value === null || value === '') continue;
+            storedFields[key] = value;
+        }
+
+        if (Object.keys(storedFields).length === 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': 'No non-blank fields provided.'}});
+            continue;
+        }
+
+        // Enforce required fields from geocodedAddresses.json.
+        const missingRequired = Object.entries(geocodedAddressRules)
+            .filter(([key, rule]) => rule.required && !(key in storedFields))
+            .map(([key]) => key);
+        if (missingRequired.length > 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': `Missing required field(s): ${missingRequired.join(', ')}.`}});
+            continue;
+        }
+
+        // Validate with the shared rules engine against geocodedAddresses.json.
+        const errors = flatValidationHandler(storedFields, {}, geocodedAddressRules, validateUpdateParticipantData);
+        if (errors.length !== 0) {
+            batchError = true;
+            responseArray.push({'Invalid Request': {'Connect_ID': connectId, 'Errors': errors}});
+            continue;
+        }
+
+        validRows.push({ connectId, fields: storedFields });
+        responseArray.push({'Success': {'Connect_ID': connectId, 'Errors': 'None'}});
+    }
+
+    // Write all valid rows to Firestore in batched commits.
+    if (validRows.length > 0) {
+        try {
+            await writeGeocodedAddresses(validRows);
+        } catch (e) {
+            console.error(`Error writing geocoded addresses to Firestore: ${e}`);
+            return res.status(500).json(getResponseJSON('Internal server error while storing geocoded address data.', 500));
+        }
+    }
+
+    return res.status(batchError ? 206 : 200).json({code: batchError ? 206 : 200, results: responseArray});
+};
 
 module.exports = {
     getBigQueryData,
+    geocodedAddresses,
     submitParticipantsData,
     updateParticipantData,
     updateRecruit,
