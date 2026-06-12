@@ -315,10 +315,16 @@ const addressValidation = async (req, res) => {
     const queryString = new URLSearchParams(params).toString();
     const urlWithParams = `${uspsUrl.addresses}?${queryString}`;
 
+    let accessToken;
     try {
-        let accessToken = await getUSPSToken();
-        const maxAttempts = 3;
+        accessToken = await getUSPSToken();
+    } catch (err) {
+        console.error("USPS access token fetch failed:", err);
+        return res.status(502).json(getResponseJSON("USPS access token fetch failed", 502));
+    }
 
+    try {
+        const maxAttempts = 3;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout per attempt
