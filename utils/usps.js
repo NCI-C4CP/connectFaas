@@ -1,6 +1,5 @@
 const { getResponseJSON, setHeaders, logIPAddress, getSecret, uspsUrl, delay, backoffMs, safeJSONParse, parseResponseJson } = require('./shared');
 const { db } = require('./firestore');
-const conceptIds = require('./fieldToConceptIdMapping');
 
 /**
  * Address validation with the USPS API
@@ -16,32 +15,20 @@ const conceptIds = require('./fieldToConceptIdMapping');
  * 3. Fallback: Fetch new access token from USPS Auth API.
  */
 
+const USPS_STATE_PATTERN = /^(AA|AE|AL|AK|AP|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|MD|MA|MI|MN|MS|MO|MP|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PW|PA|PR|RI|SC|SD|TN|TX|UT|VT|VI|VA|WA|WV|WI|WY)$/;
 const EARLY_EXPIRY_MS = 60_000;                     // Refresh 1 minute before expiry
 let uspsTokenCache = { token: null, expiresAt: 0 }; // In-memory cache
 let appSettingsDocRef = null;                       // Cached Firestore doc ref
+let tokenRequestPromise = null;                     // Coalesces outbound USPS token requests
 
-const summarizeAddressForLog = (payload) => {
-    if (!payload || typeof payload !== "object") {
-        return { hasBody: !!payload, type: typeof payload };
-    }
-
-    const streetAddress = payload.streetAddress?.toString()?.trim() || "";
-    const city = payload.city?.toString()?.trim() || "";
-    const state = payload.state?.toString()?.trim()?.toUpperCase() || "";
-    const zip = payload.zipCode?.toString()?.trim() || "";
-
-    return {
-        hasStreetAddress: !!streetAddress,
-        streetAddressLength: streetAddress.length,
-        hasSecondaryAddress: !!payload.secondaryAddress?.toString()?.trim(),
-        cityLength: city.length,
-        state: state || null,
-        zipMasked: zip ? `${zip.slice(0, 2)}***` : null,
-    };
+const normalizeAddressField = (value) => {
+    if (value === undefined || value === null) return "";
+    return value.toString().trim();
 };
 
 /**
  * Pre-process the request body
+ * USPS address API requires streetAddress, state, and either city or ZIPCode.
  * @param {Object} payload - The request body
  * @returns {Object} - The validated parameters and errors
  */
@@ -54,60 +41,47 @@ const validateAddressParams = (payload) => {
     }
 
     if (!payload || typeof payload !== "object") {
-        errors.push("Invalid or missing all fields: Bad Request");
+        errors.push("Invalid or missing all fields");
         return { params, errors };
     }
 
-    // Validate streetAddress (required)
-    const streetAddress = payload.streetAddress?.trim();
+    const streetAddress = normalizeAddressField(payload.streetAddress);
     if (streetAddress) {
         params.streetAddress = streetAddress;
     } else {
-        errors.push("streetAddress");
+        errors.push("missing streetAddress");
     }
-    
-    // Validate secondaryAddress (optional)
-    const secondaryAddress = payload.secondaryAddress?.trim();
+
+    const secondaryAddress = normalizeAddressField(payload.secondaryAddress);
     if (secondaryAddress) {
         params.secondaryAddress = secondaryAddress;
     }
 
-    // Validate city (required)
-    const city = payload.city?.trim();
+    const city = normalizeAddressField(payload.city);
     if (city) {
         params.city = city;
-    } else {
-        errors.push("city");
-    }
-    
-    // Validate state (required, 2-letter uppercase)
-    const state = payload.state?.toString()?.trim()?.toUpperCase();
-    if (state && /^[A-Z]{2}$/.test(state)) {
-        params.state = state;
-    } else {
-        errors.push("state");
     }
 
-    // Validate zipCode (required, 5 digits)
-    const zip = payload.zipCode?.toString()?.trim();
-    if (zip && /^\d{5}$/.test(zip)) {
-        params.ZIPCode = zip;
+    const state = normalizeAddressField(payload.state).toUpperCase();
+    if (state && USPS_STATE_PATTERN.test(state)) {
+        params.state = state;
+    } else if (state) {
+        errors.push("invalid state");
     } else {
-        errors.push("zipCode");
+        errors.push("missing state");
+    }
+
+    const zipCode = normalizeAddressField(payload.zipCode);
+    if (zipCode && /^\d{5}$/.test(zipCode)) {
+        params.ZIPCode = zipCode;
+    }
+
+    if (!params.city && !params.ZIPCode) {
+        errors.push(zipCode ? "invalid zipCode" : "missing city or zipCode");
     }
 
     return { params, errors };
-}
-
-/**
- * Build the query string URL with the parameters
- * @param {Object} params - The validated address parameters
- * @returns {string} - The query string URL with the parameters
- */
-const buildURLWithParams = (params) => {
-    const queryString = new URLSearchParams(params).toString();
-    return `${uspsUrl.addresses}?${queryString}`;
-}
+};
 
 /**
  * Get the Firestore document reference AND update the local cache from Firestore.
@@ -188,18 +162,25 @@ const getCachedToken = async () => {
  * Computes the expiration time based on the API response and stores it in the in-memory cache and Firestore.
  * @param {string} token - The access token
  * @param {number} expiresInSeconds - Expiration time in seconds from response
+ * @param {number} issuedAt - Issued time in milliseconds from response
+ * @return {Promise<string>} The token that was persisted
  */
-const persistToken = async (token, expiresInSeconds) => {
+const persistToken = async (token, expiresInSeconds, issuedAt) => {
     if (!token || !expiresInSeconds) {
         console.error("USPS token: Invalid token or expiresInSeconds", { hasToken: !!token, expiresInSeconds });
     }
 
     const computedLifetimeMs =
         typeof expiresInSeconds === "number" && expiresInSeconds > 0
-            ? (expiresInSeconds * 1000) - EARLY_EXPIRY_MS
+            ? (expiresInSeconds * 1000)
             : 5 * 60 * 1000; // Minimal 5m validity if missing (shouldn't happen)
             
-    const expiresAt = Date.now() + computedLifetimeMs;
+    let expiresAt;
+    if (typeof issuedAt === "number" && issuedAt > 0) {
+        expiresAt = issuedAt + computedLifetimeMs;
+    } else {
+        expiresAt = Date.now() + computedLifetimeMs;
+    }
 
     uspsTokenCache = { token, expiresAt };
 
@@ -221,23 +202,11 @@ const persistToken = async (token, expiresInSeconds) => {
     return token;
 };
 
-/**
- * Fetch a new USPS token from the API.
- * @param {boolean} forceRefresh - Ignore cache and force new fetch
- * @returns {Promise<string>} The access token
- */
-const fetchUSPSToken = async (forceRefresh = false) => {
+const requestNewUSPSToken = async () => {
     const clientIdKey = process.env.USPS_CLIENT_ID;
     const clientSecretKey = process.env.USPS_CLIENT_SECRET;
-
     if (!clientIdKey || !clientSecretKey) {
         throw new Error("USPS credentials are not configured in environment variables.");
-    }
-
-    // Return cached token if valid and not forced
-    if (!forceRefresh) {
-        const cachedToken = await getCachedToken();
-        if (cachedToken) return cachedToken;
     }
 
     const [clientId, clientSecret] = await Promise.all([
@@ -245,49 +214,78 @@ const fetchUSPSToken = async (forceRefresh = false) => {
         getSecret(clientSecretKey),
     ]);
 
-    const authorizedParams = new URLSearchParams({ 
+    if (!clientId || !clientSecret) {
+        throw new Error("USPS credentials could not be loaded from Secret Manager.");
+    }
+
+    const authorizationData = {
         grant_type: "client_credentials", 
         client_id: clientId,
         client_secret: clientSecret,
         scope: "addresses" 
-    });
+    };
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout for auth
 
     try {
-        const authorizedResponse = await fetch(uspsUrl.auth, {
+        const res = await fetch(uspsUrl.auth, {
             method: "POST",
             headers: {
-                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                "Content-Type": "application/json",
             },
-            body: authorizedParams,
+            body: JSON.stringify(authorizationData),
             signal: controller.signal,
         });
         
-        const body = await parseResponseJson(authorizedResponse);
-
-        if (!authorizedResponse.ok) {
+        const resJson = await parseResponseJson(res);
+        if (!res.ok) {
             throw new Error(
-                `USPS auth failed (${authorizedResponse.status}): ${body?.error_description || body?.error || "unauthorized"}`
+                `USPS auth failed (${res.status}): ${resJson?.error_description || resJson?.error || "unauthorized"}`
             );
         }
 
-        if (!body?.access_token) {
+        if (!resJson?.access_token) {
             throw new Error("USPS auth succeeded but no access_token returned");
         }
 
-        // 'expires_in' is in seconds (e.g., 28799)
-        await persistToken(body.access_token, body.expires_in);
+        // 'expires_in' is in seconds (e.g., 28799); 'issued_at' is Unix ms timestamp
+        await persistToken(resJson.access_token, resJson.expires_in, resJson.issued_at);
         
-        return body.access_token;
-
-    } catch (err) {
-        throw new Error(`USPS auth network error: ${err.message}`);
-
+        return resJson.access_token;
     } finally {
         clearTimeout(timeout);
     }
+};
+
+/**
+ * Get a valid USPS token from cache or the API.
+ *
+ * Concurrent requests to USPS API are consolidated: once one caller starts a
+ * USPS token request, other callers await the same tokenRequestPromise.
+ *
+ * @param {boolean} forceRefresh - Ignore cached tokens and request a new token.
+ * @returns {Promise<string>} The access token.
+ */
+const getUSPSToken = async (forceRefresh = false) => {
+    if (tokenRequestPromise) {
+        return await tokenRequestPromise;
+    }
+
+    if (!forceRefresh) {
+        const cachedToken = await getCachedToken();
+        if (cachedToken) {
+            return cachedToken;
+        }
+    }
+
+    if (!tokenRequestPromise) {
+        tokenRequestPromise = requestNewUSPSToken().finally(() => {
+            tokenRequestPromise = null;
+        });
+    }
+
+    return await tokenRequestPromise;
 };
 
 /**
@@ -314,12 +312,19 @@ const addressValidation = async (req, res) => {
         return res.status(400).json(getResponseJSON(`Invalid or missing fields: ${errors.join(", ")}`, 400));
     }
 
-    const urlWithParams = buildURLWithParams(params);
+    const queryString = new URLSearchParams(params).toString();
+    const urlWithParams = `${uspsUrl.addresses}?${queryString}`;
+
+    let accessToken;
+    try {
+        accessToken = await getUSPSToken();
+    } catch (err) {
+        console.error("USPS access token fetch failed:", err);
+        return res.status(502).json(getResponseJSON("USPS access token fetch failed", 502));
+    }
 
     try {
-        let token = await fetchUSPSToken(); // Try cache first
         const maxAttempts = 3;
-
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout per attempt
@@ -330,7 +335,7 @@ const addressValidation = async (req, res) => {
                     method: "GET",
                     headers: {
                         "Accept": "application/json",
-                        "Authorization": `Bearer ${token}`,
+                        "Authorization": `Bearer ${accessToken}`,
                     },
                     signal: controller.signal,
                 });
@@ -359,7 +364,7 @@ const addressValidation = async (req, res) => {
                     console.warn(`USPS address call unauthorized (attempt ${attempt + 1}). Refreshing token and retrying...`);
                     // Force refresh token
                     try {
-                        token = await fetchUSPSToken(true);
+                        accessToken = await getUSPSToken(true);
                     } catch (authErr) {
                          console.error("USPS token refresh failed during retry:", authErr);
                          return res.status(502).json(getResponseJSON("Address validation authentication failed", 502));
@@ -388,7 +393,9 @@ const addressValidation = async (req, res) => {
                 status: uspsResponse.status,
                 error: responseBody?.error || responseBody?.message || "Unknown error"
             });
-            return res.status(400).json(getResponseJSON(errorMessage, 400));
+
+            const statusCode = uspsResponse.status || 502;
+            return res.status(statusCode).json(getResponseJSON(errorMessage, statusCode));
         }
 
         return res.status(502).json(getResponseJSON("Address validation temporarily unavailable. Exhausted retries.", 502));
@@ -402,5 +409,4 @@ const addressValidation = async (req, res) => {
 module.exports = {
     addressValidation,
     validateAddressParams,
-    buildURLWithParams,
 };
