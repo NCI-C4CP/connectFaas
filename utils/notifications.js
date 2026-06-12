@@ -7,8 +7,8 @@ const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
 const sharedUtils = require("./shared");
 const {getResponseJSON, setHeadersDomainRestricted, setHeaders, logIPAddress, redactEmailLoginInfo, redactPhoneLoginInfo, validEmailFormat, getTemplateForEmailLink, nihMailbox, getSecret, cidToLangMapper, unsubscribeTextObj, getAdjustedTime, getEasternDateKey, parseResponseJson, parseRequestBody, delay, backoffMs} = sharedUtils;
 const { htmlToPlaintext } = require("./htmlToPlaintext");
-const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, markNotificationSpecsQueuedForRun, clearNotificationSpecsQueuedRun, markNotificationSpecsLastRun, saveNotificationBatch, getNotificationRecordId, reserveNotificationBatch, markNotificationBatchProviderSendStarted, markNotificationBatchProviderAcceptanceUnknown, markNotificationBatchAccepted, markNotificationBatchFailed, generateSignInWithEmailLink, checkIsNotificationSent, updateSmsPermission, getEmailSuppressions, isEmailSuppressed, getAppSettings, getBulkNotificationRun, saveBulkNotificationRunPlan, getBulkNotificationBatch, getBulkNotificationRunBatches, markBulkNotificationBatchEnqueued, markBulkNotificationRunEnqueueFailed, markBulkNotificationRunQueued, markBulkNotificationBatchRunning, markBulkNotificationBatchComplete, markBulkNotificationBatchFailed, finalizeBulkNotificationRunIfTerminal } = require("./firestore");
-const {getParticipantsForNotificationsBQ, countParticipantsForNotificationsBQ} = require("./bigquery");
+const {getNotificationSpecById, getNotificationSpecByCategoryAndAttempt, getNotificationSpecsByScheduleOncePerDay, markNotificationSpecsQueuedForRun, clearNotificationSpecsQueuedRun, markNotificationSpecsLastRun, saveNotificationBatch, getNotificationRecordId, reserveNotificationBatch, markNotificationBatchProviderSendStarted, markNotificationBatchProviderAcceptanceUnknown, markNotificationBatchAccepted, markNotificationBatchFailed, generateSignInWithEmailLink, checkIsNotificationSent, updateSmsPermission, storeIncomingSmsData, getEmailSuppressions, isEmailSuppressed, getAppSettings, getBulkNotificationRun, saveBulkNotificationRunPlan, getBulkNotificationBatch, getBulkNotificationRunBatches, markBulkNotificationBatchEnqueued, markBulkNotificationRunEnqueueFailed, markBulkNotificationRunQueued, markBulkNotificationBatchRunning, markBulkNotificationBatchComplete, markBulkNotificationBatchFailed, finalizeBulkNotificationRunIfTerminal } = require("./firestore");
+const {getParticipantsForNotificationsBQ, countParticipantsForNotificationsBQ, getTokensAndPreferredLanguageByPhone} = require("./bigquery");
 const { normalizeEmailAddress, shouldFilterEmailAddress } = require("./emailSuppressionPolicy");
 const { isProviderSendStartedState } = require("./notificationState");
 const conceptIds = require("./fieldToConceptIdMapping");
@@ -3069,15 +3069,28 @@ const handleIncomingSms = async (req, res) => {
     return res.status(403).json(getResponseJSON("Invalid Twilio signature.", 403));
   }
 
-  const { OptOutType: optinOptoutType } = req.body;
-  if (["START", "STOP"].includes(optinOptoutType)) {
-    const isSmsPermitted = optinOptoutType === "START";
-    try {
-      await updateSmsPermission(req.body.From, isSmsPermitted);
-    } catch (error) {
-      console.error("Error updating SMS permission to 'participants' collection.", error);
-      return res.status(500).json(getResponseJSON("Internal server error", 500));
+  const smsData = req.body;
+  try {
+    await storeIncomingSmsData(smsData);
+    const { tokens, preferredLanguage } = await getTokensAndPreferredLanguageByPhone(smsData.From);
+
+    const optOutType = smsData.OptOutType || "";
+    if (["START", "STOP"].includes(optOutType)) {
+      const isSmsAllowed = optOutType === "START";
+      await updateSmsPermission(tokens, isSmsAllowed);
+    } else if (optOutType !== "HELP") {
+      const isSpanishPreferred = preferredLanguage === conceptIds.spanish;
+      const replyMessage = isSpanishPreferred
+        ? "Para ayuda, visite MyConnect.cancer.gov/support. Responda PARAR para cancelar su suscripción."
+        : "For help, visit MyConnect.cancer.gov/support. Reply STOP to unsubscribe.";
+      const messagingResponse = new twilio.twiml.MessagingResponse();
+      messagingResponse.message(replyMessage);
+
+      return res.status(200).type("text/xml").send(messagingResponse.toString());
     }
+  } catch (error) {
+      console.error("Error handling incoming message.", error);
+      return res.status(500).json(getResponseJSON(error.message || "Internal server error", 500));
   }
 
   return res.sendStatus(204);
