@@ -3,11 +3,12 @@ const {BigQuery} = require('@google-cloud/bigquery');
 const {Storage} = require('@google-cloud/storage');
 const { getResponseJSON } = require('./shared');
 
-const collectionNameArray = ['participants', 'biospecimen', 'boxes', 'module1_v1', 'module1_v2', 'module2_v1', 'module2_v2', 'module3_v1', 'module4_v1', 'bioSurvey_v1', 'menstrualSurvey_v1', 'clinicalBioSurvey_v1', 'covid19Survey_v1', 'kitAssembly', 'mouthwash_v1', 'cancerOccurrence', 'promis_v1', 'experience2024', 'birthdayCard', 'cancerScreeningHistorySurvey', 'dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers', 'preference2026'];
-const importCollectionNameArray = [...collectionNameArray, 'notifications'];
+const exportCollectionNameArray = ['participants', 'biospecimen', 'boxes', 'module1_v1', 'module1_v2', 'module2_v1', 'module2_v2', 'module3_v1', 'module4_v1', 'bioSurvey_v1', 'menstrualSurvey_v1', 'clinicalBioSurvey_v1', 'covid19Survey_v1', 'kitAssembly', 'mouthwash_v1', 'cancerOccurrence', 'promis_v1', 'experience2024', 'birthdayCard', 'cancerScreeningHistorySurvey', 'dhqAnalysisResults', 'dhqDetailedAnalysis', 'dhqRawAnswers', 'preference2026'];
+const exportOncePerDayCollectionNameArray = ['notifications', 'incomingSMS'];
+const importCollectionNameArray = [...exportCollectionNameArray, ...exportOncePerDayCollectionNameArray];
 
 const runFirestoreExport = async () => {
-  await exportCollectionsToBucket(collectionNameArray);
+  await exportCollectionsToBucket(exportCollectionNameArray);
 };
 
 const importToBigQuery = async (req, res) => {
@@ -30,7 +31,7 @@ const importToBigQuery = async (req, res) => {
 };
 
 const runExportNotificationsToBucket = async () => {
-  await exportCollectionsToBucket(["notifications"]);
+  await exportCollectionsToBucket(exportOncePerDayCollectionNameArray);
 };
 
 const firestoreExport = async (req, res) => {
