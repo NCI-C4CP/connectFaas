@@ -789,6 +789,9 @@ const geocodedAddresses = async (req, res) => {
         return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
     }
 
+    // TODO: Remove this block in October 2026 when clients are ready to test.
+    return res.status(503).json(getResponseJSON('geocodedAddresses endpoint is not yet available.', 503));
+
     const { APIAuthorization } = require('./shared');
     const authorized = await APIAuthorization(req);
     if (authorized instanceof Error) {
