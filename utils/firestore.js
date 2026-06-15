@@ -7105,6 +7105,94 @@ const getEmailSuppressions = async (emailArray, mailStream) => {
   return suppressedSet;
 };
 
+/**
+ * Fetch participant records for a batch of Connect_IDs up front, instead of a
+ * sequential lookup per row. Firestore caps 'in' queries at 30 values, so the
+ * IDs are de-duplicated and chunked, and the chunk queries run in parallel.
+ * @param {Array<number|string>} connectIds
+ * @returns {Promise<Map<number, {id: string, data: object}>>} Map keyed by Connect_ID (number).
+ */
+const getParticipantsDataByConnectIds = async (connectIds) => {
+    const uniqueIds = [...new Set(connectIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id)))];
+    if (uniqueIds.length === 0) return new Map();
+
+    const chunkSize = 30;
+    const queries = [];
+
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+        const chunk = uniqueIds.slice(i, i + chunkSize);
+        queries.push(db.collection('participants').where('Connect_ID', 'in', chunk).get());
+    }
+
+    const snapshots = await Promise.all(queries);
+    const participantMap = new Map();
+    for (const snapshot of snapshots) {
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            participantMap.set(data.Connect_ID, { id: doc.id, data });
+        });
+    }
+
+    return participantMap;
+};
+
+/**
+ * Generate a deterministic document ID for a geocoded address row.
+ * The hash is derived from Connect_ID + all non-blank field values (sorted by key)
+ * so the same address for a participant always maps to the same doc, preventing
+ * duplicate documents for an identical address (participants may still have
+ * multiple distinct address documents in this collection).
+ * @param {number|string} connectId
+ * @param {object} fields - The address fields (excluding Connect_ID), already stripped of blanks.
+ * @returns {string} A hex hash string suitable as a Firestore document ID.
+ */
+const generateGeocodedAddressDocId = (connectId, fields) => {
+    const crypto = require('crypto');
+    const sortedEntries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
+    const payload = `${connectId}:${JSON.stringify(sortedEntries)}`;
+    return crypto.createHash('sha256').update(payload).digest('hex');
+};
+
+/**
+ * Write a batch of validated geocoded address rows to the geocodedAddresses collection.
+ * Uses deterministic doc IDs so retries are idempotent (set with merge).
+ * Respects the Firestore batch limit of 500 operations per commit.
+ * @param {Array<{connectId: number|string, fields: object}>} rows - Array of validated row objects.
+ * @returns {Promise<void>}
+ */
+const writeGeocodedAddresses = async (rows) => {
+    const batchLimit = 500;
+    let batch = db.batch();
+    let counter = 0;
+    const batchPromises = [];
+
+    for (const { connectId, fields } of rows) {
+        const docId = generateGeocodedAddressDocId(connectId, fields);
+        const docRef = db.collection('geocodedAddresses').doc(docId);
+        const docData = {
+            Connect_ID: +connectId,
+            ...fields,
+            received_timestamp: new Date().toISOString(),
+        };
+        batch.set(docRef, docData, { merge: true });
+        counter++;
+
+        if (counter >= batchLimit) {
+            batchPromises.push(batch.commit());
+            batch = db.batch();
+            counter = 0;
+        }
+    }
+
+    if (counter > 0) {
+        batchPromises.push(batch.commit());
+    }
+
+    await Promise.all(batchPromises);
+};
+
 module.exports = {
     db,
     storage,
@@ -7283,4 +7371,7 @@ module.exports = {
     getMySamples,
     getAllMySamples,
     updateMySamples,
+    getParticipantsDataByConnectIds,
+    generateGeocodedAddressDocId,
+    writeGeocodedAddresses,
 };
