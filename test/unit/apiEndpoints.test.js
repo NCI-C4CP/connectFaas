@@ -165,7 +165,8 @@ describe('API Endpoint Method Guards', () => {
         }
     });
 
-    describe('geocodedAddresses authorization', () => {
+    // TODO: Re-enable when the geocodedAddresses 503 shutdown is removed (October 2026).
+    describe.skip('geocodedAddresses authorization', () => {
         it('should reject unauthenticated requests with 401', async () => {
             const res = await invoke(api.geocodedAddresses, 'POST', {
                 body: { data: [{ Connect_ID: 123 }] },

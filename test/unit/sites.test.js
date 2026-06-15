@@ -262,7 +262,8 @@ describe('test changed functions', () => {
     });
 });
 
-describe('geocodedAddresses', () => {
+// TODO: Re-enable when the geocodedAddresses 503 shutdown is removed (October 2026).
+describe.skip('geocodedAddresses', () => {
     const norcAuth = { acronym: 'NORC', siteCode: 123456 };
 
     // Valid values for the two required fields (758212868 and 625954624).
