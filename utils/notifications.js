@@ -3090,7 +3090,7 @@ const handleIncomingSms = async (req, res) => {
     }
   } catch (error) {
       console.error("Error handling incoming message.", error);
-      return res.status(500).json(getResponseJSON(error.message || "Internal server error", 500));
+      return res.status(500).json(getResponseJSON("Internal server error", 500));
   }
 
   return res.sendStatus(204);

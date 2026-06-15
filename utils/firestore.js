@@ -6334,11 +6334,11 @@ const disableSmsErrorCodes = ["21610", "30004", "30006"];
 /**
  * Processes Twilio SMS status webhook requests and updates the corresponding notification record in Firestore, with retry logic to handle potential delays in record availability. 
  * For specific error codes (21610, 30004, 30006), revokes SMS permission for the phone number.
- * @param {object} smsData - Twilio SMS webhook request body
- * @param {string} smsData.MessageSid - Unique identifier for the SMS message
- * @param {string} smsData.MessageStatus - Status of the message (e.g., "delivered", "failed", "undelivered")
- * @param {string} [smsData.ErrorCode] - Twilio error code if the message failed
- * @param {string} [smsData.ErrorMessage] - Twilio error message if the message failed
+ * @param {object} reqBody - Twilio SMS webhook request body
+ * @param {string} reqBody.MessageSid - Unique identifier for the SMS message
+ * @param {string} reqBody.MessageStatus - Status of the message (e.g., "delivered", "failed", "undelivered")
+ * @param {string} [reqBody.ErrorCode] - Twilio error code if the message failed
+ * @param {string} [reqBody.ErrorMessage] - Twilio error message if the message failed
  * @returns {Promise<void>}
  */
 const processTwilioEvent = async (reqBody) => {
@@ -6405,8 +6405,12 @@ const processTwilioEvent = async (reqBody) => {
  */
 const storeIncomingSmsData = async (smsData = {}) => {
   const { MessageSid, From, To, Body, SmsStatus, OptOutType } = smsData;
+  if (!MessageSid || !From) {
+    throw new Error('Missing required fields in incoming SMS data: MessageSid and From are required.');
+  }
+
   const smsRecord = {
-    [fieldMapping.smsSid]: MessageSid || "",
+    [fieldMapping.smsSid]: MessageSid,
     [fieldMapping.smsFrom]: From,
     [fieldMapping.smsTo]: To || "",
     [fieldMapping.smsContent]: Body || "",
@@ -6416,7 +6420,7 @@ const storeIncomingSmsData = async (smsData = {}) => {
   };
 
   try {
-    await db.collection("incomingSMS").add(smsRecord);
+    await db.collection("incomingSMS").doc(MessageSid).set(smsRecord);
   } catch (error) {
     throw new Error(`Error storing incoming SMS data for MessageSid ${MessageSid}.`, { cause: error });
   }
