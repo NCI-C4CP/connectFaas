@@ -8,7 +8,6 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { getCurrentPolicy, buildDataDestructionUpdate, validateDestroyedStub } = require('./dataDestructionPolicy');
 const { isIsoDate } = require('./validation');
-const {getParticipantTokensByPhoneNumber} = require('./bigquery');
 const { normalizeEmailAddress, getEmailSuppressionPolicyForSendGridEvent, buildEmailSuppressionDoc } = require('./emailSuppressionPolicy');
 const { isProviderSendStartedState } = require('./notificationState');
 
@@ -6377,8 +6376,8 @@ const processTwilioEvent = async (reqBody) => {
       
       await doc.ref.update(eventRecord);
 
-      if (disableSmsErrorCodes.includes(eventErrorCode)) {
-        await updateSmsPermission(docData.phone, false);
+      if (disableSmsErrorCodes.includes(eventErrorCode) && docData.token) {
+        await updateSmsPermission([docData.token], false);
       }
     }
 
@@ -6389,6 +6388,41 @@ const processTwilioEvent = async (reqBody) => {
 
   if (!isRecordFound) {
     console.error(`Could not find notification record with messageSid ${reqBody.MessageSid}. Message status ${reqBody.MessageStatus}.`);
+  }
+};
+
+/**
+ * Stores an incoming Twilio SMS message in the "incomingSMS" Firestore collection.
+ * @param {object} smsData - Twilio incoming SMS webhook request body
+ * @param {string} smsData.From - Sender's phone number
+ * @param {string} [smsData.MessageSid] - Unique identifier for the SMS message
+ * @param {string} [smsData.To] - The phone number that received the SMS message (Twilio number)
+ * @param {string} [smsData.Body] - The content of the incoming SMS message
+ * @param {string} [smsData.SmsStatus] - The status of the SMS message (e.g., "received")
+ * @param {string} [smsData.OptOutType] - The type of opt-out event (e.g., START, STOP, HELP)
+ * @returns {Promise<void>}
+ * @throws {Error} If the Firestore write fails
+ */
+const storeIncomingSmsData = async (smsData = {}) => {
+  const { MessageSid, From, To, Body, SmsStatus, OptOutType } = smsData;
+  if (!MessageSid || !From) {
+    throw new Error('Missing required fields in incoming SMS data: MessageSid and From are required.');
+  }
+
+  const smsRecord = {
+    [fieldMapping.smsSid]: MessageSid,
+    [fieldMapping.smsFrom]: From,
+    [fieldMapping.smsTo]: To || "",
+    [fieldMapping.smsContent]: Body || "",
+    [fieldMapping.smsStatus]: SmsStatus || "received",
+    ...(OptOutType && { [fieldMapping.smsOptOutType]: OptOutType }),
+    [fieldMapping.smsTimestamp]: new Date().toISOString(),
+  };
+
+  try {
+    await db.collection("incomingSMS").doc(MessageSid).set(smsRecord);
+  } catch (error) {
+    throw new Error(`Error storing incoming SMS data for MessageSid ${MessageSid}.`, { cause: error });
   }
 };
 
@@ -6672,14 +6706,13 @@ const getAppSettings = async (appName, selectedParamsArray) => {
 
 /**
  *
- * @param {string} phoneNumber Phone number in +1XXXXXXXXXX format
+ * @param {string[]} tokenArray Tokens of participants to update
  * @param {boolean} isSmsPermitted Whether SMS is permitted or not
  * @returns {Promise<number>} Number of document(s) updated
  */
-const updateSmsPermission = async (phoneNumber, isSmsPermitted) => {
+const updateSmsPermission = async (tokenArray, isSmsPermitted) => {
   let count = 0;
   const permissionCid = isSmsPermitted ? fieldMapping.yes : fieldMapping.no;
-  const tokenArray = await getParticipantTokensByPhoneNumber(phoneNumber);
   if (tokenArray.length > 0) {
     const batch = db.batch();
     for (const token of tokenArray) {
@@ -7344,6 +7377,7 @@ module.exports = {
     getSupplyKitTrackingNumber,
     processSendGridEvent,
     processTwilioEvent,
+    storeIncomingSmsData,
     getSpecimenAndParticipant,
     queryKitsByReceivedDate,
     queryKitsByShippedAndAssignedStatus,

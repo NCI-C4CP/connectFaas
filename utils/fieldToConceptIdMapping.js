@@ -460,4 +460,13 @@ module.exports = {
     dhq3HEIReportStatusExternal: 892697201, // [unread, viewed]
     dhq3HEIReportFirstViewedISOTime: 600958089,
     dhq3HEIReportFirstDeclinedISOTime: 404613256,
+
+    // Incoming SMS variables
+    smsSid: 137172032,
+    smsFrom: 756674860,
+    smsTo: 193005138,
+    smsContent: 115707416,
+    smsStatus: 432682375,
+    smsOptOutType: 689827049,
+    smsTimestamp: 700108581,
 };

@@ -452,27 +452,41 @@ const getCollectionStats = async (type, siteCode) => {
 }
 
 /**
- * 
+ * Finds tokens and the preferred language of participant(s) having the phone number.
+ * If matched participants have different preferred languages, the most common one is returned.
  * @param {string} fullNumber Phone number in the format +11234567890
- * @returns {Promise<string[]>} Array of tokens of participant(s) having the phone number
+ * @returns {Promise<{tokens: string[], preferredLanguage: number|null}>}
  */
-const getParticipantTokensByPhoneNumber = async (fullNumber) => {
+const getTokensAndPreferredLanguageByPhone = async (fullNumber) => {
   const tenDigitsNumber = fullNumber.slice(-10);
-  const query = `SELECT token FROM \`Connect.participants\` WHERE d_348474836 = @fullNumber OR d_388711124 = @tenDigitsNumber`;
+  const query = `SELECT token, d_${fieldMapping.preferredLanguage} AS preferredLanguage FROM \`Connect.participants\` WHERE d_348474836 = @fullNumber OR d_388711124 = @tenDigitsNumber`;
   const options = {
     query,
     location: "US",
     params: { fullNumber, tenDigitsNumber },
   };
-  
+
   let rows = [];
   try {
     [rows] = await bigquery.query(options);
   } catch (error) {
-    console.error("Error calling getParticipantTokensByPhoneNumber().", error);
+    console.error("Error calling getTokensAndPreferredLanguageByPhone().", error);
   }
-  
-  return rows.map(row => row.token);
+
+  if (rows.length === 0) {
+    return { tokens: [], preferredLanguage: null };
+  }
+
+  const tokens = [];
+  const languageCounts = {};
+  for (const row of rows) {
+    tokens.push(row.token);
+    languageCounts[row.preferredLanguage] = (languageCounts[row.preferredLanguage] ?? 0) + 1;
+  }
+  const topLanguage = parseInt(Object.entries(languageCounts).sort((a, b) => b[1] - a[1])[0][0], 10);
+  const preferredLanguage = Number.isFinite(topLanguage) ? topLanguage : null;
+
+  return { tokens, preferredLanguage };
 };
 
 /**
@@ -762,7 +776,7 @@ module.exports = {
     getParticipantsForRequestAKitBQ,
     getStatsFromBQ,
     getCollectionStats,
-    getParticipantTokensByPhoneNumber,
+    getTokensAndPreferredLanguageByPhone,
     validateFields,
     validateFilters,
     validateTableAccess,
