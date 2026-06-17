@@ -6394,8 +6394,8 @@ const processTwilioEvent = async (reqBody) => {
 /**
  * Stores an incoming Twilio SMS message in the "incomingSMS" Firestore collection.
  * @param {object} smsData - Twilio incoming SMS webhook request body
+ * @param {string} smsData.MessageSid - Unique identifier for the SMS message
  * @param {string} smsData.From - Sender's phone number
- * @param {string} [smsData.MessageSid] - Unique identifier for the SMS message
  * @param {string} [smsData.To] - The phone number that received the SMS message (Twilio number)
  * @param {string} [smsData.Body] - The content of the incoming SMS message
  * @param {string} [smsData.OptOutType] - The type of opt-out event (e.g., START, STOP, HELP)
@@ -6408,12 +6408,18 @@ const storeIncomingSmsData = async (smsData = {}) => {
     throw new Error('Missing required fields in incoming SMS data: MessageSid and From are required.');
   }
 
+  const optOutKey = OptOutType ? `sms${OptOutType.charAt(0).toUpperCase() + OptOutType.slice(1).toLowerCase()}` : null;
+  let optOutCid = OptOutType;
+  if (optOutKey && fieldMapping[optOutKey]) {
+    optOutCid = fieldMapping[optOutKey];
+  }
+
   const smsRecord = {
     [fieldMapping.smsSid]: MessageSid,
     [fieldMapping.smsFrom]: From,
     [fieldMapping.smsTo]: To || "",
     [fieldMapping.smsContent]: Body || "",
-    ...(OptOutType && { [fieldMapping.smsOptOutType]: OptOutType }),
+    ...(OptOutType && { [fieldMapping.smsOptOutType]: optOutCid }),
     [fieldMapping.smsTimestamp]: new Date().toISOString(),
   };
 

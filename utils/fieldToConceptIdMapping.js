@@ -467,5 +467,8 @@ module.exports = {
     smsTo: 193005138,
     smsContent: 115707416,
     smsOptOutType: 689827049,
+    smsStart: 897758920,
+    smsStop: 194274197,
+    smsHelp: 227782304,
     smsTimestamp: 700108581,
 };
