@@ -1,0 +1,76 @@
+{
+    "758212868": {
+        "dataType": "number",
+        "maxLength": 6,
+        "required": true
+    },
+    "403294814": {
+        "dataType": "number",
+        "maxLength": 4
+    },
+    "826796611": {
+        "dataType": "string",
+        "maxLength": 38
+    },
+    "565540989": {
+        "dataType": "string",
+        "maxLength": 50
+    },
+    "266861817": {
+        "dataType": "number",
+        "maxLength": 5
+    },
+    "202200799": {
+        "dataType": "string",
+        "maxLength": 2
+    },
+    "743072841": {
+        "dataType": "string",
+        "maxLength": 26
+    },
+    "845922276": {
+        "dataType": "string",
+        "maxLength": 22
+    },
+    "801579513": {
+        "dataType": "string",
+        "maxLength": 13
+    },
+    "680977535": {
+        "dataType": "string",
+        "maxLength": 13
+    },
+    "951694129": {
+        "dataType": "number",
+        "values": [728662578, 717366608, 495372270, 703385619, 343111826, 503218834]
+    },
+    "123987148": {
+        "dataType": "number",
+        "values": [104430631, 353358909]
+    },
+    "473216280": {
+        "dataType": "number",
+        "values": [768887460, 926338735]
+    },
+    "881949895": {
+        "dataType": "string",
+        "maxLength": 11
+    },
+    "552433369": {
+        "dataType": "string",
+        "maxLength": 20
+    },
+    "916814781": {
+        "dataType": "string",
+        "maxLength": 30
+    },
+    "625954624": {
+        "dataType": "string",
+        "maxLength": 32,
+        "required": true
+    },
+    "185323683": {
+        "dataType": "string",
+        "maxLength": 17
+    }
+}

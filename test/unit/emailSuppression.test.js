@@ -40,15 +40,6 @@ const sharedMock = {
 };
 require.cache[sharedPath].exports = sharedMock;
 
-// Mock bigquery.js to add phone-token lookup used by firestore.js
-const bigqueryPath = require.resolve("../../utils/bigquery");
-const origBigqueryExports = require.cache[bigqueryPath].exports;
-const bigqueryMock = {
-  ...origBigqueryExports,
-  getParticipantTokensByPhoneNumber: vi.fn().mockResolvedValue([]),
-};
-require.cache[bigqueryPath].exports = bigqueryMock;
-
 // Add getAll to the Firestore mock to support batch lookups
 firestoreMocks.mockFirestore.getAll = vi.fn().mockResolvedValue([]);
 const firestorePath = require.resolve("../../utils/firestore");
@@ -70,7 +61,6 @@ describe("Email Suppression System", () => {
 
   afterAll(() => {
     require.cache[sharedPath].exports = origSharedExports;
-    require.cache[bigqueryPath].exports = origBigqueryExports;
     delete require.cache[firestorePath];
     restoreModuleMocks();
   });

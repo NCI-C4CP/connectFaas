@@ -8,7 +8,6 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { getCurrentPolicy, buildDataDestructionUpdate, validateDestroyedStub } = require('./dataDestructionPolicy');
 const { isIsoDate } = require('./validation');
-const {getParticipantTokensByPhoneNumber} = require('./bigquery');
 const { normalizeEmailAddress, getEmailSuppressionPolicyForSendGridEvent, buildEmailSuppressionDoc } = require('./emailSuppressionPolicy');
 const { isProviderSendStartedState } = require('./notificationState');
 
@@ -6388,8 +6387,8 @@ const processTwilioEvent = async (reqBody) => {
       
       await doc.ref.update(eventRecord);
 
-      if (disableSmsErrorCodes.includes(eventErrorCode)) {
-        await updateSmsPermission(docData.phone, false);
+      if (disableSmsErrorCodes.includes(eventErrorCode) && docData.token) {
+        await updateSmsPermission([docData.token], false);
       }
     }
 
@@ -6400,6 +6399,45 @@ const processTwilioEvent = async (reqBody) => {
 
   if (!isRecordFound) {
     console.error(`Could not find notification record with messageSid ${reqBody.MessageSid}. Message status ${reqBody.MessageStatus}.`);
+  }
+};
+
+/**
+ * Stores an incoming Twilio SMS message in the "incomingSMS" Firestore collection.
+ * @param {object} smsData - Twilio incoming SMS webhook request body
+ * @param {string} smsData.MessageSid - Unique identifier for the SMS message
+ * @param {string} smsData.From - Sender's phone number
+ * @param {string} [smsData.To] - The phone number that received the SMS message (Twilio number)
+ * @param {string} [smsData.Body] - The content of the incoming SMS message
+ * @param {string} [smsData.OptOutType] - The type of opt-out event (e.g., START, STOP, HELP)
+ * @returns {Promise<void>}
+ * @throws {Error} If the Firestore write fails
+ */
+const storeIncomingSmsData = async (smsData = {}) => {
+  const { MessageSid, From, To, Body, OptOutType } = smsData;
+  if (!MessageSid || !From) {
+    throw new Error('Missing required fields in incoming SMS data: MessageSid and From are required.');
+  }
+
+  const optOutKey = OptOutType ? `sms${OptOutType.charAt(0).toUpperCase() + OptOutType.slice(1).toLowerCase()}` : null;
+  let optOutCid = OptOutType;
+  if (optOutKey && fieldMapping[optOutKey]) {
+    optOutCid = fieldMapping[optOutKey];
+  }
+
+  const smsRecord = {
+    [fieldMapping.smsSid]: MessageSid,
+    [fieldMapping.smsFrom]: From,
+    [fieldMapping.smsTo]: To || "",
+    [fieldMapping.smsContent]: Body || "",
+    ...(OptOutType && { [fieldMapping.smsOptOutType]: optOutCid }),
+    [fieldMapping.smsTimestamp]: new Date().toISOString(),
+  };
+
+  try {
+    await db.collection("incomingSMS").doc(MessageSid).set(smsRecord);
+  } catch (error) {
+    throw new Error(`Error storing incoming SMS data for MessageSid ${MessageSid}.`, { cause: error });
   }
 };
 
@@ -6762,14 +6800,13 @@ const getAppSettings = async (appName, selectedParamsArray) => {
 
 /**
  *
- * @param {string} phoneNumber Phone number in +1XXXXXXXXXX format
+ * @param {string[]} tokenArray Tokens of participants to update
  * @param {boolean} isSmsPermitted Whether SMS is permitted or not
  * @returns {Promise<number>} Number of document(s) updated
  */
-const updateSmsPermission = async (phoneNumber, isSmsPermitted) => {
+const updateSmsPermission = async (tokenArray, isSmsPermitted) => {
   let count = 0;
   const permissionCid = isSmsPermitted ? fieldMapping.yes : fieldMapping.no;
-  const tokenArray = await getParticipantTokensByPhoneNumber(phoneNumber);
   if (tokenArray.length > 0) {
     const batch = db.batch();
     for (const token of tokenArray) {
@@ -7195,6 +7232,94 @@ const getEmailSuppressions = async (emailArray, mailStream) => {
   return suppressedSet;
 };
 
+/**
+ * Fetch participant records for a batch of Connect_IDs up front, instead of a
+ * sequential lookup per row. Firestore caps 'in' queries at 30 values, so the
+ * IDs are de-duplicated and chunked, and the chunk queries run in parallel.
+ * @param {Array<number|string>} connectIds
+ * @returns {Promise<Map<number, {id: string, data: object}>>} Map keyed by Connect_ID (number).
+ */
+const getParticipantsDataByConnectIds = async (connectIds) => {
+    const uniqueIds = [...new Set(connectIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id)))];
+    if (uniqueIds.length === 0) return new Map();
+
+    const chunkSize = 30;
+    const queries = [];
+
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+        const chunk = uniqueIds.slice(i, i + chunkSize);
+        queries.push(db.collection('participants').where('Connect_ID', 'in', chunk).get());
+    }
+
+    const snapshots = await Promise.all(queries);
+    const participantMap = new Map();
+    for (const snapshot of snapshots) {
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            participantMap.set(data.Connect_ID, { id: doc.id, data });
+        });
+    }
+
+    return participantMap;
+};
+
+/**
+ * Generate a deterministic document ID for a geocoded address row.
+ * The hash is derived from Connect_ID + all non-blank field values (sorted by key)
+ * so the same address for a participant always maps to the same doc, preventing
+ * duplicate documents for an identical address (participants may still have
+ * multiple distinct address documents in this collection).
+ * @param {number|string} connectId
+ * @param {object} fields - The address fields (excluding Connect_ID), already stripped of blanks.
+ * @returns {string} A hex hash string suitable as a Firestore document ID.
+ */
+const generateGeocodedAddressDocId = (connectId, fields) => {
+    const crypto = require('crypto');
+    const sortedEntries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
+    const payload = `${connectId}:${JSON.stringify(sortedEntries)}`;
+    return crypto.createHash('sha256').update(payload).digest('hex');
+};
+
+/**
+ * Write a batch of validated geocoded address rows to the geocodedAddresses collection.
+ * Uses deterministic doc IDs so retries are idempotent (set with merge).
+ * Respects the Firestore batch limit of 500 operations per commit.
+ * @param {Array<{connectId: number|string, fields: object}>} rows - Array of validated row objects.
+ * @returns {Promise<void>}
+ */
+const writeGeocodedAddresses = async (rows) => {
+    const batchLimit = 500;
+    let batch = db.batch();
+    let counter = 0;
+    const batchPromises = [];
+
+    for (const { connectId, fields } of rows) {
+        const docId = generateGeocodedAddressDocId(connectId, fields);
+        const docRef = db.collection('geocodedAddresses').doc(docId);
+        const docData = {
+            Connect_ID: +connectId,
+            ...fields,
+            received_timestamp: new Date().toISOString(),
+        };
+        batch.set(docRef, docData, { merge: true });
+        counter++;
+
+        if (counter >= batchLimit) {
+            batchPromises.push(batch.commit());
+            batch = db.batch();
+            counter = 0;
+        }
+    }
+
+    if (counter > 0) {
+        batchPromises.push(batch.commit());
+    }
+
+    await Promise.all(batchPromises);
+};
+
 module.exports = {
     db,
     storage,
@@ -7346,6 +7471,7 @@ module.exports = {
     getSupplyKitTrackingNumber,
     processSendGridEvent,
     processTwilioEvent,
+    storeIncomingSmsData,
     getSpecimenAndParticipant,
     queryKitsByReceivedDate,
     queryKitsByShippedAndAssignedStatus,
@@ -7376,4 +7502,7 @@ module.exports = {
     getMySamples,
     getAllMySamples,
     updateMySamples,
+    getParticipantsDataByConnectIds,
+    generateGeocodedAddressDocId,
+    writeGeocodedAddresses,
 };
