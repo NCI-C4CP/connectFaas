@@ -488,7 +488,18 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             }
         });
 
-        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise]);
+        const selfReportCancerDxPromise = new Promise(async (resolve, reject) => {
+            try {
+                const selfReportCancerDxQuery = db.collection('selfReportCancerDx').where('token', '==', token);
+                const selfReportCancerDxSnapshot = await transaction.get(selfReportCancerDxQuery);
+                toDelete.selfReportCancerDx = selfReportCancerDxSnapshot.docs.map(doc => doc.id);
+                return resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+
+        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise, selfReportCancerDxPromise]);
 
         if (saveToDb) {
             const participantDoc = db.collection('participants').doc(userId);
@@ -6426,6 +6437,85 @@ const writeCancerOccurrences = async (cancerOccurrenceArray) => {
 };
 
 /**
+ * Self-Report Cancer Diagnosis documents for one participant.
+ * Partitioned into the single in-progress doc and the append-only submitted diagnoses.
+ * A submitted diagnosis is identified by its server-assigned DxNumber.
+ * @param {string} uid - Firebase auth uid (verified by the router).
+ * @returns {Promise<{inProgressDoc: {docId, data}|null, submittedDiagnoses: object[]}>}
+ */
+const getSelfReportCancerDxDocs = async (uid) => {
+    const { partitionDiagnosisDocs } = require('./selfReportCancerDx');
+    const snapshot = await db.collection('selfReportCancerDx').where('uid', '==', uid).get();
+    printDocsCount(snapshot, 'getSelfReportCancerDxDocs');
+    const diagnosisDocs = snapshot.docs.map((doc) => ({ docId: doc.id, data: doc.data() }));
+    const { inProgressDoc, submittedDocs } = partitionDiagnosisDocs(diagnosisDocs);
+
+    return { inProgressDoc, submittedDiagnoses: submittedDocs.map((doc) => doc.data) };
+};
+
+/**
+ * Upsert one Self-Report Cancer Diagnosis doc. `set` WITHOUT merge by design: each save
+ * replaces the in-progress snapshot, so fields cleared by Back navigation disappear.
+ * @param {string|null} docId - existing doc to replace, or null to create.
+ * @param {object} data - the full document.
+ * @param {{ guardSubmitted?: boolean }} [opts] - guardSubmitted (the SAVE path) re-reads in a
+ *   transaction and skips the write if the doc was already submitted, so a racing
+ *   progress save can't revert a finalized diagnosis back to in-progress.
+ * 
+ *   Submit does not use this helper. It finalizes through submitSelfReportCancerDxTransaction so DxNumber is assigned
+ *   atomically.
+ */
+const writeSelfReportCancerDxDoc = async (docId, data, { guardSubmitted = false } = {}) => {
+    const write = async () => {
+        if (!docId) { await db.collection('selfReportCancerDx').add(data); return; }
+        const ref = db.collection('selfReportCancerDx').doc(docId);
+        if (!guardSubmitted) { await ref.set(data); return; }
+        const { isSubmittedDiagnosis } = require('./selfReportCancerDx');
+        await db.runTransaction(async (transaction) => {
+            const snap = await transaction.get(ref);
+            if (snap.exists && isSubmittedDiagnosis(snap.data() || {})) return; // finalized — don't revert
+            transaction.set(ref, data);
+        });
+    };
+
+    try {
+        await firestoreWriteWithAutoRetry(write, 'writeSelfReportCancerDxDoc');
+    } catch (error) {
+        console.error('Error in writeSelfReportCancerDxDoc:', error);
+        throw new Error(`Write Self-Report Cancer Dx failed: ${error.message}`);
+    }
+};
+
+/**
+ * Finalize one Self-Report Cancer Diagnosis doc. DxNumber is a participant-wide sequence.
+ * Reuses the in-progress doc when present (the common path), else creates a new doc.
+ * @param {string} uid - Firebase auth uid (verified by the router).
+ * @param {(ctx: {inProgressDoc: {docId: string, data: object}|null, submittedDiagnoses: object[]}) => object} buildFinalDoc
+ *   - returns the full finalized document, given the in-progress doc and the already-submitted diagnoses.
+ * @returns {Promise<{docId: string}>}
+ */
+const submitSelfReportCancerDxTransaction = async (uid, buildFinalDoc) => {
+    const { partitionDiagnosisDocs } = require('./selfReportCancerDx');
+    const collection = db.collection('selfReportCancerDx');
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const snapshot = await transaction.get(collection.where('uid', '==', uid));
+            const diagnosisDocs = snapshot.docs.map((doc) => ({ docId: doc.id, data: doc.data() }));
+            const { inProgressDoc, submittedDocs } = partitionDiagnosisDocs(diagnosisDocs);
+            const ref = inProgressDoc?.docId ? collection.doc(inProgressDoc.docId) : collection.doc();
+            transaction.set(ref, buildFinalDoc({
+                inProgressDoc,
+                submittedDiagnoses: submittedDocs.map((doc) => doc.data),
+            }));
+            return { docId: ref.id };
+        });
+    } catch (error) {
+        console.error('Error in submitSelfReportCancerDxTransaction:', error);
+        throw new Error(`Submit Self-Report Cancer Dx failed: ${error.message}`);
+    }
+};
+
+/**
  * Occasionally, birthday card data needs to be updated based on return data from the post office.
  * Check for duplicate birthday card data before writing to Firestore.
  * An existing birthday card is one with the same token, mailDate, and cardVersion.
@@ -7261,6 +7351,9 @@ module.exports = {
     queryKitsByShippedAndAssignedStatus,
     getParticipantCancerOccurrences,
     writeCancerOccurrences,
+    getSelfReportCancerDxDocs,
+    writeSelfReportCancerDxDoc,
+    submitSelfReportCancerDxTransaction,
     writeBirthdayCard,
     getExistingBirthdayCard,
     updateParticipantCorrection,
