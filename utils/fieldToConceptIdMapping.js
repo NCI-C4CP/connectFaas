@@ -406,7 +406,7 @@ module.exports = {
         dxNumber: 480939157,            // computed at submission time
         surveyLanguage: 784119588,
         primarySite: 181737942,
-        primarySiteOther: 546976551,    // required if primarySite === cancerSites.other (807835037) TODO (CID)
+        primarySiteOther: 546976551,    // required if primarySite === cancerSites.other (807835037)
         dxMonth: 299768751,
         dxYear: 908235757,
         txReceived: 874288004,
