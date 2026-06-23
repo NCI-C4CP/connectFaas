@@ -12,25 +12,38 @@ const { setupTestSuite } = require('../shared/testHelpers');
 let firestore;
 let mod;
 let fieldMapping;
+let selfReportCancerCIDs;
+let cancerSiteCIDs;
+let monthCIDs;
+let YES;
+let NO;
 
 beforeAll(() => {
     setupTestSuite({ setupConsole: false, setupModuleMocks: true });
     firestore = require('../../utils/firestore');
     mod = require('../../utils/selfReportCancerDx');
     fieldMapping = require('../../utils/fieldToConceptIdMapping');
+    selfReportCancerCIDs = fieldMapping.selfReportCancerDx;
+    cancerSiteCIDs = fieldMapping.cancerSites;
+    monthCIDs = selfReportCancerCIDs.monthResponses.map(String);
+    YES = String(fieldMapping.yes);
+    NO = String(fieldMapping.no);
 });
 
 const UID = 'uid-test-1';
 const DX_NUMBER_KEY = 'D_480939157';
 const BREAST_DXDT_KEY = 'D_104045590';
 const PROSTATE_DXDT_KEY = 'D_199928758';
+// Keep payload keys literal to mirror Quest-flat D_<cid> snapshots. Map response cids where names exist.
+const responseCid = (cid) => String(cid);
 
-const invoke = async (handler, method, body) => {
+const invoke = async (handler, method, body, query = {}) => {
     const req = httpMocks.createRequest({
         method,
         headers: { 'x-forwarded-for': 'dummy' },
         connection: {},
         body,
+        query,
     });
     const res = httpMocks.createResponse();
     await handler(req, res, UID);
@@ -41,24 +54,24 @@ const OP = { stateJSON: '{"v":3,"state":{}}', positionJSON: '{"screenId":"diagno
 
 // Minimal valid submit: prostate (not screening-eligible), no treatment.
 const minimalSubmit = () => ({
-    D_181737942: '295976386',
+    D_181737942: responseCid(cancerSiteCIDs.prostate),
     D_908235757: '2024',
-    D_874288004: '104430631',
+    D_874288004: NO,
     ...OP,
 });
 
 // Full valid submit: breast + chemo (T1, ongoing) + screening breast2D (S1).
 const breastSubmit = () => ({
-    D_181737942: '847945207',
-    D_299768751: '615680906',
+    D_181737942: responseCid(cancerSiteCIDs.breast),
+    D_299768751: monthCIDs[10],
     D_908235757: '2024',
-    D_874288004: '353358909',
-    D_244216107: '353358909', D_293873603: '104430631', D_555019890: '104430631', D_459406752: '104430631',
+    D_874288004: YES,
+    D_244216107: YES, D_293873603: NO, D_555019890: NO, D_459406752: NO,
     D_281136649_1_1: '2024',
-    D_735592270_1_1: '353358909',
-    D_944065539: '353358909',
-    D_425815239: '353358909', D_759642936: '104430631', D_528508094: '104430631',
-    D_502929020: '104430631', D_412252588: '104430631',
+    D_735592270_1_1: YES,
+    D_944065539: YES,
+    D_425815239: YES, D_759642936: NO, D_528508094: NO,
+    D_502929020: NO, D_412252588: NO,
     D_858052564_1_1: '2017',
     ...OP,
 });
@@ -88,6 +101,28 @@ afterEach(() => {
 const writtenDoc = () => writeSpy.mock.calls.at(-1)[1];
 const writtenDocId = () => writeSpy.mock.calls.at(-1)[0];
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+describe('storeSelfReportCancerDx — combined write endpoint', () => {
+    it('requires action=save or action=submit', async () => {
+        const res = await invoke(mod.storeSelfReportCancerDx, 'POST', minimalSubmit());
+        expect(res.statusCode).toBe(400);
+        expect(res._getJSONData().message).toContain("action must be 'save' or 'submit'");
+    });
+
+    it('action=save stores progress without finalizing the diagnosis', async () => {
+        const res = await invoke(mod.storeSelfReportCancerDx, 'POST', minimalSubmit(), { action: 'save' });
+        expect(res.statusCode).toBe(200);
+        expect(writtenDocId()).toBeNull();
+        expect(writtenDoc()[DX_NUMBER_KEY]).toBeUndefined();
+    });
+
+    it('action=submit validates and finalizes the diagnosis', async () => {
+        const res = await invoke(mod.storeSelfReportCancerDx, 'POST', minimalSubmit(), { action: 'submit' });
+        expect(res.statusCode).toBe(200);
+        expect(writtenDoc()[DX_NUMBER_KEY]).toBe('1');
+        expect(writtenDoc()[PROSTATE_DXDT_KEY]).toMatch(ISO_RE);
+    });
+});
 
 describe('saveSelfReportCancerDxProgress — guards & shape', () => {
     it('rejects non-POST', async () => {
@@ -121,12 +156,21 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
         expect(submit.statusCode).toBe(400);
     });
 
+        it('rejects unspeced completion metadata', async () => {
+        const save = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', { ...minimalSubmit(), COMPLETED: true });
+        expect(save.statusCode).toBe(400);
+        expect(save._getJSONData().message).toContain('COMPLETED');
+        const submit = await invoke(mod.submitSelfReportCancerDx, 'POST', { ...minimalSubmit(), COMPLETED_TS: '2026-01-01T00:00:00.000Z' });
+        expect(submit.statusCode).toBe(400);
+        expect(submit._getJSONData().message).toContain('COMPLETED_TS');
+    });
+
     it('accepts loop keys, two-index keys, and the operational keys', async () => {
         const res = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', {
             ...minimalSubmit(),
             D_281136649_2_2: '2024',
             D_964819753_1_10: 'Maya',
-            784119588: 163149180,                    // surveyLanguage: numeric value allowed
+            [selfReportCancerCIDs.surveyLanguage]: fieldMapping.english, // surveyLanguage: numeric value allowed
             [fieldMapping.docLastUpdatedTimestamp]: '2026-06-12T00:00:00.000Z', // lastUpdated: ISO string
         });
         expect(res.statusCode).toBe(200);
@@ -158,14 +202,15 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
             ...minimalSubmit(),
             [DX_NUMBER_KEY]: '7',                    // DxNumber
             [BREAST_DXDT_KEY]: '2026-01-01T00:00:00.000Z', // breast DxDt
-            COMPLETED: true,
+            startedAt: '1999-01-01T00:00:00.000Z',
             uid: 'spoofed',
         });
         expect(res.statusCode).toBe(200);
         const doc = writtenDoc();
         expect(DX_NUMBER_KEY in doc).toBe(false);
         expect(BREAST_DXDT_KEY in doc).toBe(false);
-        expect('COMPLETED' in doc).toBe(false);
+        expect(doc.startedAt).not.toBe('1999-01-01T00:00:00.000Z');
+        expect(doc.startedAt).toMatch(ISO_RE);
         expect(doc.uid).toBe(UID);                  // server's own identity
     });
 
@@ -186,37 +231,35 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
 });
 
 describe('saveSelfReportCancerDxProgress — upsert replace semantics', () => {
-    it('first save creates (docId null) with no DxNumber, ISO STARTED_TS, and identity', async () => {
+    it('first save creates (docId null) with no DxNumber, ISO startedAt, and identity', async () => {
         const res = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', minimalSubmit());
         expect(res.statusCode).toBe(200);
         expect(writtenDocId()).toBeNull();
         const doc = writtenDoc();
         expect(DX_NUMBER_KEY in doc).toBe(false);
-        expect('COMPLETED' in doc).toBe(false);
-        expect('COMPLETED_TS' in doc).toBe(false);
-        expect(doc.STARTED_TS).toMatch(ISO_RE);
+        expect(doc.startedAt).toMatch(ISO_RE);
         expect(doc.uid).toBe(UID);
         expect(doc.token).toBe('tok-1');
         expect(doc.Connect_ID).toBe(1234567890);
     });
 
-    it('later saves replace the in-progress doc: dropped fields disappear, STARTED_TS survives', async () => {
+    it('later saves replace the in-progress doc: dropped fields disappear, startedAt survives', async () => {
         firestore.getSelfReportCancerDxDocs.mockResolvedValue({
             inProgressDoc: {
                 docId: 'doc-123',
-                data: { D_874288004: '104430631', STARTED_TS: '2026-06-10T10:00:00.000Z' },
+                data: { D_874288004: NO, startedAt: '2026-06-10T10:00:00.000Z' },
             },
             submittedDiagnoses: [],
         });
         // Back from Q3: the new snapshot no longer carries D_874288004.
         const res = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', {
-            D_181737942: '295976386', D_908235757: '2024', ...OP,
+            D_181737942: responseCid(cancerSiteCIDs.prostate), D_908235757: '2024', ...OP,
         });
         expect(res.statusCode).toBe(200);
         expect(writtenDocId()).toBe('doc-123');
         const doc = writtenDoc();
         expect('D_874288004' in doc).toBe(false);                  // Back-deletion via replace
-        expect(doc.STARTED_TS).toBe('2026-06-10T10:00:00.000Z');   // carried forward
+        expect(doc.startedAt).toBe('2026-06-10T10:00:00.000Z');    // carried forward
     });
 });
 
@@ -274,13 +317,13 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         const noSite = minimalSubmit(); delete noSite.D_181737942;
         await expect400(noSite, 'primary site');
         await expect400({ ...minimalSubmit(), D_181737942: '999999999' }, 'primary site');
-        await expect400({ ...minimalSubmit(), D_181737942: '178420302' }, 'primary site'); // unavailableUnknown: chart-review only
+        await expect400({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.unavailableUnknown) }, 'primary site'); // unavailableUnknown: chart-review only
     });
 
     it('Other-describe XOR (required iff site = other)', async () => {
-        await expect400({ ...minimalSubmit(), D_181737942: '807835037' }, '546976551');
-        await expect400({ ...minimalSubmit(), D_546976551: 'Gallbladder' }, '546976551');
-        const ok = await submit({ ...minimalSubmit(), D_181737942: '807835037', D_546976551: 'Gallbladder' });
+        await expect400({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) }, String(selfReportCancerCIDs.primarySiteOther));
+        await expect400({ ...minimalSubmit(), D_546976551: 'Gallbladder' }, String(selfReportCancerCIDs.primarySiteOther));
+        const ok = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other), D_546976551: 'Gallbladder' });
         expect(ok.statusCode).toBe(200);
     });
 
@@ -293,7 +336,7 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
 
     it('dxMonth must be a month response cid when present', async () => {
         await expect400({ ...minimalSubmit(), D_299768751: '12' }, 'month');
-        const ok = await submit({ ...minimalSubmit(), D_299768751: '286592124' });
+        const ok = await submit({ ...minimalSubmit(), D_299768751: monthCIDs[0] });
         expect(ok.statusCode).toBe(200);
     });
 
@@ -305,10 +348,10 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
 
     it('txReceived=yes needs >=1 type flag and contiguous valid iterations', async () => {
         const b = breastSubmit();
-        await expect400({ ...b, D_244216107: '104430631' }, 'treatment type');            // zero selected
-        const twoTypes = { ...b, D_293873603: '353358909' };                              // chemo+surgery, K=2
+        await expect400({ ...b, D_244216107: NO }, 'treatment type');                     // zero selected
+        const twoTypes = { ...b, D_293873603: YES };                                      // chemo+surgery, K=2
         await expect400(twoTypes, 'start year');                                          // missing _2_2 start year
-        const stray = { ...b, D_281136649_3_3: '2024', D_735592270_3_3: '104430631' };
+        const stray = { ...b, D_281136649_3_3: '2024', D_735592270_3_3: NO };
         await expect400(stray, 'loop');                                                   // index 3 with K=1
         await expect400({ ...b, D_281136649_1_1: String(new Date().getFullYear() + 6) }, 'start year');
         const scheduled = { ...b, D_281136649_1_1: String(new Date().getFullYear() + 5) };
@@ -326,34 +369,34 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
     it('Ongoing XOR end date; end fields format-checked', async () => {
         const b = breastSubmit();
         await expect400({ ...b, D_729162012_1_1: '2025' }, 'ongoing');                    // ongoing=yes + end year
-        const notOngoing = { ...b, D_735592270_1_1: '104430631', D_729162012_1_1: '2025', D_625530863_1_1: '526483288' };
+        const notOngoing = { ...b, D_735592270_1_1: NO, D_729162012_1_1: '2025', D_625530863_1_1: monthCIDs[4] };
         expect((await submit(notOngoing)).statusCode).toBe(200);
         await expect400({ ...notOngoing, D_625530863_1_1: '13' }, 'month');
     });
 
     it('Flat treatment other-describe XOR the Other type flag', async () => {
-        const b = { ...breastSubmit(), D_459406752: '353358909', D_281136649_2_2: '2024', D_735592270_2_2: '353358909' };
-        await expect400(b, '420392069');                                                  // other selected, no describe
+        const b = { ...breastSubmit(), D_459406752: YES, D_281136649_2_2: '2024', D_735592270_2_2: YES };
+        await expect400(b, String(selfReportCancerCIDs.treatment.otherDescribe));          // other selected, no describe
         const ok = await submit({ ...b, D_420392069: 'Immunotherapy' });
         expect(ok.statusCode).toBe(200);
-        await expect400({ ...breastSubmit(), D_420392069: 'Immunotherapy' }, '420392069'); // describe w/o other flag
+        await expect400({ ...breastSubmit(), D_420392069: 'Immunotherapy' }, String(selfReportCancerCIDs.treatment.otherDescribe)); // describe w/o other flag
     });
 
     it('txReceived=no forbids every treatment-section key', async () => {
-        await expect400({ ...minimalSubmit(), D_244216107: '104430631' }, 'treatment');
+        await expect400({ ...minimalSubmit(), D_244216107: NO }, 'treatment');
         await expect400({ ...minimalSubmit(), D_281136649_1_1: '2024' }, 'treatment');
     });
 
     it('Screening gate required for eligible sites, forbidden otherwise', async () => {
-        await expect400({ ...minimalSubmit(), D_944065539: '104430631' }, 'screening');   // prostate
+        await expect400({ ...minimalSubmit(), D_944065539: NO }, 'screening');            // prostate
         const breastNoGate = breastSubmit(); delete breastNoGate.D_944065539;
         await expect400(breastNoGate, 'screening');
     });
 
     it('detected=yes needs site-valid chosen options and contiguous iterations', async () => {
         const b = breastSubmit();
-        await expect400({ ...b, D_425815239: '104430631' }, 'screening');                 // zero chosen
-        await expect400({ ...b, D_633630015: '353358909' }, 'screening');                 // lungCT on breast
+        await expect400({ ...b, D_425815239: NO }, 'screening');                          // zero chosen
+        await expect400({ ...b, D_633630015: YES }, 'screening');                         // lungCT on breast
         const noYear = { ...b }; delete noYear.D_858052564_1_1;
         await expect400(noYear, 'screening year');
         await expect400({ ...b, D_858052564_2_2: '2018' }, 'loop');                       // index 2 with M=1
@@ -367,22 +410,22 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
     });
 
     it('detected=no forbids option flags and screening loops', async () => {
-        const b = { ...breastSubmit(), D_944065539: '104430631' };
+        const b = { ...breastSubmit(), D_944065539: NO };
         await expect400(b, 'screening');                                                  // option flags still present
-        const clean = { ...minimalSubmit(), D_181737942: '847945207', D_944065539: '104430631' };
+        const clean = { ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.breast), D_944065539: NO };
         expect((await submit(clean)).statusCode).toBe(200);
     });
 
     it('Every month value must be a month response cid', async () => {
         await expect400({ ...breastSubmit(), D_742710886_1_1: '0' }, 'month');
-        const ok = await submit({ ...breastSubmit(), D_742710886_1_1: '286592124' });
+        const ok = await submit({ ...breastSubmit(), D_742710886_1_1: monthCIDs[0] });
         expect(ok.statusCode).toBe(200);
     });
 
     it('A same-site same-year resubmit succeeds with the next dxNumber', async () => {
         firestore.getSelfReportCancerDxDocs.mockResolvedValue({
             inProgressDoc: null,
-            submittedDiagnoses: [{ D_181737942: '295976386', D_908235757: '2024', [DX_NUMBER_KEY]: '1', [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' }],
+            submittedDiagnoses: [{ D_181737942: responseCid(cancerSiteCIDs.prostate), D_908235757: '2024', [DX_NUMBER_KEY]: '1', [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' }],
         });
         const res = await invoke(mod.submitSelfReportCancerDx, 'POST', minimalSubmit());
         expect(res.statusCode).toBe(200);
@@ -395,9 +438,9 @@ describe('submitSelfReportCancerDx — finalization', () => {
         firestore.getSelfReportCancerDxDocs.mockResolvedValue({
             inProgressDoc: null,
             submittedDiagnoses: [
-                { D_181737942: '295976386', [DX_NUMBER_KEY]: '1', [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' },
-                { D_181737942: '295976386', [DX_NUMBER_KEY]: '2', [PROSTATE_DXDT_KEY]: '2026-06-02T00:00:00.000Z' },
-                { D_181737942: '847945207', [DX_NUMBER_KEY]: '3', [BREAST_DXDT_KEY]: '2026-06-03T00:00:00.000Z' },
+                { D_181737942: responseCid(cancerSiteCIDs.prostate), [DX_NUMBER_KEY]: '1', [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' },
+                { D_181737942: responseCid(cancerSiteCIDs.prostate), [DX_NUMBER_KEY]: '2', [PROSTATE_DXDT_KEY]: '2026-06-02T00:00:00.000Z' },
+                { D_181737942: responseCid(cancerSiteCIDs.breast), [DX_NUMBER_KEY]: '3', [BREAST_DXDT_KEY]: '2026-06-03T00:00:00.000Z' },
             ],
         });
         const res = await invoke(mod.submitSelfReportCancerDx, 'POST', minimalSubmit());
@@ -407,7 +450,7 @@ describe('submitSelfReportCancerDx — finalization', () => {
 
     it('stamps exactly one site dxDt, strips op strings, and reuses the doc', async () => {
         firestore.getSelfReportCancerDxDocs.mockResolvedValue({
-            inProgressDoc: { docId: 'doc-9', data: { STARTED_TS: '2026-06-10T10:00:00.000Z' } },
+            inProgressDoc: { docId: 'doc-9', data: { startedAt: '2026-06-10T10:00:00.000Z' } },
             submittedDiagnoses: [],
         });
         const res = await invoke(mod.submitSelfReportCancerDx, 'POST', breastSubmit());
@@ -418,10 +461,8 @@ describe('submitSelfReportCancerDx — finalization', () => {
         const dxDtKeys = Object.values(fieldMapping.selfReportCancerDx.siteToDxDtCid)
             .map((cid) => `D_${cid}`).filter((k) => k in doc);
         expect(dxDtKeys).toEqual([BREAST_DXDT_KEY]);             // exactly one
-        expect('COMPLETED' in doc).toBe(false);
-        expect('COMPLETED_TS' in doc).toBe(false);
         expect(doc[fieldMapping.docLastUpdatedTimestamp]).toBe(doc[BREAST_DXDT_KEY]);
-        expect(doc.STARTED_TS).toBe('2026-06-10T10:00:00.000Z'); // carried from in-progress
+        expect('startedAt' in doc).toBe(false);                   // in-progress metadata only
         expect('stateJSON' in doc).toBe(false);
         expect('positionJSON' in doc).toBe(false);
         expect(doc.uid).toBe(UID);
@@ -446,10 +487,10 @@ describe('getSelfReportCancerDx', () => {
 
     it('returns { data: { inProgress, submitted }, code: 200 } with stateJSON intact', async () => {
         firestore.getSelfReportCancerDxDocs.mockResolvedValue({
-            inProgressDoc: { docId: 'd1', data: { D_181737942: '847945207', stateJSON: '{"v":3,"state":{}}' } },
+            inProgressDoc: { docId: 'd1', data: { D_181737942: responseCid(cancerSiteCIDs.breast), stateJSON: '{"v":3,"state":{}}' } },
             submittedDiagnoses: [
-                { D_181737942: '295976386', [DX_NUMBER_KEY]: '2', [PROSTATE_DXDT_KEY]: '2026-06-02T00:00:00.000Z' },
-                { D_181737942: '847945207', [DX_NUMBER_KEY]: '1', [BREAST_DXDT_KEY]: '2026-06-01T00:00:00.000Z' },
+                { D_181737942: responseCid(cancerSiteCIDs.prostate), [DX_NUMBER_KEY]: '2', [PROSTATE_DXDT_KEY]: '2026-06-02T00:00:00.000Z' },
+                { D_181737942: responseCid(cancerSiteCIDs.breast), [DX_NUMBER_KEY]: '1', [BREAST_DXDT_KEY]: '2026-06-01T00:00:00.000Z' },
             ],
         });
         const res = await invoke(mod.getSelfReportCancerDx, 'GET');
@@ -471,8 +512,8 @@ describe('partitionDiagnosisDocs (pure helper for the firestore query)', () => {
     it('partitions by DxNumber and keeps the newest in-progress doc on corruption', () => {
         const diagnosisDocs = [
             { docId: 'a', data: { [DX_NUMBER_KEY]: '1', [BREAST_DXDT_KEY]: '2026-06-01T00:00:00.000Z' } },
-            { docId: 'b', data: { STARTED_TS: '2026-06-01T00:00:00.000Z' } },
-            { docId: 'c', data: { STARTED_TS: '2026-06-11T00:00:00.000Z' } }, // newest wins
+            { docId: 'b', data: { startedAt: '2026-06-01T00:00:00.000Z' } },
+            { docId: 'c', data: { startedAt: '2026-06-11T00:00:00.000Z' } }, // newest wins
         ];
         const out = mod.partitionDiagnosisDocs(diagnosisDocs);
         expect(out.inProgressDoc.docId).toBe('c');
@@ -491,7 +532,7 @@ describe('validateSnapshotShape: structural whitelist', () => {
         expect(mod.validateSnapshotShape(minimalSubmit())).toEqual([]);
     });
     it('rejects a scalar cid carrying a loop suffix', () => {
-        rejects({ D_181737942_1_1: '295976386' }, 'D_181737942_1_1'); // primarySite is scalar
+        rejects({ D_181737942_1_1: responseCid(cancerSiteCIDs.prostate) }, 'D_181737942_1_1'); // primarySite is scalar
     });
     it('rejects a loop cid used WITHOUT a loop suffix', () => {
         rejects({ D_281136649: '2024' }, 'D_281136649'); // startYear is a loop cid

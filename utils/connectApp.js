@@ -5,7 +5,7 @@ const { retrievePhysicalActivityReport } = require('./reports');
 const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentication, validateUsersEmailPhone, emailAddressValidation, validateToken } = require('./validation');
 const { addressValidation } = require('./usps');
 const { searchNPIRegistry } = require('./npiRegistry');
-const { saveSelfReportCancerDxProgress, submitSelfReportCancerDx, getSelfReportCancerDx } = require('./selfReportCancerDx');
+const { storeSelfReportCancerDx, getSelfReportCancerDx } = require('./selfReportCancerDx');
 const { getMySamples } = require("./firestore");
 
 const connectApp = async (req, res) => {
@@ -125,9 +125,7 @@ const connectApp = async (req, res) => {
 
     else if (api === 'searchNPIRegistry') return await searchNPIRegistry(req, res);
 
-    else if (api === 'saveSelfReportCancerDxProgress') return await saveSelfReportCancerDxProgress(req, res, uid);
-
-    else if (api === 'submitSelfReportCancerDx') return await submitSelfReportCancerDx(req, res, uid);
+    else if (api === 'storeSelfReportCancerDx') return await storeSelfReportCancerDx(req, res, uid);
 
     else if (api === 'getSelfReportCancerDx') return await getSelfReportCancerDx(req, res, uid);
 

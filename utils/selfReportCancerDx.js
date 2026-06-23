@@ -22,12 +22,13 @@ const SELF_REPORT_CANCER_DX_COLLECTION = 'selfReportCancerDx';
 const selfReportCancerCIDs = fieldMapping.selfReportCancerDx;
 const DOC_LAST_UPDATED = fieldMapping.docLastUpdatedTimestamp;
 const DX_NUMBER_KEY = `D_${selfReportCancerCIDs.dxNumber}`;
+const STARTED_AT_KEY = 'startedAt';
 const YES = String(fieldMapping.yes);
 const NO = String(fieldMapping.no);
 const YES_NO = new Set([YES, NO]);
 
-const MONTH_CIDS = new Set(selfReportCancerCIDs.monthResponseCids.map(String));
-const SITE_CIDS = new Set(selfReportCancerCIDs.siteResponseCids.map(String));
+const MONTH_CIDS = new Set(selfReportCancerCIDs.monthResponses.map(String));
+const SITE_CIDS = new Set(selfReportCancerCIDs.siteResponses.map(String));
 const ELIGIBLE_SITE_CIDS = new Set(selfReportCancerCIDs.screeningEligibleSiteCids.map(String));
 const OTHER_SITE_CID = String(fieldMapping.cancerSites.other);
 
@@ -73,11 +74,11 @@ const MAX_LOOP_POSITION = 10;  // <=10 physicians per the spec. <= 10 facilities
 
 const KEY_RE = /^D_(\d{9})(?:_([1-9]\d?)_([1-9]\d?))?$/;
 const OP_KEYS = new Set(['stateJSON', 'positionJSON', String(selfReportCancerCIDs.surveyLanguage), String(DOC_LAST_UPDATED)]);
-// COMPLETED/COMPLETED_TS are legacy/spoof keys: strip if sent, but never write them.
+// Strip server-owned metadata if sent by a client.
 const SERVER_OWNED_KEYS = new Set([
     DX_NUMBER_KEY,
     ...Object.values(selfReportCancerCIDs.siteToDxDtCid).map((cid) => `D_${cid}`),
-    'COMPLETED', 'COMPLETED_TS', 'STARTED_TS', 'uid', 'token', 'Connect_ID',
+    STARTED_AT_KEY, 'uid', 'token', 'Connect_ID',
 ]);
 
 const MAX_D_VALUE_LENGTH = 800;   // spec write-in cap
@@ -306,13 +307,15 @@ const submittedTimestampOf = (diagnosis = {}) => {
     return dxDtCid ? diagnosis[`D_${dxDtCid}`] || '' : '';
 };
 
-/** Partition Firestore docs for the query. Newest STARTED_TS wins if in-progress docs multiply. */
+const startedAtOf = (diagnosis = {}) => diagnosis[STARTED_AT_KEY] || '';
+
+/** Partition Firestore docs for the query. Newest startedAt wins if in-progress docs multiply. */
 const partitionDiagnosisDocs = (diagnosisDocs) => {
     const inProgressDocs = diagnosisDocs.filter((doc) => !isSubmittedDiagnosis(doc.data));
     const submittedDocs = diagnosisDocs.filter((doc) => isSubmittedDiagnosis(doc.data));
     let inProgressDoc = null;
     if (inProgressDocs.length) {
-        inProgressDoc = inProgressDocs.reduce((a, b) => (String(a.data.STARTED_TS || '') >= String(b.data.STARTED_TS || '') ? a : b));
+        inProgressDoc = inProgressDocs.reduce((a, b) => (String(startedAtOf(a.data)) >= String(startedAtOf(b.data)) ? a : b));
         if (inProgressDocs.length > 1) {
             console.error(`selfReportCancerDx: ${inProgressDocs.length} in-progress docs for one participant; using the newest.`);
         }
@@ -350,26 +353,45 @@ const ineligibilityReason = (profile) => {
 };
 
 /**
- * Save the in-progress snapshot: upsert-replace the participant's single in-progress doc.
- * */
-const saveSelfReportCancerDxProgress = async (req, res, uid) => {
+ * Common POST setup for self-report diagnosis writes.
+ */
+const prepareWriteRequest = async (req, res, uid) => {
     logIPAddress(req);
     setHeaders(res);
-    if (req.method !== 'POST') return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+    if (req.method !== 'POST') {
+        res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        return null;
+    }
 
     const raw = parseBody(req);
-    if (!raw) return res.status(400).json(getResponseJSON('Bad request: empty submission.', 400));
+    if (!raw) {
+        res.status(400).json(getResponseJSON('Bad request: empty submission.', 400));
+        return null;
+    }
 
     const body = stripServerOwnedKeys(raw);
     const shapeErrors = validateSnapshotShape(body);
-    if (shapeErrors.length) return res.status(400).json(getResponseJSON(`Bad request: ${shapeErrors.join('; ')}`, 400));
+    if (shapeErrors.length) {
+        res.status(400).json(getResponseJSON(`Bad request: ${shapeErrors.join('; ')}`, 400));
+        return null;
+    }
 
     const participant = await loadParticipant(uid);
-    if (!participant) return res.status(404).json(getResponseJSON('Token not found!', 404));
+    if (!participant) {
+        res.status(404).json(getResponseJSON('Token not found!', 404));
+        return null;
+    }
 
     const ineligible = ineligibilityReason(participant.profile);
-    if (ineligible) return res.status(403).json(getResponseJSON(`Not eligible to report a new diagnosis: ${ineligible}.`, 403));
+    if (ineligible) {
+        res.status(403).json(getResponseJSON(`Not eligible to report a new diagnosis: ${ineligible}.`, 403));
+        return null;
+    }
 
+    return { body, participant };
+};
+
+const saveProgressSnapshot = async (res, uid, body, participant) => {
     const { getSelfReportCancerDxDocs, writeSelfReportCancerDxDoc } = require('./firestore');
     const { inProgressDoc } = await getSelfReportCancerDxDocs(uid);
     const now = new Date().toISOString();
@@ -379,36 +401,16 @@ const saveSelfReportCancerDxProgress = async (req, res, uid) => {
         uid,
         token: participant.token,
         Connect_ID: participant.connectId,
-        STARTED_TS: inProgressDoc?.data?.STARTED_TS || now,
+        [STARTED_AT_KEY]: startedAtOf(inProgressDoc?.data) || now,
     };
     
     await writeSelfReportCancerDxDoc(inProgressDoc?.docId ?? null, diagnosisDoc, { guardSubmitted: true });
     return res.status(200).json(getResponseJSON('Progress saved successfully!', 200));
 };
 
-/**
- * Validate and finalize one append-only diagnosis doc. Reuses the in-progress doc when present.
- * */
-const submitSelfReportCancerDx = async (req, res, uid) => {
-    logIPAddress(req);
-    setHeaders(res);
-    if (req.method !== 'POST') return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
-
-    const raw = parseBody(req);
-    if (!raw) return res.status(400).json(getResponseJSON('Bad request: empty submission.', 400));
-
-    const body = stripServerOwnedKeys(raw);
-    const shapeErrors = validateSnapshotShape(body);
-    if (shapeErrors.length) return res.status(400).json(getResponseJSON(`Bad request: ${shapeErrors.join('; ')}`, 400));
-
+const submitDiagnosisSnapshot = async (res, uid, body, participant) => {
     const validation = validateSubmission(body);
     if (validation.error) return res.status(400).json(getResponseJSON(validation.message, 400));
-
-    const participant = await loadParticipant(uid);
-    if (!participant) return res.status(404).json(getResponseJSON('Token not found!', 404));
-
-    const ineligible = ineligibilityReason(participant.profile);
-    if (ineligible) return res.status(403).json(getResponseJSON(`Not eligible to report a new diagnosis: ${ineligible}.`, 403));
 
     const { submitSelfReportCancerDxTransaction } = require('./firestore');
     const siteCid = body[`D_${selfReportCancerCIDs.primarySite}`];
@@ -424,9 +426,47 @@ const submitSelfReportCancerDx = async (req, res, uid) => {
         uid,
         token: participant.token,
         Connect_ID: participant.connectId,
-        STARTED_TS: inProgressDoc?.data?.STARTED_TS || now,
     }));
     return res.status(200).json(getResponseJSON('Diagnosis submitted successfully!', 200));
+};
+
+/**
+ * Combined write endpoint for the self-report cancer diagnosis module.
+ * Use query action=save for in-progress snapshots and action=submit for finalization.
+ */
+const storeSelfReportCancerDx = async (req, res, uid) => {
+    const action = String(req.query?.action || '').trim().toLowerCase();
+    if (!['save', 'submit'].includes(action)) {
+        logIPAddress(req);
+        setHeaders(res);
+        if (req.method !== 'POST') return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        return res.status(400).json(getResponseJSON("Bad request: action must be 'save' or 'submit'.", 400));
+    }
+
+    const context = await prepareWriteRequest(req, res, uid);
+    if (!context) return undefined;
+
+    return action === 'submit'
+        ? submitDiagnosisSnapshot(res, uid, context.body, context.participant)
+        : saveProgressSnapshot(res, uid, context.body, context.participant);
+};
+
+/**
+ * Save the in-progress snapshot: upsert-replace the participant's single in-progress doc.
+ * */
+const saveSelfReportCancerDxProgress = async (req, res, uid) => {
+    const context = await prepareWriteRequest(req, res, uid);
+    if (!context) return undefined;
+    return saveProgressSnapshot(res, uid, context.body, context.participant);
+};
+
+/**
+ * Validate and finalize one append-only diagnosis doc. Reuses the in-progress doc when present.
+ * */
+const submitSelfReportCancerDx = async (req, res, uid) => {
+    const context = await prepareWriteRequest(req, res, uid);
+    if (!context) return undefined;
+    return submitDiagnosisSnapshot(res, uid, context.body, context.participant);
 };
 
 /**
@@ -446,6 +486,7 @@ const getSelfReportCancerDx = async (req, res, uid) => {
 
 module.exports = {
     SELF_REPORT_CANCER_DX_COLLECTION,
+    storeSelfReportCancerDx,
     saveSelfReportCancerDxProgress,
     submitSelfReportCancerDx,
     getSelfReportCancerDx,
