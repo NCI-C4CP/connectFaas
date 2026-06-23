@@ -381,7 +381,7 @@ module.exports = {
         breast: 847945207,
         cervical: 283025574,
         colon: 942970912, // Colon/Rectal
-        espohageal: 596122041,
+        esophageal: 596122041,
         headAndNeck: 489400183, // Head and neck (Including cancers of the mouth, sinuses, nose, or throat. Not including brain or skin cancers)
         kidney: 863246236,
         leukemia: 607793249, // Leukemia (blood and bone marrow)
@@ -399,6 +399,69 @@ module.exports = {
         uterine: 723614811,
         other: 807835037,
         unavailableUnknown: 178420302,
+    },
+
+    // Self-Report Cancer Diagnosis survey ("Share New Health Information")
+    selfReportCancerDx: {
+        dxNumber: 480939157,            // computed at submission time
+        surveyLanguage: 784119588,
+        primarySite: 181737942,
+        primarySiteOther: 546976551,    // required if primarySite === cancerSites.other (807835037)
+        dxMonth: 299768751,
+        dxYear: 908235757,
+        txReceived: 874288004,
+        monthResponses: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
+            574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
+        // The 24 valid survey site response cids. NOT the cancerSites block above
+        siteResponses: [939782495, 135725957, 518416174, 847945207, 283025574, 942970912,
+            596122041, 489400183, 863246236, 607793249, 532172400, 754745617, 665036297,
+            200837530, 990319383, 487917585, 603181162, 482225200, 295976386, 764891959,
+            248374037, 139822395, 723614811, 807835037],
+        screeningEligibleSiteCids: [847945207, 942970912, 754745617], // breast, colon/rectal, lung
+        treatment: {
+            chemo: 244216107, surgery: 293873603, radiation: 555019890, other: 459406752,
+            otherDescribe: 420392069, // FLAT — no loop suffix
+            startMonth: 742710886, startYear: 281136649,
+            endMonth: 625530863, endYear: 729162012, ongoing: 735592270,
+            physFirstName: 964819753, physLastName: 740626474,
+            physNpi: "TODO_TxPhysNPI", // no cid yet
+            facility: {
+                line1: 165350319, line2: 456014563, line3: 783145717, line4: 460490909,
+                city: 493041638, state: 215797578,
+                zip: 385095107, intlFlag: 539812906, country: 785016438,
+            },
+        },
+        screening: {
+            detected: 944065539,
+            month: 853862770, year: 858052564,
+            phyFirstName: 239126548, phyLastName: 130343311,
+            phyNpi: "TODO_ScrnPhyNPI", // no cid yet
+            optionValues: {
+                breast2D: 425815239, breastCEM: 759642936, breastMRI: 528508094,
+                breastUS: 502929020, breastCBE: 412252588, lungCT: 633630015,
+                colonCol: 122234136, colonCT: 603167806, colonSig: 850849667, colonFecal: 644790673,
+            },
+            // option cids valid per screening-eligible site cid
+            optionCidsBySiteCid: {
+                847945207: [425815239, 759642936, 528508094, 502929020, 412252588], // breast
+                754745617: [633630015],                                             // lung
+                942970912: [122234136, 603167806, 850849667, 644790673],            // colon/rectal
+            },
+            facility: {
+                line1: 977505777, line2: 632951008, line3: 693368144, line4: 939355635,
+                city: 591687168, state: 513329248 /* merged state/region */,
+                zip: 404892571 /* merged zip/postal */, intlFlag: 501859375, country: 874199876,
+            },
+        },
+        // Per-site submitted-timestamp cid, keyed by the site response cid (ISO8601 strings).
+        siteToDxDtCid: {
+            939782495: 143842026, 135725957: 579509543, 518416174: 839528519, 847945207: 104045590,
+            283025574: 527292883, 942970912: 114795023, 596122041: 975331168, 489400183: 222780931,
+            863246236: 604888707, 607793249: 398142415, 532172400: 503350781, 754745617: 905053272,
+            665036297: 168528535, 200837530: 473167851, 990319383: 899795025, 487917585: 500318854,
+            603181162: 390590842, 482225200: 130360374, 295976386: 199928758, 764891959: 602773386,
+            248374037: 494409539, 139822395: 982594729, 723614811: 382789932, 807835037: 252291829,
+        },
     },
 
     // SSN Variables
