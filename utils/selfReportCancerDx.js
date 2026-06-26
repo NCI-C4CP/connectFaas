@@ -182,11 +182,11 @@ const validateSubmission = (body) => {
     const site = body[`D_${selfReportCancerCIDs.primarySite}`];
     if (!site || !SITE_CIDS.has(site)) return fail(`Invalid or missing primary site (${selfReportCancerCIDs.primarySite}).`);
 
-    // Rule 2: other-describe XOR
+    // Rule 2: optional other-describe. If supplied, it must only accompany primary site = Other.
     const describe = body[`D_${selfReportCancerCIDs.primarySiteOther}`];
-    const describeValid = typeof describe === 'string' && describe.trim().length > 0 && describe.trim().length <= 800;
+    const describeValid = describe === undefined || (typeof describe === 'string' && describe.trim().length <= 800);
     if (site === OTHER_SITE_CID ? !describeValid : describe !== undefined) {
-        return fail(`Other-describe (${selfReportCancerCIDs.primarySiteOther}) is required when primary site is Other; otherwise it must be omitted.`);
+        return fail(`Other-describe (${selfReportCancerCIDs.primarySiteOther}) is allowed only when primary site is Other.`);
     }
 
     // Rule 3: diagnosis year (never in the future)
@@ -196,24 +196,28 @@ const validateSubmission = (body) => {
     const dxMonth = body[`D_${selfReportCancerCIDs.dxMonth}`];
     if (dxMonth !== undefined && !MONTH_CIDS.has(dxMonth)) return fail(`Invalid diagnosis month (${selfReportCancerCIDs.dxMonth}).`);
 
-    // Rule 5: treatment received
+    // Rule 5: treatment received is optional. If omitted, the treatment section was not answered.
     const txReceived = body[`D_${selfReportCancerCIDs.txReceived}`];
-    if (!YES_NO.has(txReceived)) return fail(`Invalid or missing treatment-received flag (${selfReportCancerCIDs.txReceived}).`);
 
     const txLoopKeys = loopKeysOf(body, TX_LOOP_CIDS);
-    if (txReceived === NO) {
+    if (txReceived === undefined) {
+        if (hasAnyKey(body, [...TX_TYPE_CIDS, selfReportCancerCIDs.treatment.otherDescribe]) || txLoopKeys.length) {
+            return fail('Treatment fields are not allowed when treatment received is unanswered.');
+        }
+    } else if (!YES_NO.has(txReceived)) {
+        return fail(`Invalid treatment-received flag (${selfReportCancerCIDs.txReceived}).`);
+    } else if (txReceived === NO) {
         // Rule 9: section never displayed -> zero treatment keys
         if (hasAnyKey(body, [...TX_TYPE_CIDS, selfReportCancerCIDs.treatment.otherDescribe]) || txLoopKeys.length) {
             return fail('Treatment fields are not allowed when treatment received is No.');
         }
     } else {
         // Rule 6: the full treatment-type group must be present as explicit Yes/No. The frontend emits
-        // every displayed select-all option. A partial group breaks the Quest-flat analytics contract,
-        // with >=1 Yes and contiguous iterations.
+        // every displayed select-all option. A partial group breaks the Quest-flat analytics contract.
+        // Zero selected treatment types is allowed; it represents Q3 = Yes with no type selected.
         const flags = TX_TYPE_CIDS.map((cid) => body[`D_${cid}`]);
         if (flags.some((v) => !YES_NO.has(v))) return fail('Each treatment type flag (chemo/surgery/radiation/other) must be present as Yes/No when treatment received is Yes.');
         const K = flags.filter((v) => v === YES).length;
-        if (K === 0) return fail('At least one treatment type is required when treatment received is Yes.');
         for (const { first } of txLoopKeys) {
             if (first > K) return fail(`Unexpected treatment loop index ${first} (only ${K} treatment(s) selected).`);
         }
@@ -232,12 +236,12 @@ const validateSubmission = (body) => {
                 return fail(`Invalid treatment end year for iteration ${i}.`);
             }
         }
-        // Rule 8: flat other-describe XOR the Other type flag
+        // Rule 8: optional flat other-describe. If supplied, it must only accompany the Other type flag.
         const otherSelected = body[`D_${selfReportCancerCIDs.treatment.other}`] === YES;
         const txDescribe = body[`D_${selfReportCancerCIDs.treatment.otherDescribe}`];
-        const txDescribeValid = typeof txDescribe === 'string' && txDescribe.trim().length > 0 && txDescribe.trim().length <= 800;
+        const txDescribeValid = txDescribe === undefined || (typeof txDescribe === 'string' && txDescribe.trim().length <= 800);
         if (otherSelected ? !txDescribeValid : txDescribe !== undefined) {
-            return fail(`Treatment other-describe (${selfReportCancerCIDs.treatment.otherDescribe}) is required iff the Other treatment type is selected.`);
+            return fail(`Treatment other-describe (${selfReportCancerCIDs.treatment.otherDescribe}) is allowed only when the Other treatment type is selected.`);
         }
     }
 
@@ -338,17 +342,13 @@ const loadParticipant = async (uid) => {
 };
 
 /**
- * Server-side write eligibility for a new self-reported diagnosis (PHI). Verified, consenting, living participants only.
- * Mirrors the inactive participant rules. Verification status must equal `verified`, and none of the withdrawal / data-destruction / EMR-deceased flags may be Yes.
+ * Server-side write eligibility for a new self-reported diagnosis (PHI).
+ * Verification status must equal `verified`, and withdrawal may not be Yes.
  * Returns a short reason when ineligible, else null.
  */
 const ineligibilityReason = (profile) => {
     if (profile[fieldMapping.verificationStatus] !== fieldMapping.verified) return 'participant is not verified';
     if (profile[fieldMapping.withdrawConsent] === fieldMapping.yes) return 'participant has withdrawn consent';
-    if (profile[fieldMapping.participantMap.destroyData] === fieldMapping.yes) return 'participant has a pending data-destruction request';
-    if (profile[fieldMapping.participantDeceased] === fieldMapping.yes || profile[fieldMapping.participantDeceasedNORC] === fieldMapping.yes) {
-        return 'participant is recorded as deceased';
-    }
     return null;
 };
 

@@ -1096,6 +1096,7 @@ const removeParticipantsDataDestruction = async () => {
         }
     } catch (error) {
         console.error(`Error occurred when updating documents: ${error}`);
+        throw error;
     }
 };
 
@@ -1126,6 +1127,7 @@ const removeUninvitedParticipants = async () => {
         console.log(`Successfully deleted ${count} uninvited participants`)
     } catch (error) {
         console.error(`Error occurred when deleting documents: ${error}`);
+        throw error;
     }
 }
 

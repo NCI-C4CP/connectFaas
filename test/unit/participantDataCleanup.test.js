@@ -285,38 +285,91 @@ describe('Participant Data Cleanup', () => {
         it('should call both removeParticipantsDataDestruction and removeUninvitedParticipants', async () => {
             setupEmptyCollections();
             setupParticipantsQuery([]);
+            mocks.firestore.batch.mockReturnValue({
+                delete: vi.fn(),
+                commit: vi.fn().mockResolvedValue(),
+                set: vi.fn(),
+                update: vi.fn(),
+            });
 
-            await participantDataCleanupModule.participantDataCleanup();
-            // If no error is thrown, both functions ran successfully
+            await expect(participantDataCleanupModule.participantDataCleanup()).resolves.toEqual({
+                dataDestructionStatus: 'fulfilled',
+                uninvitedStatus: 'fulfilled',
+            });
         });
 
-        it('should not throw when removeParticipantsDataDestruction rejects', async () => {
-            // Sabotage the participants query to throw
+        it('should throw when removeParticipantsDataDestruction rejects', async () => {
+            const emptySnapshot = { empty: true, size: 0, docs: [] };
+            const dataDestructionQuery = {
+                where: vi.fn().mockReturnThis(),
+                get: vi.fn().mockRejectedValue(new Error('Firestore unavailable')),
+            };
+            const uninvitedQuery = {
+                limit: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue(emptySnapshot),
+            };
+            mocks.firestore.batch.mockReturnValue({
+                delete: vi.fn(),
+                commit: vi.fn().mockResolvedValue(),
+                set: vi.fn(),
+                update: vi.fn(),
+            });
+
             mocks.firestore.collection.mockImplementation((path) => {
                 if (path === 'participants') {
                     return {
-                        where: vi.fn().mockReturnValue({
-                            where: vi.fn().mockReturnValue({
-                                get: vi.fn().mockRejectedValue(new Error('Firestore unavailable')),
-                            }),
-                        }),
+                        where: vi.fn((field) => (
+                            field === destroyDataCId()
+                                ? dataDestructionQuery
+                                : uninvitedQuery
+                        )),
                     };
                 }
                 return { where: vi.fn().mockReturnThis(), get: vi.fn().mockResolvedValue({ empty: true, size: 0, docs: [] }) };
             });
 
-            // Should not throw — Promise.allSettled handles the rejection
-            await participantDataCleanupModule.participantDataCleanup();
+            await expect(participantDataCleanupModule.participantDataCleanup())
+                .rejects.toThrow('Participant data cleanup failed: removeParticipantsDataDestruction: Firestore unavailable');
         });
 
-        it('should not throw when removeUninvitedParticipants rejects', async () => {
-            // Set up a working data-destruction path and a broken uninvited path.
-            // The uninvited query is on the same 'participants' collection so
-            // this is tricky — we'll just verify the orchestrator doesn't throw.
-            setupEmptyCollections();
-            setupParticipantsQuery([]);
+        it('should return HTTP 500 when removeUninvitedParticipants rejects', async () => {
+            const emptySnapshot = { empty: true, size: 0, docs: [] };
+            const dataDestructionQuery = {
+                where: vi.fn().mockReturnThis(),
+                get: vi.fn().mockResolvedValue(emptySnapshot),
+            };
+            const uninvitedQuery = {
+                limit: vi.fn().mockReturnThis(),
+                get: vi.fn().mockRejectedValue(new Error('Batch delete unavailable')),
+            };
+            const res = {
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn().mockReturnThis(),
+            };
 
-            await participantDataCleanupModule.participantDataCleanup();
+            mocks.firestore.collection.mockImplementation((path) => {
+                if (path === 'participants') {
+                    return {
+                        where: vi.fn((field) => (
+                            field === destroyDataCId()
+                                ? dataDestructionQuery
+                                : uninvitedQuery
+                        )),
+                    };
+                }
+                return { where: vi.fn().mockReturnThis(), get: vi.fn().mockResolvedValue(emptySnapshot) };
+            });
+
+            await participantDataCleanupModule.participantDataCleanup({ method: 'POST' }, res);
+
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+                code: 500,
+                results: {
+                    dataDestructionStatus: 'fulfilled',
+                    uninvitedStatus: 'rejected',
+                },
+            }));
         });
     });
 
@@ -1909,7 +1962,7 @@ describe('Participant Data Cleanup', () => {
         });
 
         describe('error handling', () => {
-            it('should not throw when batch commit fails', async () => {
+            it('should throw when batch commit fails', async () => {
                 const uninvitedDocs = [
                     { id: 'uninvited-1', ref: { id: 'uninvited-1' }, data: () => ({}) },
                 ];
@@ -1946,8 +1999,8 @@ describe('Participant Data Cleanup', () => {
                     update: vi.fn(),
                 });
 
-                // Should not throw — error is caught internally
-                await firestoreModule.removeUninvitedParticipants();
+                await expect(firestoreModule.removeUninvitedParticipants())
+                    .rejects.toThrow('Batch commit failed');
             });
         });
     });

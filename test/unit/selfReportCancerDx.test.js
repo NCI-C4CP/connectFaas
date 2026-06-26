@@ -284,15 +284,15 @@ describe('write eligibility: server-side gate on save & submit', () => {
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.withdrawConsent]: fieldMapping.yes }));
             expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
         });
-        it(`${name}: 403 when data-destruction requested`, async () => {
+        it(`${name}: 200 when data-destruction requested`, async () => {
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.participantMap.destroyData]: fieldMapping.yes }));
-            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
+            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
         });
-        it(`${name}: 403 when deceased (EMR or NORC)`, async () => {
+        it(`${name}: 200 when deceased (EMR or NORC)`, async () => {
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.participantDeceased]: fieldMapping.yes }));
-            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
+            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.participantDeceasedNORC]: fieldMapping.yes }));
-            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
+            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
         });
         it(`${name}: 200 for a verified, active participant`, async () => {
             expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
@@ -301,6 +301,9 @@ describe('write eligibility: server-side gate on save & submit', () => {
 
     it('ineligibilityReason is null only for a verified, active profile', () => {
         expect(mod.ineligibilityReason(eligibleProfile())).toBeNull();
+        expect(mod.ineligibilityReason(eligibleProfile({ [fieldMapping.participantMap.destroyData]: fieldMapping.yes }))).toBeNull();
+        expect(mod.ineligibilityReason(eligibleProfile({ [fieldMapping.participantDeceased]: fieldMapping.yes }))).toBeNull();
+        expect(mod.ineligibilityReason(eligibleProfile({ [fieldMapping.participantDeceasedNORC]: fieldMapping.yes }))).toBeNull();
         expect(mod.ineligibilityReason({ token: 't', Connect_ID: 1 })).toContain('not verified');
     });
 });
@@ -320,9 +323,20 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         await expect400({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.unavailableUnknown) }, 'primary site'); // unavailableUnknown: chart-review only
     });
 
-    it('Other-describe XOR (required iff site = other)', async () => {
-        await expect400({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) }, String(selfReportCancerCIDs.primarySiteOther));
+    it('Primary site Other write-in is optional when site = other and forbidden otherwise', async () => {
         await expect400({ ...minimalSubmit(), D_546976551: 'Gallbladder' }, String(selfReportCancerCIDs.primarySiteOther));
+        const missing = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) });
+        expect(missing.statusCode).toBe(200);
+        expect(writtenDoc().D_546976551).toBeUndefined();
+        const missingOtherAndTx = { ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) };
+        delete missingOtherAndTx.D_874288004;
+        const unansweredTx = await submit(missingOtherAndTx);
+        expect(unansweredTx.statusCode).toBe(200);
+        expect(writtenDoc().D_546976551).toBeUndefined();
+        expect(writtenDoc().D_874288004).toBeUndefined();
+        const blank = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other), D_546976551: '' });
+        expect(blank.statusCode).toBe(200);
+        expect(writtenDoc().D_546976551).toBe('');
         const ok = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other), D_546976551: 'Gallbladder' });
         expect(ok.statusCode).toBe(200);
     });
@@ -340,15 +354,21 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         expect(ok.statusCode).toBe(200);
     });
 
-    it('txReceived required and yes/no-coded', async () => {
+    it('txReceived may be omitted but must be yes/no-coded when present', async () => {
         const missing = minimalSubmit(); delete missing.D_874288004;
-        await expect400(missing, 'treatment');
+        const res = await submit(missing);
+        expect(res.statusCode).toBe(200);
+        expect(writtenDoc().D_874288004).toBeUndefined();
         await expect400({ ...minimalSubmit(), D_874288004: '1' }, 'treatment');
     });
 
-    it('txReceived=yes needs >=1 type flag and contiguous valid iterations', async () => {
+    it('txReceived=yes allows no type selected but requires contiguous valid iterations for selected types', async () => {
         const b = breastSubmit();
-        await expect400({ ...b, D_244216107: NO }, 'treatment type');                     // zero selected
+        const noTypes = { ...b, D_244216107: NO };
+        delete noTypes.D_281136649_1_1;
+        delete noTypes.D_735592270_1_1;
+        const noTypesRes = await submit(noTypes);
+        expect(noTypesRes.statusCode).toBe(200);
         const twoTypes = { ...b, D_293873603: YES };                                      // chemo+surgery, K=2
         await expect400(twoTypes, 'start year');                                          // missing _2_2 start year
         const stray = { ...b, D_281136649_3_3: '2024', D_735592270_3_3: NO };
@@ -374,9 +394,14 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         await expect400({ ...notOngoing, D_625530863_1_1: '13' }, 'month');
     });
 
-    it('Flat treatment other-describe XOR the Other type flag', async () => {
+    it('Flat treatment other-describe is optional when Other is selected and forbidden otherwise', async () => {
         const b = { ...breastSubmit(), D_459406752: YES, D_281136649_2_2: '2024', D_735592270_2_2: YES };
-        await expect400(b, String(selfReportCancerCIDs.treatment.otherDescribe));          // other selected, no describe
+        const missing = await submit(b);
+        expect(missing.statusCode).toBe(200);
+        expect(writtenDoc().D_420392069).toBeUndefined();
+        const blank = await submit({ ...b, D_420392069: '' });
+        expect(blank.statusCode).toBe(200);
+        expect(writtenDoc().D_420392069).toBe('');
         const ok = await submit({ ...b, D_420392069: 'Immunotherapy' });
         expect(ok.statusCode).toBe(200);
         await expect400({ ...breastSubmit(), D_420392069: 'Immunotherapy' }, String(selfReportCancerCIDs.treatment.otherDescribe)); // describe w/o other flag
@@ -385,6 +410,10 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
     it('txReceived=no forbids every treatment-section key', async () => {
         await expect400({ ...minimalSubmit(), D_244216107: NO }, 'treatment');
         await expect400({ ...minimalSubmit(), D_281136649_1_1: '2024' }, 'treatment');
+        const unanswered = minimalSubmit();
+        delete unanswered.D_874288004;
+        await expect400({ ...unanswered, D_244216107: NO }, 'treatment');
+        await expect400({ ...unanswered, D_281136649_1_1: '2024' }, 'treatment');
     });
 
     it('Screening gate required for eligible sites, forbidden otherwise', async () => {

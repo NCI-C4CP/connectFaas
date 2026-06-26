@@ -4,6 +4,12 @@ const {
 } = require(`./firestore`);
 const { getResponseJSON } = require(`./shared`);
 
+const getFailureMessage = (reason) => (
+    reason instanceof Error
+        ? reason.message
+        : String(reason)
+);
+
 const runParticipantDataCleanup = async () => {
     console.log(`Start cleaning up participant data`);
     const [dataDestructionResult, uninvitedResult] = await Promise.allSettled([
@@ -11,19 +17,31 @@ const runParticipantDataCleanup = async () => {
         removeUninvitedParticipants(),
     ]);
 
+    const failures = [];
+
     if (dataDestructionResult.status === "rejected") {
         console.error("Error in removeParticipantsDataDestruction:", dataDestructionResult.reason);
+        failures.push(`removeParticipantsDataDestruction: ${getFailureMessage(dataDestructionResult.reason)}`);
     }
     if (uninvitedResult.status === "rejected") {
         console.error("Error in removeUninvitedParticipants:", uninvitedResult.reason);
+        failures.push(`removeUninvitedParticipants: ${getFailureMessage(uninvitedResult.reason)}`);
     }
 
     console.log(`Complete cleanup of participant data`);
 
-    return {
+    const results = {
         dataDestructionStatus: dataDestructionResult.status,
         uninvitedStatus: uninvitedResult.status,
     };
+
+    if (failures.length > 0) {
+        const error = new Error(`Participant data cleanup failed: ${failures.join("; ")}`);
+        error.results = results;
+        throw error;
+    }
+
+    return results;
 };
 
 const participantDataCleanup = async (req, res) => {
@@ -46,7 +64,10 @@ const participantDataCleanup = async (req, res) => {
         });
     } catch (error) {
         console.error("Error in participantDataCleanup:", error);
-        return res.status(500).json(getResponseJSON("Failed to clean participant data.", 500));
+        return res.status(500).json({
+            ...getResponseJSON("Failed to clean participant data.", 500),
+            results: error.results,
+        });
     }
 };
 
