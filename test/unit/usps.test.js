@@ -18,7 +18,10 @@ const sharedMock = {
     setHeaders: vi.fn(),
     delay: vi.fn().mockResolvedValue(undefined),
     backoffMs: vi.fn().mockReturnValue(0),
-    uspsUrl: { auth: 'https://apis.usps.com/oauth2/v3/token' },
+    uspsUrl: {
+        auth: 'https://apis.usps.com/oauth2/v3/token',
+        addresses: 'https://apis.usps.com/addresses/v3/address',
+    },
     getResponseJSON: (msg, code) => ({ message: msg, code }),
     safeJSONParse: (str) => {
         try { return JSON.parse(str); } catch { return null; }
@@ -173,7 +176,7 @@ describe('USPS Unit Tests', () => {
     });
 
     describe('Address Param Validation', () => {
-        it('should validate all required fields successfully', () => {
+        it('should validate a complete address successfully', () => {
             const result = uspsModule.validateAddressParams(validAddressPayload);
 
             expect(result.errors).toHaveLength(0);
@@ -183,12 +186,76 @@ describe('USPS Unit Tests', () => {
             expect(result.params.ZIPCode).toBe('12345');
         });
 
+        it('should validate with city and no ZIPCode', () => {
+            const payload = { ...validAddressPayload };
+            delete payload.zipCode;
+
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.city).toBe('Anytown');
+            expect(result.params.ZIPCode).toBeUndefined();
+        });
+
+        it('should validate with ZIPCode and no city', () => {
+            const payload = { ...validAddressPayload };
+            delete payload.city;
+
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.city).toBeUndefined();
+            expect(result.params.ZIPCode).toBe('12345');
+        });
+
         it('should handle optional secondaryAddress field', () => {
             const payload = { ...validAddressPayload, secondaryAddress: 'Apt 4B' };
             const result = uspsModule.validateAddressParams(payload);
 
             expect(result.errors).toHaveLength(0);
             expect(result.params.secondaryAddress).toBe('Apt 4B');
+        });
+
+        it('should normalize non-string address fields without throwing', () => {
+            const payload = {
+                ...validAddressPayload,
+                streetAddress: 123,
+                secondaryAddress: 4,
+                city: 567,
+            };
+
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.streetAddress).toBe('123');
+            expect(result.params.secondaryAddress).toBe('4');
+            expect(result.params.city).toBe('567');
+        });
+
+        it('should ignore unsupported optional address fields', () => {
+            const payload = {
+                ...validAddressPayload,
+                firm: 'Acme Inc',
+                urbanization: 'URB LAS GLADIOLAS',
+                ZIPPlus4: '6789',
+            };
+
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.firm).toBeUndefined();
+            expect(result.params.urbanization).toBeUndefined();
+            expect(result.params.ZIPPlus4).toBeUndefined();
+        });
+
+        it('should ignore USPS ZIPCode casing in request payloads', () => {
+            const payload = { ...validAddressPayload, ZIPCode: '54321' };
+            delete payload.zipCode;
+
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.ZIPCode).toBeUndefined();
         });
 
         it('should convert lowercase state to uppercase', () => {
@@ -203,7 +270,15 @@ describe('USPS Unit Tests', () => {
             const payload = { ...validAddressPayload, state: 12 };
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('state');
+            expect(result.errors).toContain('invalid state');
+            expect(result.params.state).toBeUndefined();
+        });
+
+        it('should reject unsupported USPS state codes', () => {
+            const payload = { ...validAddressPayload, state: 'ZZ' };
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toContain('invalid state');
             expect(result.params.state).toBeUndefined();
         });
 
@@ -219,15 +294,15 @@ describe('USPS Unit Tests', () => {
             const payload = { ...validAddressPayload, state: null };
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('state');
+            expect(result.errors).toContain('missing state');
             expect(result.params.state).toBeUndefined();
         });
 
-        it('should reject null/undefined zipCode without throwing', () => {
+        it('should allow missing zipCode when city is present', () => {
             const payload = { ...validAddressPayload, zipCode: null };
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('zipCode');
+            expect(result.errors).toHaveLength(0);
             expect(result.params.ZIPCode).toBeUndefined();
         });
 
@@ -236,7 +311,7 @@ describe('USPS Unit Tests', () => {
             delete payload.state;
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('state');
+            expect(result.errors).toContain('missing state');
             expect(result.params.state).toBeUndefined();
         });
 
@@ -244,33 +319,62 @@ describe('USPS Unit Tests', () => {
             const payload = { ...validAddressPayload, state: 'NYC' };
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('state');
+            expect(result.errors).toContain('invalid state');
             expect(result.params.state).toBeUndefined();
         });
 
-        it('should reject zipCode with invalid length', () => {
+        it('should ignore invalid zipCode when city is present', () => {
             const payload = { ...validAddressPayload, zipCode: '1234' };
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('zipCode');
+            expect(result.errors).toHaveLength(0);
             expect(result.params.ZIPCode).toBeUndefined();
         });
 
-        it('should reject zipCode with non-digits', () => {
+        it('should reject invalid zipCode when city is missing', () => {
+            const payload = { ...validAddressPayload, zipCode: '1234' };
+            delete payload.city;
+
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toContain('invalid zipCode');
+            expect(result.params.ZIPCode).toBeUndefined();
+        });
+
+        it('should ignore zipCode with non-digits when city is present', () => {
             const payload = { ...validAddressPayload, zipCode: '1234A' };
             const result = uspsModule.validateAddressParams(payload);
 
-            expect(result.errors).toContain('zipCode');
+            expect(result.errors).toHaveLength(0);
             expect(result.params.ZIPCode).toBeUndefined();
+        });
+
+        it('should ignore invalid optional ZIPPlus4 values', () => {
+            const payload = { ...validAddressPayload, ZIPPlus4: '12345' };
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.ZIPPlus4).toBeUndefined();
+        });
+
+        it('should ignore optional firm values longer than 50 characters', () => {
+            const payload = { ...validAddressPayload, firm: 'a'.repeat(51) };
+            const result = uspsModule.validateAddressParams(payload);
+
+            expect(result.errors).toHaveLength(0);
+            expect(result.params.firm).toBeUndefined();
         });
 
         it('should trim whitespace from all fields', () => {
             const payload = {
+                firm: '  Acme Inc  ',
                 streetAddress: '  123 Main St  ',
                 secondaryAddress: '  Apt 4B  ',
                 city: '  Anytown  ',
                 state: '  ny  ',
                 zipCode: '  12345  ',
+                zipPlus4: '  6789  ',
+                urbanization: '  URB LAS GLADIOLAS  ',
             };
             const result = uspsModule.validateAddressParams(payload);
 
@@ -285,8 +389,8 @@ describe('USPS Unit Tests', () => {
         it('should return all missing required fields', () => {
             const result = uspsModule.validateAddressParams({});
 
-            expect(result.errors).toHaveLength(4);
-            expect(result.errors).toEqual(expect.arrayContaining(['streetAddress', 'city', 'state', 'zipCode']));
+            expect(result.errors).toHaveLength(3);
+            expect(result.errors).toEqual(expect.arrayContaining(['missing streetAddress', 'missing state', 'missing city or zipCode']));
         });
 
         it('should handle string JSON input', () => {
@@ -378,9 +482,64 @@ describe('USPS Unit Tests', () => {
 
             // Verify Auth Call
             const authCall = fetchStub.mock.calls[0];
-            const body = authCall[1].body;
-            expect(body.get('grant_type')).toBe('client_credentials');
-            expect(body.get('client_id')).toBe('mock-client-id');
+            const body = JSON.parse(authCall[1].body);
+            expect(authCall[1].headers['Content-Type']).toBe('application/json');
+            expect(body.grant_type).toBe('client_credentials');
+            expect(body.client_id).toBe('mock-client-id');
+            expect(body.client_secret).toBe('mock-client-secret');
+            expect(body.scope).toBe('addresses');
+
+            // Verify Address Call
+            const addressCall = fetchStub.mock.calls[1];
+            const addressUrl = new URL(addressCall[0]);
+            expect(`${addressUrl.origin}${addressUrl.pathname}`).toBe(sharedMock.uspsUrl.addresses);
+            expect(addressUrl.searchParams.get('streetAddress')).toBe(validAddressPayload.streetAddress);
+            expect(addressUrl.searchParams.get('city')).toBe(validAddressPayload.city);
+            expect(addressUrl.searchParams.get('state')).toBe(validAddressPayload.state);
+            expect(addressUrl.searchParams.get('ZIPCode')).toBe(validAddressPayload.zipCode);
+        });
+
+        it('should coalesce concurrent token fetches when cache is empty', async () => {
+            const requests = [
+                { method: 'POST', body: validAddressPayload },
+                { method: 'POST', body: validAddressPayload },
+                { method: 'POST', body: validAddressPayload },
+            ];
+            const responses = requests.map(() => ({
+                status: vi.fn().mockReturnThis(),
+                json: vi.fn(),
+            }));
+            let resolveAuthResponse;
+            const authResponsePromise = new Promise((resolve) => {
+                resolveAuthResponse = resolve;
+            });
+
+            firestoreMock.db.collection().get.mockResolvedValue({ empty: true });
+            fetchStub.mockImplementation((url) => {
+                if (url === sharedMock.uspsUrl.auth) {
+                    return authResponsePromise;
+                }
+
+                return Promise.resolve(mockResponse({ result: 'success' }));
+            });
+
+            const validationPromises = requests.map((req, index) => (
+                uspsModule.addressValidation(req, responses[index])
+            ));
+
+            for (let i = 0; i < 10; i++) {
+                await Promise.resolve();
+            }
+
+            expect(fetchStub.mock.calls.filter(([url]) => url === sharedMock.uspsUrl.auth)).toHaveLength(1);
+
+            resolveAuthResponse(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            await Promise.all(validationPromises);
+
+            expect(fetchStub.mock.calls.filter(([url]) => url === sharedMock.uspsUrl.auth)).toHaveLength(1);
+            responses.forEach((res) => {
+                expect(res.status).toHaveBeenCalledWith(200);
+            });
         });
 
         it('should use cached token from Firestore if available', async () => {
@@ -494,8 +653,46 @@ describe('USPS Unit Tests', () => {
             await uspsModule.addressValidation(req, res);
 
             expect(fetchStub.mock.calls.length).toBe(2);
-            expect(res.status).toHaveBeenCalledWith(400);
+            expect(res.status).toHaveBeenCalledWith(422);
             expect(res.json.mock.calls[0][0].message).toContain('Invalid Address');
+        });
+
+        it('should preserve USPS 404 address-not-found responses', async () => {
+            const req = { method: 'POST', body: validAddressPayload };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub.mockResolvedValueOnce(mockResponse({
+                apiVersion: 'v3',
+                error: {
+                    code: '404',
+                    message: 'There is no match for the address requested.',
+                    errors: [],
+                },
+            }, 404, false));
+
+            await uspsModule.addressValidation(req, res);
+
+            expect(fetchStub.mock.calls.length).toBe(2);
+            expect(res.status).toHaveBeenCalledWith(404);
+            expect(res.json.mock.calls[0][0].message).toBe('There is no match for the address requested.');
+        });
+
+        it('should preserve USPS 429 responses after retries are exhausted', async () => {
+            const req = { method: 'POST', body: validAddressPayload };
+            const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+
+            fetchStub.mockResolvedValueOnce(mockResponse({ access_token: mockToken, expires_in: mockExpiresIn }));
+            fetchStub
+                .mockResolvedValueOnce(mockResponse({ error: { message: 'Too many requests' } }, 429, false))
+                .mockResolvedValueOnce(mockResponse({ error: { message: 'Too many requests' } }, 429, false))
+                .mockResolvedValueOnce(mockResponse({ error: { message: 'Too many requests' } }, 429, false));
+
+            await uspsModule.addressValidation(req, res);
+
+            expect(sharedMock.delay).toHaveBeenCalledTimes(2);
+            expect(res.status).toHaveBeenCalledWith(429);
+            expect(res.json.mock.calls[0][0].message).toBe('Too many requests');
         });
     });
 });

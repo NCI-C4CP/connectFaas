@@ -137,13 +137,13 @@ describe('Firebase Mock System Tests', () => {
                 const mockData1 = { 
                     studyId: 'isolation_test',
                     processedIds: ['resp1', 'resp2'],
-                    timestamp: '2023-01-01T12:00:00Z'
+                    timestamp: '2023-01-01T12:00:00.000Z'
                 };
                 
                 const mockData2 = { 
                     studyId: 'isolation_test', 
                     processedIds: ['resp3', 'resp4'],
-                    timestamp: '2023-01-01T13:00:00Z'
+                    timestamp: '2023-01-01T13:00:00.000Z'
                 };
                 
                 // Set up multiple documents in the same collection using setupDocumentRetrieval method
