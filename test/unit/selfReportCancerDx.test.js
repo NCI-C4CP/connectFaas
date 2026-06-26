@@ -36,6 +36,8 @@ const BREAST_DXDT_KEY = 'D_104045590';
 const PROSTATE_DXDT_KEY = 'D_199928758';
 // Keep payload keys literal to mirror Quest-flat D_<cid> snapshots. Map response cids where names exist.
 const responseCid = (cid) => String(cid);
+const nestedKey = (parentCid, childCid, position) =>
+    ['D_' + parentCid, 'D_' + childCid, position].filter((part) => part !== undefined).join('_');
 
 const invoke = async (handler, method, body, query = {}) => {
     const req = httpMocks.createRequest({
@@ -60,19 +62,19 @@ const minimalSubmit = () => ({
     ...OP,
 });
 
-// Full valid submit: breast + chemo (T1, ongoing) + screening breast2D (S1).
+// Full valid submit: breast + chemo, ongoing + screening breast2D.
 const breastSubmit = () => ({
     D_181737942: responseCid(cancerSiteCIDs.breast),
     D_299768751: monthCIDs[10],
     D_908235757: '2024',
     D_874288004: YES,
     D_244216107: YES, D_293873603: NO, D_555019890: NO, D_459406752: NO,
-    D_281136649_1_1: '2024',
-    D_735592270_1_1: YES,
+    [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024',
+    [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.ongoing)]: YES,
     D_944065539: YES,
     D_425815239: YES, D_759642936: NO, D_528508094: NO,
     D_502929020: NO, D_412252588: NO,
-    D_858052564_1_1: '2017',
+    [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.screening.year)]: '2017',
     ...OP,
 });
 
@@ -165,11 +167,11 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
         expect(submit._getJSONData().message).toContain('COMPLETED_TS');
     });
 
-    it('accepts loop keys, two-index keys, and the operational keys', async () => {
+    it('accepts dictionary-nested keys and the operational keys', async () => {
         const res = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', {
             ...minimalSubmit(),
-            D_281136649_2_2: '2024',
-            D_964819753_1_10: 'Maya',
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024',
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 10)]: 'Maya',
             [selfReportCancerCIDs.surveyLanguage]: fieldMapping.english, // surveyLanguage: numeric value allowed
             [fieldMapping.docLastUpdatedTimestamp]: '2026-06-12T00:00:00.000Z', // lastUpdated: ISO string
         });
@@ -284,15 +286,15 @@ describe('write eligibility: server-side gate on save & submit', () => {
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.withdrawConsent]: fieldMapping.yes }));
             expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
         });
-        it(`${name}: 403 when data-destruction requested`, async () => {
+        it(`${name}: 200 when data-destruction requested`, async () => {
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.participantMap.destroyData]: fieldMapping.yes }));
-            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
+            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
         });
-        it(`${name}: 403 when deceased (EMR or NORC)`, async () => {
+        it(`${name}: 200 when deceased (EMR or NORC)`, async () => {
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.participantDeceased]: fieldMapping.yes }));
-            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
+            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
             firestore.retrieveUserProfile.mockResolvedValue(eligibleProfile({ [fieldMapping.participantDeceasedNORC]: fieldMapping.yes }));
-            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(403);
+            expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
         });
         it(`${name}: 200 for a verified, active participant`, async () => {
             expect((await invoke(getHandler(), 'POST', minimalSubmit())).statusCode).toBe(200);
@@ -301,6 +303,9 @@ describe('write eligibility: server-side gate on save & submit', () => {
 
     it('ineligibilityReason is null only for a verified, active profile', () => {
         expect(mod.ineligibilityReason(eligibleProfile())).toBeNull();
+        expect(mod.ineligibilityReason(eligibleProfile({ [fieldMapping.participantMap.destroyData]: fieldMapping.yes }))).toBeNull();
+        expect(mod.ineligibilityReason(eligibleProfile({ [fieldMapping.participantDeceased]: fieldMapping.yes }))).toBeNull();
+        expect(mod.ineligibilityReason(eligibleProfile({ [fieldMapping.participantDeceasedNORC]: fieldMapping.yes }))).toBeNull();
         expect(mod.ineligibilityReason({ token: 't', Connect_ID: 1 })).toContain('not verified');
     });
 });
@@ -320,9 +325,20 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         await expect400({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.unavailableUnknown) }, 'primary site'); // unavailableUnknown: chart-review only
     });
 
-    it('Other-describe XOR (required iff site = other)', async () => {
-        await expect400({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) }, String(selfReportCancerCIDs.primarySiteOther));
+    it('Primary site Other write-in is optional when site = other and forbidden otherwise', async () => {
         await expect400({ ...minimalSubmit(), D_546976551: 'Gallbladder' }, String(selfReportCancerCIDs.primarySiteOther));
+        const missing = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) });
+        expect(missing.statusCode).toBe(200);
+        expect(writtenDoc().D_546976551).toBeUndefined();
+        const missingOtherAndTx = { ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other) };
+        delete missingOtherAndTx.D_874288004;
+        const unansweredTx = await submit(missingOtherAndTx);
+        expect(unansweredTx.statusCode).toBe(200);
+        expect(writtenDoc().D_546976551).toBeUndefined();
+        expect(writtenDoc().D_874288004).toBeUndefined();
+        const blank = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other), D_546976551: '' });
+        expect(blank.statusCode).toBe(200);
+        expect(writtenDoc().D_546976551).toBe('');
         const ok = await submit({ ...minimalSubmit(), D_181737942: responseCid(cancerSiteCIDs.other), D_546976551: 'Gallbladder' });
         expect(ok.statusCode).toBe(200);
     });
@@ -340,23 +356,29 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         expect(ok.statusCode).toBe(200);
     });
 
-    it('txReceived required and yes/no-coded', async () => {
+    it('txReceived may be omitted but must be yes/no-coded when present', async () => {
         const missing = minimalSubmit(); delete missing.D_874288004;
-        await expect400(missing, 'treatment');
+        const res = await submit(missing);
+        expect(res.statusCode).toBe(200);
+        expect(writtenDoc().D_874288004).toBeUndefined();
         await expect400({ ...minimalSubmit(), D_874288004: '1' }, 'treatment');
     });
 
-    it('txReceived=yes needs >=1 type flag and contiguous valid iterations', async () => {
+    it('txReceived=yes allows no type selected but requires valid details for selected types', async () => {
         const b = breastSubmit();
-        await expect400({ ...b, D_244216107: NO }, 'treatment type');                     // zero selected
-        const twoTypes = { ...b, D_293873603: YES };                                      // chemo+surgery, K=2
-        await expect400(twoTypes, 'start year');                                          // missing _2_2 start year
-        const stray = { ...b, D_281136649_3_3: '2024', D_735592270_3_3: NO };
-        await expect400(stray, 'loop');                                                   // index 3 with K=1
-        await expect400({ ...b, D_281136649_1_1: String(new Date().getFullYear() + 6) }, 'start year');
-        const scheduled = { ...b, D_281136649_1_1: String(new Date().getFullYear() + 5) };
+        const noTypes = { ...b, D_244216107: NO };
+        delete noTypes[nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)];
+        delete noTypes[nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.ongoing)];
+        const noTypesRes = await submit(noTypes);
+        expect(noTypesRes.statusCode).toBe(200);
+        const twoTypes = { ...b, D_293873603: YES };
+        await expect400(twoTypes, 'start year');                                          // missing surgery start year
+        const stray = { ...b, [nestedKey(selfReportCancerCIDs.treatment.surgery, selfReportCancerCIDs.treatment.startYear)]: '2024' };
+        await expect400(stray, 'unselected treatment type');                              // surgery detail while surgery flag is No
+        await expect400({ ...b, [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: String(new Date().getFullYear() + 6) }, 'start year');
+        const scheduled = { ...b, [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: String(new Date().getFullYear() + 5) };
         expect((await submit(scheduled)).statusCode).toBe(200);                           // +5 allowed
-        const noOngoing = { ...b }; delete noOngoing.D_735592270_1_1;
+        const noOngoing = { ...b }; delete noOngoing[nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.ongoing)];
         await expect400(noOngoing, 'ongoing');
     });
 
@@ -368,15 +390,30 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
 
     it('Ongoing XOR end date; end fields format-checked', async () => {
         const b = breastSubmit();
-        await expect400({ ...b, D_729162012_1_1: '2025' }, 'ongoing');                    // ongoing=yes + end year
-        const notOngoing = { ...b, D_735592270_1_1: NO, D_729162012_1_1: '2025', D_625530863_1_1: monthCIDs[4] };
+        await expect400({ ...b, [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.endYear)]: '2025' }, 'ongoing'); // ongoing=yes + end year
+        const notOngoing = {
+            ...b,
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.ongoing)]: NO,
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.endYear)]: '2025',
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.endMonth)]: monthCIDs[4],
+        };
         expect((await submit(notOngoing)).statusCode).toBe(200);
-        await expect400({ ...notOngoing, D_625530863_1_1: '13' }, 'month');
+        await expect400({ ...notOngoing, [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.endMonth)]: '13' }, 'month');
     });
 
-    it('Flat treatment other-describe XOR the Other type flag', async () => {
-        const b = { ...breastSubmit(), D_459406752: YES, D_281136649_2_2: '2024', D_735592270_2_2: YES };
-        await expect400(b, String(selfReportCancerCIDs.treatment.otherDescribe));          // other selected, no describe
+    it('Flat treatment other-describe is optional when Other is selected and forbidden otherwise', async () => {
+        const b = {
+            ...breastSubmit(),
+            D_459406752: YES,
+            [nestedKey(selfReportCancerCIDs.treatment.other, selfReportCancerCIDs.treatment.startYear)]: '2024',
+            [nestedKey(selfReportCancerCIDs.treatment.other, selfReportCancerCIDs.treatment.ongoing)]: YES,
+        };
+        const missing = await submit(b);
+        expect(missing.statusCode).toBe(200);
+        expect(writtenDoc().D_420392069).toBeUndefined();
+        const blank = await submit({ ...b, D_420392069: '' });
+        expect(blank.statusCode).toBe(200);
+        expect(writtenDoc().D_420392069).toBe('');
         const ok = await submit({ ...b, D_420392069: 'Immunotherapy' });
         expect(ok.statusCode).toBe(200);
         await expect400({ ...breastSubmit(), D_420392069: 'Immunotherapy' }, String(selfReportCancerCIDs.treatment.otherDescribe)); // describe w/o other flag
@@ -384,7 +421,11 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
 
     it('txReceived=no forbids every treatment-section key', async () => {
         await expect400({ ...minimalSubmit(), D_244216107: NO }, 'treatment');
-        await expect400({ ...minimalSubmit(), D_281136649_1_1: '2024' }, 'treatment');
+        await expect400({ ...minimalSubmit(), [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024' }, 'treatment');
+        const unanswered = minimalSubmit();
+        delete unanswered.D_874288004;
+        await expect400({ ...unanswered, D_244216107: NO }, 'treatment');
+        await expect400({ ...unanswered, [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024' }, 'treatment');
     });
 
     it('Screening gate required for eligible sites, forbidden otherwise', async () => {
@@ -393,13 +434,13 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
         await expect400(breastNoGate, 'screening');
     });
 
-    it('detected=yes needs site-valid chosen options and contiguous iterations', async () => {
+    it('detected=yes needs site-valid chosen options and nested details under selected options', async () => {
         const b = breastSubmit();
         await expect400({ ...b, D_425815239: NO }, 'screening');                          // zero chosen
         await expect400({ ...b, D_633630015: YES }, 'screening');                         // lungCT on breast
-        const noYear = { ...b }; delete noYear.D_858052564_1_1;
+        const noYear = { ...b }; delete noYear[nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.screening.year)];
         await expect400(noYear, 'screening year');
-        await expect400({ ...b, D_858052564_2_2: '2018' }, 'loop');                       // index 2 with M=1
+        await expect400({ ...b, [nestedKey(selfReportCancerCIDs.screening.optionValues.breastMRI, selfReportCancerCIDs.screening.year)]: '2018' }, 'unselected screening type');
     });
 
     it('The full site screening-option group must be present as explicit Yes/No', async () => {
@@ -417,8 +458,8 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
     });
 
     it('Every month value must be a month response cid', async () => {
-        await expect400({ ...breastSubmit(), D_742710886_1_1: '0' }, 'month');
-        const ok = await submit({ ...breastSubmit(), D_742710886_1_1: monthCIDs[0] });
+        await expect400({ ...breastSubmit(), [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startMonth)]: '0' }, 'month');
+        const ok = await submit({ ...breastSubmit(), [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startMonth)]: monthCIDs[0] });
         expect(ok.statusCode).toBe(200);
     });
 
@@ -531,20 +572,29 @@ describe('validateSnapshotShape: structural whitelist', () => {
     it('accepts a valid minimal snapshot (scalars + op keys)', () => {
         expect(mod.validateSnapshotShape(minimalSubmit())).toEqual([]);
     });
-    it('rejects a scalar cid carrying a loop suffix', () => {
-        rejects({ D_181737942_1_1: responseCid(cancerSiteCIDs.prostate) }, 'D_181737942_1_1'); // primarySite is scalar
+    it('rejects a scalar cid carrying old loop suffixes or nested children', () => {
+        rejects({ D_181737942_1_1: responseCid(cancerSiteCIDs.prostate) }, 'D_181737942_1_1');
+        rejects({ D_181737942_D_281136649: '2024' }, 'D_181737942_D_281136649');
     });
-    it('rejects a loop cid used WITHOUT a loop suffix', () => {
-        rejects({ D_281136649: '2024' }, 'D_281136649'); // startYear is a loop cid
+    it('rejects a nested child cid used without its parent', () => {
+        rejects({ D_281136649: '2024' }, 'D_281136649');
     });
-    it('rejects an iteration-scalar with mismatched indices (_T_T required)', () => {
-        rejects({ D_281136649_1_2: '2024' }, 'D_281136649_1_2');
+    it('rejects old ordinal loop keys', () => {
+        rejects({ D_281136649_1_1: '2024' }, 'D_281136649_1_1');
+        rejects({ D_964819753_2_3: 'Maya' }, 'D_964819753_2_3');
     });
-    it('accepts a positional cid with second != first (_T_P physician position)', () => {
-        expect(mod.validateSnapshotShape({ D_964819753_2_3: 'Maya' })).toEqual([]);
+    it('accepts dictionary-nested treatment and screening detail keys', () => {
+        expect(mod.validateSnapshotShape({
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024',
+            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 3)]: 'Maya',
+            [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.screening.year)]: '2017',
+        })).toEqual([]);
     });
-    it('rejects loop indices beyond the cap (iteration > 10 or position > 10)', () => {
-        rejects({ D_281136649_11_11: '2024' });  // iteration 11
-        rejects({ D_964819753_1_11: 'Maya' });   // physician position 11
+    it('rejects invalid parent-child combinations and repeated counters beyond the cap', () => {
+        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.screening.year)]: '2017' });
+        rejects({ [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.treatment.startYear)]: '2024' });
+        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear, 1)]: '2024' });
+        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 11)]: 'Maya' });
+        rejects({ [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.screening.phyFirstName, 1)]: 'Maya' });
     });
 });
