@@ -36,8 +36,9 @@ const BREAST_DXDT_KEY = 'D_104045590';
 const PROSTATE_DXDT_KEY = 'D_199928758';
 // Keep payload keys literal to mirror Quest-flat D_<cid> snapshots. Map response cids where names exist.
 const responseCid = (cid) => String(cid);
-const nestedKey = (parentCid, childCid, position) =>
-    ['D_' + parentCid, 'D_' + childCid, position].filter((part) => part !== undefined).join('_');
+const nestedKey = (parentCid, childCid, ...positions) =>
+    ['D_' + parentCid, 'D_' + childCid, ...positions].filter((part) => part !== undefined).join('_');
+const treatmentRepeatKey = (parentCid, childCid, position) => nestedKey(parentCid, childCid, position, position);
 
 const invoke = async (handler, method, body, query = {}) => {
     const req = httpMocks.createRequest({
@@ -171,7 +172,7 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
         const res = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', {
             ...minimalSubmit(),
             [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024',
-            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 10)]: 'Maya',
+            [treatmentRepeatKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 10)]: 'Maya',
             [selfReportCancerCIDs.surveyLanguage]: fieldMapping.english, // surveyLanguage: numeric value allowed
             [fieldMapping.docLastUpdatedTimestamp]: '2026-06-12T00:00:00.000Z', // lastUpdated: ISO string
         });
@@ -586,7 +587,7 @@ describe('validateSnapshotShape: structural whitelist', () => {
     it('accepts dictionary-nested treatment and screening detail keys', () => {
         expect(mod.validateSnapshotShape({
             [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear)]: '2024',
-            [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 3)]: 'Maya',
+            [treatmentRepeatKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 3)]: 'Maya',
             [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.screening.year)]: '2017',
         })).toEqual([]);
     });
@@ -594,7 +595,9 @@ describe('validateSnapshotShape: structural whitelist', () => {
         rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.screening.year)]: '2017' });
         rejects({ [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.treatment.startYear)]: '2024' });
         rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.startYear, 1)]: '2024' });
-        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 11)]: 'Maya' });
+        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 1)]: 'Maya' });
+        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 1, 2)]: 'Maya' });
+        rejects({ [nestedKey(selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.physFirstName, 11, 11)]: 'Maya' });
         rejects({ [nestedKey(selfReportCancerCIDs.screening.optionValues.breast2D, selfReportCancerCIDs.screening.phyFirstName, 1)]: 'Maya' });
     });
 });

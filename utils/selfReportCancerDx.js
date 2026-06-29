@@ -12,7 +12,7 @@ const fieldMapping = require('./fieldToConceptIdMapping');
  *     diagnosis sequence), stamps the site's DxDt, strips the resume-only stateJSON/positionJSON strings,
  *     and finalizes the doc in place. Submitted diagnosis docs are append-only and never editable afterward.
  *   - Format: Quest-flat D_<cid> scalar keys plus dictionary-nested detail keys:
- *     `D_<parentCid>_D_<childCid>` and `D_<parentCid>_D_<childCid>_<counter>` for
+ *     `D_<parentCid>_D_<childCid>` and `D_<parentCid>_D_<childCid>_<counter>_<counter>` for
  *     repeated treatment physicians/facilities.
  *   - ALL timestamps use Connect's canonical ISO8601 form (`YYYY-MM-DDTHH:mm:ss.SSSZ`);
  *     docLastUpdatedTimestamp is refreshed server-side on every write.
@@ -74,7 +74,7 @@ const TX_REPEATED_CHILD_CID_SET = new Set(TX_REPEATED_CHILD_CIDS.map(String));
 const SCRN_CHILD_CID_SET = new Set(SCRN_NESTED_CHILD_CIDS.map(String));
 const MAX_LOOP_POSITION = 10;  // <=10 physicians per the spec. <= 10 facilities per the spec.
 
-const KEY_RE = /^D_(\d{9})(?:_D_(\d{9})(?:_([1-9]\d?))?)?$/;
+const KEY_RE = /^D_(\d{9})(?:_D_(\d{9})(?:_([1-9]\d?)(?:_([1-9]\d?))?)?)?$/;
 const OP_KEYS = new Set(['stateJSON', 'positionJSON', String(selfReportCancerCIDs.surveyLanguage), String(DOC_LAST_UPDATED)]);
 // Strip server-owned metadata if sent by a client.
 const SERVER_OWNED_KEYS = new Set([
@@ -116,25 +116,25 @@ const validateSnapshotShape = (body) => {
         if (OP_KEYS.has(key)) continue;
         const match = KEY_RE.exec(key);
         // Reject anything that isn't D_<knownScalarCid>, D_<txTypeCid>_D_<txChildCid>,
-        // D_<txTypeCid>_D_<repeatedTxChildCid>_<counter>, or D_<screeningOptionCid>_D_<screeningChildCid>.
+        // D_<txTypeCid>_D_<repeatedTxChildCid>_<counter>_<counter>, or D_<screeningOptionCid>_D_<screeningChildCid>.
         if (!match) { badKeys.push(key); continue; }
-        const [, parentOrScalarCid, childCid, positionStr] = match;
+        const [, parentOrScalarCid, childCid, positionStr, rowStr] = match;
         if (childCid === undefined) {
             if (!SCALAR_CIDS.has(parentOrScalarCid) || !KNOWN_QUESTION_CIDS.has(parentOrScalarCid)) {
                 badKeys.push(key); continue;
             }
         } else if (TX_PARENT_CIDS.has(parentOrScalarCid)) {
             if (TX_SINGLE_CHILD_CID_SET.has(childCid)) {
-                if (positionStr !== undefined) { badKeys.push(key); continue; }
+                if (positionStr !== undefined || rowStr !== undefined) { badKeys.push(key); continue; }
             } else if (TX_REPEATED_CHILD_CID_SET.has(childCid)) {
-                if (positionStr === undefined || Number(positionStr) > MAX_LOOP_POSITION) {
+                if (positionStr === undefined || rowStr === undefined || positionStr !== rowStr || Number(positionStr) > MAX_LOOP_POSITION) {
                     badKeys.push(key); continue;
                 }
             } else {
                 badKeys.push(key); continue;
             }
         } else if (SCRN_PARENT_CIDS.has(parentOrScalarCid)) {
-            if (!SCRN_CHILD_CID_SET.has(childCid) || positionStr !== undefined) {
+            if (!SCRN_CHILD_CID_SET.has(childCid) || positionStr !== undefined || rowStr !== undefined) {
                 badKeys.push(key); continue;
             }
         } else {
@@ -160,8 +160,8 @@ const validateSnapshotShape = (body) => {
     return errors;
 };
 
-const nestedKey = (parentCid, childCid, position) =>
-    ['D_' + parentCid, 'D_' + childCid, position].filter((part) => part !== undefined).join('_');
+const nestedKey = (parentCid, childCid, ...positions) =>
+    ['D_' + parentCid, 'D_' + childCid, ...positions].filter((part) => part !== undefined).join('_');
 
 /** Extract dictionary-nested keys from a snapshot. */
 const nestedKeysOf = (body, parentCids, childCids) => {
@@ -176,6 +176,7 @@ const nestedKeysOf = (body, parentCids, childCids) => {
                 parentCid: match[1],
                 cid: match[2],
                 position: match[3] === undefined ? undefined : Number(match[3]),
+                row: match[4] === undefined ? undefined : Number(match[4]),
             });
         }
     }
