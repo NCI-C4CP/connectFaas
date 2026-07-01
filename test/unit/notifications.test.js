@@ -36,6 +36,7 @@ const functionsAdminMock = {
 const bigqueryMock = {
   getParticipantsForNotificationsBQ: vi.fn().mockResolvedValue([]),
   countParticipantsForNotificationsBQ: vi.fn().mockResolvedValue(0),
+  getTokensAndPreferredLanguageByPhone: vi.fn().mockResolvedValue({ tokens: [], preferredLanguage: null }),
 };
 
 const twilioClientMock = {
@@ -128,7 +129,8 @@ const firestoreMock = {
   markNotificationBatchFailed: vi.fn().mockResolvedValue(0),
   storeNotification: vi.fn().mockResolvedValue(undefined),
   checkIsNotificationSent: vi.fn(),
-  updateSmsPermission: vi.fn(),
+  updateSmsPermission: vi.fn().mockResolvedValue(0),
+  storeIncomingSmsData: vi.fn().mockResolvedValue(undefined),
   getAppSettings: vi.fn().mockResolvedValue({}),
   // Suppression functions mocked here so notifications.js can import them
   addEmailSuppression: vi.fn().mockResolvedValue(undefined),
@@ -152,6 +154,8 @@ const origSgMailExports = require.cache[sgMailPath].exports;
 const origFunctionsAdminExports = require.cache[functionsAdminPath].exports;
 const origSecretManagerExports = require.cache[secretManagerPath].exports;
 const origTwilioExports = require.cache[twilioPath].exports;
+twilioMock.validateRequest = vi.fn().mockReturnValue(true);
+twilioMock.twiml = origTwilioExports.twiml;
 
 const { SmsBatchSender } = require("../../utils/notifications");
 
@@ -242,12 +246,16 @@ describe("Notifications Unit Tests", () => {
     sgMailMock.send.mockReset().mockResolvedValue([{ statusCode: 202, body: {} }]);
     bigqueryMock.getParticipantsForNotificationsBQ.mockReset().mockResolvedValue([]);
     bigqueryMock.countParticipantsForNotificationsBQ.mockReset().mockResolvedValue(0);
+    bigqueryMock.getTokensAndPreferredLanguageByPhone.mockReset().mockResolvedValue({ tokens: [], preferredLanguage: null });
+    firestoreMock.updateSmsPermission.mockReset().mockResolvedValue(0);
+    firestoreMock.storeIncomingSmsData.mockReset().mockResolvedValue(undefined);
     taskQueueMock.enqueue.mockReset().mockResolvedValue(undefined);
     taskQueueSelectorMock.mockReset().mockImplementation(() => taskQueueMock);
     functionsAdminMock.getFunctions.mockReset().mockImplementation(() => ({
       taskQueue: taskQueueSelectorMock,
     }));
     twilioMock.mockClear();
+    twilioMock.validateRequest.mockReset().mockReturnValue(true);
     twilioClientMock.messages.create.mockReset().mockResolvedValue({ sid: "SM_mock_sid" });
 
     // Install mocks into require.cache
@@ -2943,6 +2951,136 @@ describe("Notifications Unit Tests", () => {
       expect(firestoreMock.markNotificationBatchAccepted).toHaveBeenCalledTimes(1);
       expect(firestoreMock.markNotificationBatchFailed).not.toHaveBeenCalled();
       expect(firestoreMock.markBulkNotificationBatchComplete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("handleIncomingSms", () => {
+    const createIncomingSmsRequest = (bodyOverrides = {}) => ({
+      body: {
+        MessageSid: "SM_incoming_mock",
+        From: "+16145550100",
+        To: "+13015550200",
+        Body: "Yes",
+        SmsStatus: "received",
+        ...bodyOverrides,
+      },
+      headers: { "x-twilio-signature": "mock-signature" },
+      get: vi.fn().mockReturnValue("example.com"),
+      originalUrl: "/webhook?api=twilio-incoming-sms",
+    });
+
+    const createIncomingSmsResponseMock = () => ({
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+      sendStatus: vi.fn().mockReturnThis(),
+      type: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+    });
+
+    it("should store the SMS and grant permission for matched tokens on START", async () => {
+      bigqueryMock.getTokensAndPreferredLanguageByPhone.mockResolvedValue({
+        tokens: ["tokenA", "tokenB"],
+        preferredLanguage: null,
+      });
+      const req = createIncomingSmsRequest({ OptOutType: "START", Body: "START" });
+      const res = createIncomingSmsResponseMock();
+
+      await notificationsModule.handleIncomingSms(req, res);
+
+      expect(firestoreMock.storeIncomingSmsData).toHaveBeenCalledWith(req.body);
+      expect(bigqueryMock.getTokensAndPreferredLanguageByPhone).toHaveBeenCalledWith("+16145550100");
+      expect(firestoreMock.updateSmsPermission).toHaveBeenCalledWith(["tokenA", "tokenB"], true);
+      expect(res.sendStatus).toHaveBeenCalledWith(204);
+      expect(res.send).not.toHaveBeenCalled();
+    });
+
+    it("should revoke permission for matched tokens on STOP", async () => {
+      bigqueryMock.getTokensAndPreferredLanguageByPhone.mockResolvedValue({
+        tokens: ["tokenA"],
+        preferredLanguage: conceptIds.english,
+      });
+      const req = createIncomingSmsRequest({ OptOutType: "STOP", Body: "STOP" });
+      const res = createIncomingSmsResponseMock();
+
+      await notificationsModule.handleIncomingSms(req, res);
+
+      expect(firestoreMock.updateSmsPermission).toHaveBeenCalledWith(["tokenA"], false);
+      expect(res.sendStatus).toHaveBeenCalledWith(204);
+    });
+
+    it("should reply in English to a regular message without a Spanish preference", async () => {
+      bigqueryMock.getTokensAndPreferredLanguageByPhone.mockResolvedValue({
+        tokens: ["tokenA"],
+        preferredLanguage: conceptIds.english,
+      });
+      const req = createIncomingSmsRequest();
+      const res = createIncomingSmsResponseMock();
+
+      await notificationsModule.handleIncomingSms(req, res);
+
+      expect(firestoreMock.updateSmsPermission).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.type).toHaveBeenCalledWith("text/xml");
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining("For help, visit MyConnect.cancer.gov/support."));
+    });
+
+    it("should reply in Spanish when the preferred language is Spanish", async () => {
+      bigqueryMock.getTokensAndPreferredLanguageByPhone.mockResolvedValue({
+        tokens: ["tokenA"],
+        preferredLanguage: conceptIds.spanish,
+      });
+      const req = createIncomingSmsRequest();
+      const res = createIncomingSmsResponseMock();
+
+      await notificationsModule.handleIncomingSms(req, res);
+
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Para ayuda, visite MyConnect.cancer.gov/support."));
+    });
+
+    it("should not update permission or reply on HELP", async () => {
+      const req = createIncomingSmsRequest({ OptOutType: "HELP", Body: "HELP" });
+      const res = createIncomingSmsResponseMock();
+
+      await notificationsModule.handleIncomingSms(req, res);
+
+      expect(firestoreMock.updateSmsPermission).not.toHaveBeenCalled();
+      expect(res.send).not.toHaveBeenCalled();
+      expect(res.sendStatus).toHaveBeenCalledWith(204);
+    });
+
+    it("should return 403 when the Twilio signature is invalid", async () => {
+      twilioMock.validateRequest.mockReturnValue(false);
+      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const req = createIncomingSmsRequest();
+        const res = createIncomingSmsResponseMock();
+
+        await notificationsModule.handleIncomingSms(req, res);
+
+        expect(firestoreMock.storeIncomingSmsData).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(403);
+      } finally {
+        consoleWarnSpy.mockRestore();
+      }
+    });
+
+    it("should return 500 when updating SMS permission fails", async () => {
+      bigqueryMock.getTokensAndPreferredLanguageByPhone.mockResolvedValue({
+        tokens: ["tokenA"],
+        preferredLanguage: null,
+      });
+      firestoreMock.updateSmsPermission.mockRejectedValue(new Error("firestore down"));
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const req = createIncomingSmsRequest({ OptOutType: "STOP", Body: "STOP" });
+        const res = createIncomingSmsResponseMock();
+
+        await notificationsModule.handleIncomingSms(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
     });
   });
 });

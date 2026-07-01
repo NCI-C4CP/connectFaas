@@ -8,7 +8,6 @@ const { tubeConceptIds, collectionIdConversion, swapObjKeysAndValues, batchLimit
 const fieldMapping = require('./fieldToConceptIdMapping');
 const { getCurrentPolicy, buildDataDestructionUpdate, validateDestroyedStub } = require('./dataDestructionPolicy');
 const { isIsoDate } = require('./validation');
-const {getParticipantTokensByPhoneNumber} = require('./bigquery');
 const { normalizeEmailAddress, getEmailSuppressionPolicyForSendGridEvent, buildEmailSuppressionDoc } = require('./emailSuppressionPolicy');
 const { isProviderSendStartedState } = require('./notificationState');
 
@@ -488,7 +487,18 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             }
         });
 
-        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise]);
+        const selfReportCancerDxPromise = new Promise(async (resolve, reject) => {
+            try {
+                const selfReportCancerDxQuery = db.collection('selfReportCancerDx').where('token', '==', token);
+                const selfReportCancerDxSnapshot = await transaction.get(selfReportCancerDxQuery);
+                toDelete.selfReportCancerDx = selfReportCancerDxSnapshot.docs.map(doc => doc.id);
+                return resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+
+        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise, selfReportCancerDxPromise]);
 
         if (saveToDb) {
             const participantDoc = db.collection('participants').doc(userId);
@@ -1086,6 +1096,7 @@ const removeParticipantsDataDestruction = async () => {
         }
     } catch (error) {
         console.error(`Error occurred when updating documents: ${error}`);
+        throw error;
     }
 };
 
@@ -1116,6 +1127,7 @@ const removeUninvitedParticipants = async () => {
         console.log(`Successfully deleted ${count} uninvited participants`)
     } catch (error) {
         console.error(`Error occurred when deleting documents: ${error}`);
+        throw error;
     }
 }
 
@@ -6377,8 +6389,8 @@ const processTwilioEvent = async (reqBody) => {
       
       await doc.ref.update(eventRecord);
 
-      if (disableSmsErrorCodes.includes(eventErrorCode)) {
-        await updateSmsPermission(docData.phone, false);
+      if (disableSmsErrorCodes.includes(eventErrorCode) && docData.token) {
+        await updateSmsPermission([docData.token], false);
       }
     }
 
@@ -6389,6 +6401,45 @@ const processTwilioEvent = async (reqBody) => {
 
   if (!isRecordFound) {
     console.error(`Could not find notification record with messageSid ${reqBody.MessageSid}. Message status ${reqBody.MessageStatus}.`);
+  }
+};
+
+/**
+ * Stores an incoming Twilio SMS message in the "incomingSMS" Firestore collection.
+ * @param {object} smsData - Twilio incoming SMS webhook request body
+ * @param {string} smsData.MessageSid - Unique identifier for the SMS message
+ * @param {string} smsData.From - Sender's phone number
+ * @param {string} [smsData.To] - The phone number that received the SMS message (Twilio number)
+ * @param {string} [smsData.Body] - The content of the incoming SMS message
+ * @param {string} [smsData.OptOutType] - The type of opt-out event (e.g., START, STOP, HELP)
+ * @returns {Promise<void>}
+ * @throws {Error} If the Firestore write fails
+ */
+const storeIncomingSmsData = async (smsData = {}) => {
+  const { MessageSid, From, To, Body, OptOutType } = smsData;
+  if (!MessageSid || !From) {
+    throw new Error('Missing required fields in incoming SMS data: MessageSid and From are required.');
+  }
+
+  const optOutKey = OptOutType ? `sms${OptOutType.charAt(0).toUpperCase() + OptOutType.slice(1).toLowerCase()}` : null;
+  let optOutCid = OptOutType;
+  if (optOutKey && fieldMapping[optOutKey]) {
+    optOutCid = fieldMapping[optOutKey];
+  }
+
+  const smsRecord = {
+    [fieldMapping.smsSid]: MessageSid,
+    [fieldMapping.smsFrom]: From,
+    [fieldMapping.smsTo]: To || "",
+    [fieldMapping.smsContent]: Body || "",
+    ...(OptOutType && { [fieldMapping.smsOptOutType]: optOutCid }),
+    [fieldMapping.smsTimestamp]: new Date().toISOString(),
+  };
+
+  try {
+    await db.collection("incomingSMS").doc(MessageSid).set(smsRecord);
+  } catch (error) {
+    throw new Error(`Error storing incoming SMS data for MessageSid ${MessageSid}.`, { cause: error });
   }
 };
 
@@ -6422,6 +6473,85 @@ const writeCancerOccurrences = async (cancerOccurrenceArray) => {
     } catch (error) {
         console.error('Error in writeCancerOccurrences:', error);
         throw new Error(`Write Cancer Occurrences failed: ${error.message}`);
+    }
+};
+
+/**
+ * Self-Report Cancer Diagnosis documents for one participant.
+ * Partitioned into the single in-progress doc and the append-only submitted diagnoses.
+ * A submitted diagnosis is identified by its server-assigned DxNumber.
+ * @param {string} uid - Firebase auth uid (verified by the router).
+ * @returns {Promise<{inProgressDoc: {docId, data}|null, submittedDiagnoses: object[]}>}
+ */
+const getSelfReportCancerDxDocs = async (uid) => {
+    const { partitionDiagnosisDocs } = require('./selfReportCancerDx');
+    const snapshot = await db.collection('selfReportCancerDx').where('uid', '==', uid).get();
+    printDocsCount(snapshot, 'getSelfReportCancerDxDocs');
+    const diagnosisDocs = snapshot.docs.map((doc) => ({ docId: doc.id, data: doc.data() }));
+    const { inProgressDoc, submittedDocs } = partitionDiagnosisDocs(diagnosisDocs);
+
+    return { inProgressDoc, submittedDiagnoses: submittedDocs.map((doc) => doc.data) };
+};
+
+/**
+ * Upsert one Self-Report Cancer Diagnosis doc. `set` WITHOUT merge by design: each save
+ * replaces the in-progress snapshot, so fields cleared by Back navigation disappear.
+ * @param {string|null} docId - existing doc to replace, or null to create.
+ * @param {object} data - the full document.
+ * @param {{ guardSubmitted?: boolean }} [opts] - guardSubmitted (the SAVE path) re-reads in a
+ *   transaction and skips the write if the doc was already submitted, so a racing
+ *   progress save can't revert a finalized diagnosis back to in-progress.
+ * 
+ *   Submit does not use this helper. It finalizes through submitSelfReportCancerDxTransaction so DxNumber is assigned
+ *   atomically.
+ */
+const writeSelfReportCancerDxDoc = async (docId, data, { guardSubmitted = false } = {}) => {
+    const write = async () => {
+        if (!docId) { await db.collection('selfReportCancerDx').add(data); return; }
+        const ref = db.collection('selfReportCancerDx').doc(docId);
+        if (!guardSubmitted) { await ref.set(data); return; }
+        const { isSubmittedDiagnosis } = require('./selfReportCancerDx');
+        await db.runTransaction(async (transaction) => {
+            const snap = await transaction.get(ref);
+            if (snap.exists && isSubmittedDiagnosis(snap.data() || {})) return; // finalized — don't revert
+            transaction.set(ref, data);
+        });
+    };
+
+    try {
+        await firestoreWriteWithAutoRetry(write, 'writeSelfReportCancerDxDoc');
+    } catch (error) {
+        console.error('Error in writeSelfReportCancerDxDoc:', error);
+        throw new Error(`Write Self-Report Cancer Dx failed: ${error.message}`);
+    }
+};
+
+/**
+ * Finalize one Self-Report Cancer Diagnosis doc. DxNumber is a participant-wide sequence.
+ * Reuses the in-progress doc when present (the common path), else creates a new doc.
+ * @param {string} uid - Firebase auth uid (verified by the router).
+ * @param {(ctx: {inProgressDoc: {docId: string, data: object}|null, submittedDiagnoses: object[]}) => object} buildFinalDoc
+ *   - returns the full finalized document, given the in-progress doc and the already-submitted diagnoses.
+ * @returns {Promise<{docId: string}>}
+ */
+const submitSelfReportCancerDxTransaction = async (uid, buildFinalDoc) => {
+    const { partitionDiagnosisDocs } = require('./selfReportCancerDx');
+    const collection = db.collection('selfReportCancerDx');
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const snapshot = await transaction.get(collection.where('uid', '==', uid));
+            const diagnosisDocs = snapshot.docs.map((doc) => ({ docId: doc.id, data: doc.data() }));
+            const { inProgressDoc, submittedDocs } = partitionDiagnosisDocs(diagnosisDocs);
+            const ref = inProgressDoc?.docId ? collection.doc(inProgressDoc.docId) : collection.doc();
+            transaction.set(ref, buildFinalDoc({
+                inProgressDoc,
+                submittedDiagnoses: submittedDocs.map((doc) => doc.data),
+            }));
+            return { docId: ref.id };
+        });
+    } catch (error) {
+        console.error('Error in submitSelfReportCancerDxTransaction:', error);
+        throw new Error(`Submit Self-Report Cancer Dx failed: ${error.message}`);
     }
 };
 
@@ -6672,14 +6802,13 @@ const getAppSettings = async (appName, selectedParamsArray) => {
 
 /**
  *
- * @param {string} phoneNumber Phone number in +1XXXXXXXXXX format
+ * @param {string[]} tokenArray Tokens of participants to update
  * @param {boolean} isSmsPermitted Whether SMS is permitted or not
  * @returns {Promise<number>} Number of document(s) updated
  */
-const updateSmsPermission = async (phoneNumber, isSmsPermitted) => {
+const updateSmsPermission = async (tokenArray, isSmsPermitted) => {
   let count = 0;
   const permissionCid = isSmsPermitted ? fieldMapping.yes : fieldMapping.no;
-  const tokenArray = await getParticipantTokensByPhoneNumber(phoneNumber);
   if (tokenArray.length > 0) {
     const batch = db.batch();
     for (const token of tokenArray) {
@@ -7105,6 +7234,94 @@ const getEmailSuppressions = async (emailArray, mailStream) => {
   return suppressedSet;
 };
 
+/**
+ * Fetch participant records for a batch of Connect_IDs up front, instead of a
+ * sequential lookup per row. Firestore caps 'in' queries at 30 values, so the
+ * IDs are de-duplicated and chunked, and the chunk queries run in parallel.
+ * @param {Array<number|string>} connectIds
+ * @returns {Promise<Map<number, {id: string, data: object}>>} Map keyed by Connect_ID (number).
+ */
+const getParticipantsDataByConnectIds = async (connectIds) => {
+    const uniqueIds = [...new Set(connectIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id)))];
+    if (uniqueIds.length === 0) return new Map();
+
+    const chunkSize = 30;
+    const queries = [];
+
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+        const chunk = uniqueIds.slice(i, i + chunkSize);
+        queries.push(db.collection('participants').where('Connect_ID', 'in', chunk).get());
+    }
+
+    const snapshots = await Promise.all(queries);
+    const participantMap = new Map();
+    for (const snapshot of snapshots) {
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            participantMap.set(data.Connect_ID, { id: doc.id, data });
+        });
+    }
+
+    return participantMap;
+};
+
+/**
+ * Generate a deterministic document ID for a geocoded address row.
+ * The hash is derived from Connect_ID + all non-blank field values (sorted by key)
+ * so the same address for a participant always maps to the same doc, preventing
+ * duplicate documents for an identical address (participants may still have
+ * multiple distinct address documents in this collection).
+ * @param {number|string} connectId
+ * @param {object} fields - The address fields (excluding Connect_ID), already stripped of blanks.
+ * @returns {string} A hex hash string suitable as a Firestore document ID.
+ */
+const generateGeocodedAddressDocId = (connectId, fields) => {
+    const crypto = require('crypto');
+    const sortedEntries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
+    const payload = `${connectId}:${JSON.stringify(sortedEntries)}`;
+    return crypto.createHash('sha256').update(payload).digest('hex');
+};
+
+/**
+ * Write a batch of validated geocoded address rows to the geocodedAddresses collection.
+ * Uses deterministic doc IDs so retries are idempotent (set with merge).
+ * Respects the Firestore batch limit of 500 operations per commit.
+ * @param {Array<{connectId: number|string, fields: object}>} rows - Array of validated row objects.
+ * @returns {Promise<void>}
+ */
+const writeGeocodedAddresses = async (rows) => {
+    const batchLimit = 500;
+    let batch = db.batch();
+    let counter = 0;
+    const batchPromises = [];
+
+    for (const { connectId, fields } of rows) {
+        const docId = generateGeocodedAddressDocId(connectId, fields);
+        const docRef = db.collection('geocodedAddresses').doc(docId);
+        const docData = {
+            Connect_ID: +connectId,
+            ...fields,
+            received_timestamp: new Date().toISOString(),
+        };
+        batch.set(docRef, docData, { merge: true });
+        counter++;
+
+        if (counter >= batchLimit) {
+            batchPromises.push(batch.commit());
+            batch = db.batch();
+            counter = 0;
+        }
+    }
+
+    if (counter > 0) {
+        batchPromises.push(batch.commit());
+    }
+
+    await Promise.all(batchPromises);
+};
+
 module.exports = {
     db,
     storage,
@@ -7256,11 +7473,15 @@ module.exports = {
     getSupplyKitTrackingNumber,
     processSendGridEvent,
     processTwilioEvent,
+    storeIncomingSmsData,
     getSpecimenAndParticipant,
     queryKitsByReceivedDate,
     queryKitsByShippedAndAssignedStatus,
     getParticipantCancerOccurrences,
     writeCancerOccurrences,
+    getSelfReportCancerDxDocs,
+    writeSelfReportCancerDxDoc,
+    submitSelfReportCancerDxTransaction,
     writeBirthdayCard,
     getExistingBirthdayCard,
     updateParticipantCorrection,
@@ -7283,4 +7504,7 @@ module.exports = {
     getMySamples,
     getAllMySamples,
     updateMySamples,
+    getParticipantsDataByConnectIds,
+    generateGeocodedAddressDocId,
+    writeGeocodedAddresses,
 };

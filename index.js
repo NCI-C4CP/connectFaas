@@ -2,7 +2,7 @@ const {onRequest} = require("firebase-functions/v2/https");
 const { onTaskDispatched } = require("firebase-functions/v2/tasks");
 const { getToken } = require('./utils/validation');
 const { getFilteredParticipants, getParticipants, identifyParticipant } = require('./utils/submission');
-const { submitParticipantsData, updateParticipantData, getBigQueryData } = require('./utils/sites');
+const { submitParticipantsData, updateParticipantData, getBigQueryData, geocodedAddresses } = require('./utils/sites');
 const { sendScheduledNotifications, processNotificationBatchBulkDefault, processNotificationBatchBulkMicrosoft } = require('./utils/notifications');
 const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
@@ -27,6 +27,7 @@ exports.identifyParticipant = identifyParticipant;
 exports.submitParticipantsData = submitParticipantsData;
 exports.updateParticipantData = updateParticipantData;
 exports.getBigQueryData = getBigQueryData;
+exports.geocodedAddresses = geocodedAddresses;
 
 // End-Point for Site Manager Dashboard
 exports.dashboard = dashboard;
