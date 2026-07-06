@@ -405,6 +405,12 @@ module.exports = {
     selfReportCancerDx: {
         dxNumber: 480939157,            // computed at submission time
         surveyLanguage: 784119588,
+        sourceQuestions: {
+            primarySite: 176158861,
+            treatmentType: 388069854,
+            treatmentOngoingEnd: 566057154,
+            screeningType: 130601750,
+        },
         primarySite: 181737942,
         primarySiteOther: 546976551,    // required if primarySite === cancerSites.other (807835037)
         dxMonth: 299768751,
@@ -420,22 +426,22 @@ module.exports = {
         screeningEligibleSiteCids: [847945207, 942970912, 754745617], // breast, colon/rectal, lung
         treatment: {
             chemo: 244216107, surgery: 293873603, radiation: 555019890, other: 459406752,
-            otherDescribe: 420392069, // FLAT — no loop suffix
+            otherDescribe: 420392069, // treatment-type source child; no loop suffix
             startMonth: 742710886, startYear: 281136649,
             endMonth: 625530863, endYear: 729162012, ongoing: 735592270,
             physFirstName: 964819753, physLastName: 740626474,
-            physNpi: "TODO_TxPhysNPI", // no cid yet
+            physNpi: 609996916,
             facility: {
                 line1: 165350319, line2: 456014563, line3: 783145717, line4: 460490909,
                 city: 493041638, state: 215797578,
-                zip: 385095107, intlFlag: 539812906, country: 785016438,
+                zip: 385095107, intlFlag: 539812906, googleValidated: 568499390, country: 785016438,
             },
         },
         screening: {
             detected: 944065539,
             month: 853862770, year: 858052564,
-            phyFirstName: 239126548, phyLastName: 130343311,
-            phyNpi: "TODO_ScrnPhyNPI", // no cid yet
+            physFirstName: 239126548, physLastName: 130343311,
+            physNpi: 879021105,
             optionValues: {
                 breast2D: 425815239, breastCEM: 759642936, breastMRI: 528508094,
                 breastUS: 502929020, breastCBE: 412252588, lungCT: 633630015,
@@ -450,7 +456,7 @@ module.exports = {
             facility: {
                 line1: 977505777, line2: 632951008, line3: 693368144, line4: 939355635,
                 city: 591687168, state: 513329248 /* merged state/region */,
-                zip: 404892571 /* merged zip/postal */, intlFlag: 501859375, country: 874199876,
+                zip: 404892571 /* merged zip/postal */, intlFlag: 501859375, googleValidated: 803865514, country: 874199876,
             },
         },
         // Per-site submitted-timestamp cid, keyed by the site response cid (ISO8601 strings).
