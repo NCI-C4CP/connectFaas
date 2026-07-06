@@ -2489,6 +2489,45 @@ const VALID_TIERS = Object.freeze([...new Set(Object.values(PROJECT_TIER_MAP))])
 
 const developmentTier = PROJECT_TIER_MAP[process.env.GCLOUD_PROJECT] || DEFAULT_TIER;
 
+// Helper methods for CGR packages in transit
+const getBagId = (bag) => {
+    let bagId = '';
+    if (bag[fieldMapping.orphanBagFlag] === fieldMapping.yes || bag[fieldMapping.tubesBagsCids.orphanScan]) {
+        bagId = 'unlabelled';
+    } else {
+        bagId = bag[fieldMapping.tubesBagsCids.biohazardBagScan] || bag[fieldMapping.tubesBagsCids.biohazardMouthwashBagScan] || '';
+    }
+
+    return bagId;
+}
+
+/**
+ * Maps specimen id to material type based on last 4 digits
+ * @param {string} specimenId - Specimen id from each specimen bag
+ * @returns {string} Returns material type
+ */
+
+const materialTypeMapping = (specimenId) => {
+  const tubeId = specimenId.split(" ")[1];
+  const materialTypeObject = {
+    "0001": "WHOLE BL",
+    "0002": "WHOLE BL",
+    "0011": "WHOLE BL",
+    "0012": "WHOLE BL",
+    "0021": "WHOLE BL",
+    "0003": "WHOLE BL",
+    "0004": "WHOLE BL",
+    "0005": "WHOLE BL",
+    "0013": "WHOLE BL",
+    "0014": "WHOLE BL",
+    "0024": "WHOLE BL",
+    "0006": "Urine",
+    "0007": "Saliva",
+    "0060": "WHOLE BL",
+  };
+  return materialTypeObject[tubeId] ?? "";
+};
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -2578,4 +2617,6 @@ module.exports = {
     developmentTier,
     VALID_TIERS,
     PROJECT_TIER_MAP,
+    getBagId,
+    materialTypeMapping
 };
