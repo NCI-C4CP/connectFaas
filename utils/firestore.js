@@ -3018,7 +3018,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
         startDate = isNaN(startDate) ? startDate : +startDate;
         boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '>=', new Date(startDate).toISOString());
     }
-    if(endDate) {
+    if (endDate) {
         // End date can be a Unix epoch timestamp, so check for that
         endDate = isNaN(endDate) ? endDate : +endDate;
         boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '<=', new Date(endDate).toISOString());
