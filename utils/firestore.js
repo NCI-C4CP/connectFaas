@@ -498,7 +498,18 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             }
         });
 
-        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise, selfReportCancerDxPromise]);
+        const selfReportHCSUpdatesPromise = new Promise(async (resolve, reject) => {
+            try {
+                const selfReportHCSUpdatesQuery = db.collection('selfReportHCSUpdates').where('token', '==', token);
+                const selfReportHCSUpdatesSnapshot = await transaction.get(selfReportHCSUpdatesQuery);
+                toDelete.selfReportHCSUpdates = selfReportHCSUpdatesSnapshot.docs.map(doc => doc.id);
+                return resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+
+        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise, selfReportCancerDxPromise, selfReportHCSUpdatesPromise]);
 
         if (saveToDb) {
             const participantDoc = db.collection('participants').doc(userId);
@@ -6556,6 +6567,33 @@ const submitSelfReportCancerDxTransaction = async (uid, buildFinalDoc) => {
 };
 
 /**
+ * Self-Report Health Care System Update documents for one participant (issue #1658).
+ * All docs are submitted (append-only); the module has no in-progress state.
+ * @param {string} uid - Firebase auth uid (verified by the router).
+ * @returns {Promise<object[]>} document data, unsorted (the endpoint sorts by submitted timestamp).
+ */
+const getSelfReportHCSUpdateDocs = async (uid) => {
+    const snapshot = await db.collection('selfReportHCSUpdates').where('uid', '==', uid).get();
+    printDocsCount(snapshot, 'getSelfReportHCSUpdateDocs');
+    return snapshot.docs.map((doc) => doc.data());
+};
+
+/**
+ * Append one finalized Self-Report Health Care System Update doc. No transaction needed:
+ * the module has no participant-wide counters and docs are never edited after creation.
+ * @param {object} data - the full document.
+ */
+const addSelfReportHCSUpdateDoc = async (data) => {
+    const write = async () => { await db.collection('selfReportHCSUpdates').add(data); };
+    try {
+        await firestoreWriteWithAutoRetry(write, 'addSelfReportHCSUpdateDoc');
+    } catch (error) {
+        console.error('Error in addSelfReportHCSUpdateDoc:', error);
+        throw new Error(`Write Self-Report HCS Update failed: ${error.message}`);
+    }
+};
+
+/**
  * Occasionally, birthday card data needs to be updated based on return data from the post office.
  * Check for duplicate birthday card data before writing to Firestore.
  * An existing birthday card is one with the same token, mailDate, and cardVersion.
@@ -7482,6 +7520,8 @@ module.exports = {
     getSelfReportCancerDxDocs,
     writeSelfReportCancerDxDoc,
     submitSelfReportCancerDxTransaction,
+    getSelfReportHCSUpdateDocs,
+    addSelfReportHCSUpdateDoc,
     writeBirthdayCard,
     getExistingBirthdayCard,
     updateParticipantCorrection,

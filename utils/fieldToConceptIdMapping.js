@@ -470,6 +470,29 @@ module.exports = {
         },
     },
 
+    // Self-Report Health Care System Update ("Share New Health Information", issue #1658).
+    selfReportHCSUpdate: {
+        surveyLanguage: 784119588,
+        monthResponses: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
+            574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
+        facility: {
+            line1: 624974556,  // Line 1 = name of primary care facility
+            line2: 655907949, // Line 2 = main address
+            line3: 858545898, 
+            line4: 134439170,
+            city: 973363047,
+            state: 783801971 /* merged state/region */,
+            zip: 734087990 /* merged zip/postal */,
+            intlFlag: 892107008,
+            googleValidated: 771921322,
+            country: 111301575,
+        },
+        changeMonth: 994200497,
+        changeYear: 353158944,
+        additionalInfo: 519981637,
+        submittedTimestamp: 223569179, // Server-stamped at submit (ISO8601 string).
+    },
+
     // SSN Variables
     ssnModule: 'D_166676176',
     ssnCompleteTs: 315032037,
