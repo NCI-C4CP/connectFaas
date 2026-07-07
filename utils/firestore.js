@@ -2419,7 +2419,7 @@ const searchBoxesByLocation = async (institute, location) => {
             ]
         },]
  */
-const cgrPackagesInTransit = async(startDate, endDate) => {
+const cgrPackagesInTransit = async (startDate, endDate) => {
 
     // Get helper methods
     const {getBagId, materialTypeMapping} = require('./shared');
