@@ -165,6 +165,28 @@ describe('API Endpoint Method Guards', () => {
         }
     });
 
+    describe('Self-Report Cancer Diagnosis release gate', () => {
+        it.each([
+            ['searchNPIRegistry', 'GET'],
+            ['getSelfReportCancerDx', 'GET'],
+            ['storeSelfReportCancerDx', 'POST'],
+        ])('rejects %s while the feature is disabled', async (apiName, method) => {
+            vi.spyOn(firestore, 'validateIDToken').mockResolvedValue({ uid: 'uid-test' });
+
+            const res = await invoke(api.app, method, {
+                headers: { authorization: 'Bearer fake-token' },
+                query: { api: apiName, action: 'save' },
+                body: {},
+            });
+
+            expect(res.statusCode).toBe(403);
+            expect(res._getJSONData()).toMatchObject({
+                code: 403,
+                message: 'Self-Report Cancer Diagnosis is disabled for this release.',
+            });
+        });
+    });
+
     // TODO: Re-enable when the geocodedAddresses 503 shutdown is removed (October 2026).
     describe.skip('geocodedAddresses authorization', () => {
         it('should reject unauthenticated requests with 401', async () => {
