@@ -829,7 +829,7 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
 
-    else if (api === 'cgrPackagesInTransit') {
+    else if (api === 'getCgrPackagesInTransit') {
         if (req.method !== 'GET') {
             return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
         }
