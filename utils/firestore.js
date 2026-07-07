@@ -3013,7 +3013,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
 
     // Accepts any timestamp which is of a valid form for new Date(), including ISO timestamp, UTC string, Unix epoch, and locale string in UTC
     // (Date stored at submission time as new Date().toISOString(), so it is always in UTC)
-    if(startDate) {
+    if (startDate) {
         // Start date can be a Unix epoch timestamp, so check for that
         startDate = isNaN(startDate) ? startDate : +startDate;
         boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '>=', new Date(startDate).toISOString());
