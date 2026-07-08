@@ -2395,6 +2395,234 @@ const searchBoxesByLocation = async (institute, location) => {
     
 }
 
+/**
+ * 
+ * @param {String | Number} startDate Optional. Date in valid format to be passed into new Date(startDate).toISOString().
+ * If provided, results are filtered to packages sent on or after this time.
+ * @param {String | Number} endDate Optional. Date in valid format to be passed into new Date(endDate).toISOString().
+ * If provided, results are filtered to packages sent on or before this time.
+ * @returns Array of form [{
+            "shipDate": "2026-06-22",
+            "trackingNumber": "665122232323",
+            "shippedSite": "NIH",
+            "shippedLocation": "Main Campus",
+            "shipDateTime": "2026-06-22T13:26:14.852Z",
+            "numSamples": 0,
+            "tempMonitor": "Yes",
+            "BoxId": "Box127",
+            "biospecimens": [
+                {
+                    "specimenBagId": "CXA088887 0008",
+                    "fullSpecimenIds": "CXA088887 0001",
+                    "materialType": "WHOLE BL"
+                },
+            ]
+        },]
+ */
+const cgrPackagesInTransit = async (startDate, endDate) => {
+
+    // Get helper methods
+    const {
+        getBagId, materialTypeMapping, 
+        conceptIdToSiteSpecificLocation, specimenCollection, tubeDeviationFlags, locationConceptIDToLocationMap
+    } = require('./shared');
+
+    const bagConceptIdList = Object.values(fieldMapping.bagContainerCids);
+
+    // Get the boxes which have been submitted but not received.
+    let boxQuery = db.collection('boxes')
+        .where(fieldMapping.submitShipmentFlag.toString(), "==", fieldMapping.yes)
+        .where(fieldMapping.siteShipmentReceived.toString(), "==", fieldMapping.no);
+    
+
+    // Accepts any timestamp which is of a valid form for new Date(), including ISO timestamp, UTC string, Unix epoch, and locale string in UTC
+    // (Date stored at submission time as new Date().toISOString(), so it is always in UTC)
+    if (startDate) {
+        // Start date can be a Unix epoch timestamp, so check for that
+        startDate = isNaN(startDate) ? startDate : +startDate;
+        boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '>=', new Date(startDate).toISOString());
+    }
+    if (endDate) {
+        // End date can be a Unix epoch timestamp, so check for that
+        endDate = isNaN(endDate) ? endDate : +endDate;
+        boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '<=', new Date(endDate).toISOString());
+    }
+    const pkgSnapshot = await boxQuery.get();
+
+    const packages = pkgSnapshot.docs?.map(doc => doc.data()) || [];
+
+    // Filter out lost boxes to reflect the packages in transit
+    // Not included in the query because it excludes records where the field does not exist
+    const notLostBoxes = packages.filter(
+      (box) => box[fieldMapping.packageLost] !== fieldMapping.yes
+    );
+
+    // Sort the packages (getRecentBoxesShippedBySiteNotReceived in biospecimen)
+    const sortedPackages = notLostBoxes.sort((a,b) => {
+        const shipDateA = a[fieldMapping.submitShipmentTimestamp];
+        const shipDateB = b[fieldMapping.submitShipmentTimestamp];
+        return (shipDateA < shipDateB) ? 1 : -1;
+    });
+
+
+    // Get the specimens in each box
+
+    const tubeIdSet = new Set();
+    const collectionIdSet = new Set();
+    notLostBoxes.forEach(box => {
+        const bagKeys = Object.keys(box)
+            .filter(key => bagConceptIdList.includes(parseInt(key, 10)))
+            .sort((a, b) => {
+                return bagConceptIdList.indexOf(parseInt(a, 10)) < bagConceptIdList.indexOf(parseInt(b, 10)) ? -1 : 1
+            });
+
+        bagKeys.forEach(key => {
+            const tubes = box[key]?.[fieldMapping.samplesWithinBag];
+            if (tubes && tubes.length) {
+                if (key === 'unlabelled') {
+                    tubes.forEach(tube => {
+                        tubeIdSet.add(tube);
+                        const [collectionId] = tube.split(' ');
+                        collectionId && collectionIdSet.add(collectionId);
+                    });
+                } else {
+                    const [collectionId] = tubes[0].split(' ');
+                    collectionId && collectionIdSet.add(collectionId);
+                    tubes.forEach(tube => {
+                        tubeIdSet.add(tube);
+                    });
+                }
+            }
+        });
+    });
+
+    // Now call getSpecimensByCollectionIds with the collectionIdSet and other information
+    const collectionIdsArray = Array.from(collectionIdSet);
+    const specimens = await getSpecimensByCollectionIds(collectionIdsArray, 'siteCode', true);
+
+    // Now isolate the specimens to those in the current boxes
+    const specimensInBoxes = [];
+
+    for (const specimen of specimens) {
+        for (const tubeId of tubeIdSet) {
+            if (!specimen.data[tubeId]) continue;
+            if (!specimen.data[tubeId][fieldMapping.objectId] || !tubeIdSet.has(specimen.data[tubeId][fieldMapping.objectId])) {
+                delete specimen.data[tubeId];
+            }    
+        }
+        specimensInBoxes.push(specimen.data);
+    }
+
+    // Now find the replacementTubeLabelObj and the modifiedTransitResults
+    const replacementTubeLabelObj = {};
+    const replacementLabelRegExp = new RegExp('005[0-4]$');
+    for (let specimen of specimensInBoxes) {
+        const collectionId = specimen[fieldMapping.collectionId];
+        if (!collectionId) continue;
+
+        const tubeDataObject = {};
+        tubeLoop: for (const tubeKey of specimenCollection.tubeCidList) {
+            const tube = specimen[tubeKey];
+
+            if (!tube || !tube[fieldMapping.scannedId]) {
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            if (tube[fieldMapping.tubeDiscardFlag] === fieldMapping.yes) {
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            if (tube[fieldMapping.tubeIsMissing] === fieldMapping.yes) {
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            if (tube[fieldMapping.tubeIsCollected] === fieldMapping.no) {
+                // If the tube is not even marked as collected, it should also be removed as unusable
+                // (Issues 1388 and 1316)
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            // This is a sanity check, but hasn't been needed in testing. All applicable tubes have been filtered by the discard flag.
+            const tubeDeviation = tube[fieldMapping.tubeDeviationObject];
+            for (const deviationFlag of tubeDeviationFlags) {
+                if (tubeDeviation?.[deviationFlag] === fieldMapping.yes) {
+                    delete specimen[tubeKey];
+                    continue tubeLoop;
+                }
+            }
+            tubeDataObject[tubeKey] = tube[fieldMapping.objectId];  
+        };
+        Object.keys(tubeDataObject).forEach(tubeCid => {
+            let scannedTubeLabel = tubeDataObject[tubeCid];
+            if (replacementLabelRegExp.test(scannedTubeLabel)) {
+                replacementTubeLabelObj[scannedTubeLabel] = collectionId + ' ' + specimenCollection.cidToNum[tubeCid];
+            }
+        });
+    }
+
+    // Now build the package data and the data for individual specimens within each box
+    let modifiedTransitResults = [];
+    let boxesInTransitResults = [];
+    sortedPackages.forEach((shippedBox) => {
+        // const bagKeys = getBagList(shippedBox); // store specimenBagId in an array
+        const bagKeys = Object.keys(shippedBox)
+            .filter(key => bagConceptIdList.includes(parseInt(key, 10)))
+            .sort((a, b) => {
+                return bagConceptIdList.indexOf(parseInt(a, 10)) < bagConceptIdList.indexOf(parseInt(b, 10)) ? -1 : 1
+            });
+
+        // const specimenBags = getBags(shippedBox); // store bag content in an array
+        let specimenBags = {};
+        bagKeys.forEach((bagId) => {
+            specimenBags[bagId] = Object.assign({}, shippedBox[bagId]);
+        });
+
+        // Box info used for CSVs
+        const locationConceptID = shippedBox[fieldMapping.shippingLocation];
+
+        const boxData = {
+            shipDate: shippedBox[fieldMapping.boxLastModifiedTimestamp]?.split("T")[0] || "",
+            trackingNumber: shippedBox[fieldMapping.boxTrackingNumberScan] || "",
+            shippedSite: locationConceptIDToLocationMap[locationConceptID]?.siteAcronym || '',
+            shippedLocation: conceptIdToSiteSpecificLocation[shippedBox[fieldMapping.shippingLocation]] || "",
+            shipDateTime: shippedBox[fieldMapping.boxLastModifiedTimestamp] || "",
+            numSamples: specimenBags.length || 0,
+            tempMonitor: shippedBox[fieldMapping.temperatureProbeInBox] === fieldMapping.yes ? "Yes" : "No",
+            BoxId: shippedBox[fieldMapping.shippingBoxId] || "",
+            biospecimens: []
+        };
+
+        let dataHolder;
+
+        bagKeys.forEach((bagId, index) => {
+            const specimenBag = specimenBags[bagId];
+            specimenBag[fieldMapping.samplesWithinBag]?.forEach((fullSpecimenIds, j, specimenBagSize) => {
+                // grab fullSpecimenIds & loop thru content
+
+                if (Object.prototype.hasOwnProperty.call(replacementTubeLabelObj,fullSpecimenIds)) {
+                    fullSpecimenIds = replacementTubeLabelObj[fullSpecimenIds];
+                }
+
+                dataHolder = {
+                    specimenBagId: getBagId(specimenBag),
+                    fullSpecimenIds: fullSpecimenIds,
+                    materialType: materialTypeMapping(fullSpecimenIds),
+                };
+                boxData.biospecimens.push(dataHolder);
+                modifiedTransitResults.push(dataHolder);
+            });
+        });
+
+        boxesInTransitResults.push(boxData);
+    });
+
+    return boxesInTransitResults;
+}
+
 const getSpecimenCollections = async (token, siteCode) => {
     const snapshot = await db.collection('biospecimen').where('token', '==', token).where('827220437', '==', siteCode).get();
     printDocsCount(snapshot, "getSpecimenCollections");
@@ -7370,6 +7598,7 @@ module.exports = {
     shipBox,
     getLocations,
     searchBoxesByLocation,
+    cgrPackagesInTransit,
     removeBag,
     reportMissingSpecimen,
     updateTempCheckDate,
