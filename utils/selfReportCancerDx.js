@@ -35,19 +35,18 @@ const OTHER_SITE_CID = String(fieldMapping.cancerSites.other);
 const SOURCE_CIDS = selfReportCancerCIDs.sourceQuestions;
 const LANGUAGE_CIDS = new Set([fieldMapping.english, fieldMapping.spanish]);
 
-const isRealCid = (cid) => typeof cid === 'number'; // NPI cids are TODO strings until assigned
 const TX_TYPE_CIDS = [selfReportCancerCIDs.treatment.chemo, selfReportCancerCIDs.treatment.surgery, selfReportCancerCIDs.treatment.radiation, selfReportCancerCIDs.treatment.other];
-const TX_DETAIL_CHILD_CIDS = [selfReportCancerCIDs.treatment.startMonth, selfReportCancerCIDs.treatment.startYear].filter(isRealCid);
-const TX_ONGOING_CHILD_CIDS = [selfReportCancerCIDs.treatment.ongoing, selfReportCancerCIDs.treatment.endMonth, selfReportCancerCIDs.treatment.endYear].filter(isRealCid);
+const TX_DETAIL_CHILD_CIDS = [selfReportCancerCIDs.treatment.startMonth, selfReportCancerCIDs.treatment.startYear];
+const TX_ONGOING_CHILD_CIDS = [selfReportCancerCIDs.treatment.ongoing, selfReportCancerCIDs.treatment.endMonth, selfReportCancerCIDs.treatment.endYear];
 const TX_REPEATED_CHILD_CIDS = [
     selfReportCancerCIDs.treatment.physFirstName, selfReportCancerCIDs.treatment.physLastName, selfReportCancerCIDs.treatment.physNpi,
     ...Object.values(selfReportCancerCIDs.treatment.facility),
-].filter(isRealCid);
+];
 const SCRN_OPTION_CIDS = Object.values(selfReportCancerCIDs.screening.optionValues);
 const SCRN_NESTED_CHILD_CIDS = [
     selfReportCancerCIDs.screening.month, selfReportCancerCIDs.screening.year, selfReportCancerCIDs.screening.physFirstName, selfReportCancerCIDs.screening.physLastName,
     selfReportCancerCIDs.screening.physNpi, ...Object.values(selfReportCancerCIDs.screening.facility),
-].filter(isRealCid);
+];
 
 const TOP_LEVEL_SCALAR_CIDS = new Set([
     selfReportCancerCIDs.dxMonth, selfReportCancerCIDs.dxYear, selfReportCancerCIDs.txReceived,
@@ -56,7 +55,6 @@ const TOP_LEVEL_SCALAR_CIDS = new Set([
 const TX_PARENT_CIDS = new Set(TX_TYPE_CIDS.map(String));
 const SCRN_PARENT_CIDS = new Set(SCRN_OPTION_CIDS.map(String));
 const TX_DETAIL_CHILD_CID_SET = new Set(TX_DETAIL_CHILD_CIDS.map(String));
-const TX_ONGOING_CHILD_CID_SET = new Set(TX_ONGOING_CHILD_CIDS.map(String));
 const TX_REPEATED_CHILD_CID_SET = new Set(TX_REPEATED_CHILD_CIDS.map(String));
 const SCRN_CHILD_CID_SET = new Set(SCRN_NESTED_CHILD_CIDS.map(String));
 const MAX_LOOP_POSITION = 10;  // <=10 physicians per the spec. <= 10 facilities per the spec.
@@ -65,7 +63,7 @@ const YES_NO_CHILD_CIDS = [
     selfReportCancerCIDs.treatment.facility.googleValidated,
     selfReportCancerCIDs.screening.facility.intlFlag,
     selfReportCancerCIDs.screening.facility.googleValidated,
-].filter(isRealCid).map(String);
+].map(String);
 
 const TOP_LEVEL_D_KEY_RE = /^D_(\d{9})$/;
 const CHILD_D_KEY_RE = /^D_(\d{9})(?:_([1-9]\d?)_([1-9]\d?))?$/;
@@ -371,15 +369,15 @@ const validateSubmission = (body) => {
         }
     }
 
-    // Rule 13: every month-valued nested key. NPI cids once their cids are assigned.
-    const monthCids = [selfReportCancerCIDs.treatment.startMonth, selfReportCancerCIDs.treatment.endMonth, selfReportCancerCIDs.screening.month].filter(isRealCid);
+    // Rule 13: every month-valued nested key and NPI value.
+    const monthCids = [selfReportCancerCIDs.treatment.startMonth, selfReportCancerCIDs.treatment.endMonth, selfReportCancerCIDs.screening.month].map(String);
+    const npiCids = [selfReportCancerCIDs.treatment.physNpi, selfReportCancerCIDs.screening.physNpi].map(String);
     for (const { key, path, value } of leafEntries(body)) {
         const match = CHILD_D_KEY_RE.exec(key);
         const cid = match ? match[1] : undefined;
-        if (cid && monthCids.map(String).includes(cid) && !MONTH_CIDS.has(value)) {
+        if (cid && monthCids.includes(cid) && !MONTH_CIDS.has(value)) {
             return fail(`Invalid month value at ${path}.`);
         }
-        const npiCids = [selfReportCancerCIDs.treatment.physNpi, selfReportCancerCIDs.screening.physNpi].filter(isRealCid).map(String);
         if (cid && npiCids.includes(cid) && !/^\d{10}$/.test(value)) {
             return fail(`Invalid NPI at ${path}.`);
         }
