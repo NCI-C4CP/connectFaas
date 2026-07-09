@@ -829,6 +829,15 @@ const biospecimenAPIs = async (req, res) => {
         }
     }
 
+    else if (api === 'getCgrPackagesInTransit') {
+        if (req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+        const { cgrPackagesInTransit } = require('./firestore');
+        const response = await cgrPackagesInTransit(req.query.startDate, req.query.endDate);
+        return res.status(200).json({data: response, code: 200});
+    }
+
     else if(api === 'kitStatusToParticipant') {
         if(req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
