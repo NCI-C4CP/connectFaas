@@ -36,6 +36,17 @@ const TOP_LEVEL_D_KEY_RE = /^D_(\d{9})$/;
 const SERVER_OWNED_KEYS = new Set([SUBMITTED_TIMESTAMP_KEY, 'uid', 'token', 'Connect_ID']);
 
 const MAX_D_VALUE_LENGTH = 800;   // spec write-in cap (additional-information textbox)
+const D_VALUE_MAX_LENGTH_BY_CID = new Map([
+    [hcsCIDs.facility.line1, 70],
+    [hcsCIDs.facility.line2, 70],
+    [hcsCIDs.facility.line3, 70],
+    [hcsCIDs.facility.line4, 70],
+    [hcsCIDs.facility.city, 45],
+    [hcsCIDs.facility.state, 48],
+    [hcsCIDs.facility.zip, 45],
+    [hcsCIDs.changeYear, 4],
+    [hcsCIDs.additionalInfo, 800],
+].map(([cid, maxLength]) => [String(cid), maxLength]));
 const MAX_KEYS = 50;
 const MAX_BODY_LENGTH = 20000;
 
@@ -76,8 +87,9 @@ const validateSnapshotShape = (body) => {
         const match = TOP_LEVEL_D_KEY_RE.exec(key);
         if (!match || !SCALAR_CIDS.has(match[1])) { badKeys.push(key); continue; }
         const value = body[key];
+        const maxLength = D_VALUE_MAX_LENGTH_BY_CID.get(match[1]) ?? MAX_D_VALUE_LENGTH;
         if (typeof value !== 'string') errors.push(`${key} must be a string`);
-        else if (value.length > MAX_D_VALUE_LENGTH) errors.push(`${key} exceeds ${MAX_D_VALUE_LENGTH} chars`);
+        else if (value.length > maxLength) errors.push(`${key} exceeds ${maxLength} chars`);
     }
     if (badKeys.length) errors.push(`invalid keys: ${badKeys.join(', ')}`);
     return errors;
@@ -91,13 +103,13 @@ const validateSubmission = (body) => {
     const fail = (message) => ({ error: true, message });
     const currentYear = new Date().getFullYear();
 
-    // Rule: facility name and street address (UI-required fields per the July comps).
-    const line1 = valueOf(body, hcsCIDs.facility.line1);
-    if (typeof line1 !== 'string' || !line1.trim()) return fail(`Invalid or missing primary care facility name (${hcsCIDs.facility.line1}).`);
-    const line2 = valueOf(body, hcsCIDs.facility.line2);
-    if (typeof line2 !== 'string' || !line2.trim()) return fail(`Invalid or missing primary care facility street address (${hcsCIDs.facility.line2}).`);
+    // Rule: facility name and change year are required. All other address fields areoptional.
+    const facilityName = valueOf(body, hcsCIDs.facility.line1);
+    if (typeof facilityName !== 'string' || !facilityName.trim()) {
+        return fail(`Invalid or missing primary care facility name (${hcsCIDs.facility.line1}).`);
+    }
 
-    // Rule: change year required. Range check per the data dictionary.
+    // Range check per the data dictionary.
     const changeYear = valueOf(body, hcsCIDs.changeYear);
     if (!isValidYear(changeYear, currentYear + CHANGE_YEAR_FUTURE_ALLOWANCE)) {
         return fail(`Invalid or missing primary care facility change year (${hcsCIDs.changeYear}).`);

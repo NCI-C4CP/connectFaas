@@ -45,16 +45,16 @@ const invoke = async (handler, method, body, query = {}) => {
     return res;
 };
 
-// Minimal valid submit: facility name + street + change year.
+// Minimal valid submit: facility name and change year are the participant-entered required fields.
 const minimalSubmit = () => ({
     [dKey(hcsCIDs.facility.line1)]: 'Sibley Memorial Hospital',
-    [dKey(hcsCIDs.facility.line2)]: '5255 Loughboro Rd NW',
     [dKey(hcsCIDs.changeYear)]: '2025',
 });
 
 // Full valid domestic submit.
 const domesticSubmit = () => ({
     ...minimalSubmit(),
+    [dKey(hcsCIDs.facility.line2)]: '5255 Loughboro Rd NW',
     [dKey(hcsCIDs.facility.line3)]: 'Suite 100',
     [dKey(hcsCIDs.facility.city)]: 'Washington',
     [dKey(hcsCIDs.facility.state)]: 'District of Columbia',
@@ -150,6 +150,26 @@ describe('storeSelfReportHCSUpdate (validation)', () => {
         expect(res.statusCode).toBe(400);
     });
 
+    it('rejects text fields beyond their data-dictionary lengths', async () => {
+        const cases = [
+            [hcsCIDs.facility.line1, 71],
+            [hcsCIDs.facility.line2, 71],
+            [hcsCIDs.facility.line3, 71],
+            [hcsCIDs.facility.line4, 71],
+            [hcsCIDs.facility.city, 46],
+            [hcsCIDs.facility.state, 49],
+            [hcsCIDs.facility.zip, 46],
+        ];
+        for (const [cid, length] of cases) {
+            const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', {
+                ...minimalSubmit(),
+                [dKey(cid)]: 'x'.repeat(length),
+            });
+            expect(res.statusCode).toBe(400);
+            expect(res._getJSONData().message).toContain(`D_${cid}`);
+        }
+    });
+
     it('rejects an invalid survey language cid', async () => {
         const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', { ...minimalSubmit(), 784119588: 123 });
         expect(res.statusCode).toBe(400);
@@ -179,17 +199,26 @@ describe('storeSelfReportHCSUpdate (validation)', () => {
 });
 
 describe('storeSelfReportHCSUpdate — submission rules', () => {
-    it('requires the facility name (Line 1)', async () => {
-        const body = minimalSubmit();
-        delete body[dKey(hcsCIDs.facility.line1)];
-        const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', body);
-        expect(res.statusCode).toBe(400);
+    it('requires a nonblank facility name', async () => {
+        const missing = await invoke(mod.storeSelfReportHCSUpdate, 'POST', {
+            [dKey(hcsCIDs.changeYear)]: '2025',
+        });
+        const whitespace = await invoke(mod.storeSelfReportHCSUpdate, 'POST', {
+            [dKey(hcsCIDs.facility.line1)]: '   ',
+            [dKey(hcsCIDs.changeYear)]: '2025',
+        });
+        expect([missing.statusCode, whitespace.statusCode]).toEqual([400, 400]);
+        expect(missing._getJSONData().message).toContain(String(hcsCIDs.facility.line1));
+        expect(whitespace._getJSONData().message).toContain(String(hcsCIDs.facility.line1));
+        expect(addSpy).not.toHaveBeenCalled();
     });
 
-    it('requires the street address (Line 2)', async () => {
-        const body = { ...minimalSubmit(), [dKey(hcsCIDs.facility.line2)]: '   ' };
-        const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', body);
-        expect(res.statusCode).toBe(400);
+    it('accepts facility name plus year while every other address field remains optional', async () => {
+        const minimal = await invoke(mod.storeSelfReportHCSUpdate, 'POST', minimalSubmit());
+        const withOptionalStreet = await invoke(mod.storeSelfReportHCSUpdate, 'POST', {
+            ...minimalSubmit(), [dKey(hcsCIDs.facility.line2)]: '5255 Loughboro Rd NW',
+        });
+        expect([minimal.statusCode, withOptionalStreet.statusCode]).toEqual([200, 200]);
     });
 
     it('requires the change year', async () => {
