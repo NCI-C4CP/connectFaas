@@ -3516,9 +3516,12 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             const runTimestamp = new Date().toISOString();
 
             do {
+                const participantsInThisBatch = participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length));
+                // If the count is a multiple of maxSize, there may be an extra final loop with an empty array, which will break if we try to run the query with it
+                if(!participantsInThisBatch.length) break;
                 batch = db.batch();
                 let query = db.collection('participants')
-                    .where('token', 'in', participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length)))
+                    .where('token', 'in', participantsInThisBatch)
                     .select(`${collectionDetails}`);
 
                 
