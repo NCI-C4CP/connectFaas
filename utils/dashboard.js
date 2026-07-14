@@ -315,6 +315,20 @@ const dashboard = async (req, res) => {
         await updateMySamples(payload, action, userEmail);
         return res.status(200).json(getResponseJSON('Success!', 200));
 
+    } else if (api === 'generateServiceAccountKey') {
+        if (req.method !== 'POST') {
+            return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
+        }
+
+        const saEmail = siteDetails.saEmail;
+        if (!saEmail) {
+            return res.status(400).json(getResponseJSON('No service account email configured for this site.', 400));
+        }
+
+        const { createServiceAccountKey } = require('./iam');
+        const keyData = await createServiceAccountKey(saEmail);
+        return res.status(200).json({ data: keyData, code: 200 });
+
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
     }
