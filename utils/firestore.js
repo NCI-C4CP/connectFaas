@@ -2424,7 +2424,8 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
     // Get helper methods
     const {
         getBagId, materialTypeMapping, 
-        conceptIdToSiteSpecificLocation, specimenCollection, tubeDeviationFlags, locationConceptIDToLocationMap
+        conceptIdToSiteSpecificLocation, specimenCollection, tubeDeviationFlags, locationConceptIDToLocationMap,
+        clinicalCollectionLocationNameLookup, researchCollectionLocationNameLookup, getVialTypesMappings, getHemolyzedStatus
     } = require('./shared');
 
     const bagConceptIdList = Object.values(fieldMapping.bagContainerCids);
@@ -2447,6 +2448,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
         endDate = isNaN(endDate) ? endDate : +endDate;
         boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '<=', new Date(endDate).toISOString());
     }
+
     const pkgSnapshot = await boxQuery.get();
 
     const packages = pkgSnapshot.docs?.map(doc => doc.data()) || [];
@@ -2463,7 +2465,6 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
         const shipDateB = b[fieldMapping.submitShipmentTimestamp];
         return (shipDateA < shipDateB) ? 1 : -1;
     });
-
 
     // Get the specimens in each box
 
@@ -2502,6 +2503,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
 
     // Now isolate the specimens to those in the current boxes
     const specimensInBoxes = [];
+    const specimenLookup = {};
 
     for (const specimen of specimens) {
         for (const tubeId of tubeIdSet) {
@@ -2519,6 +2521,11 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
     for (let specimen of specimensInBoxes) {
         const collectionId = specimen[fieldMapping.collectionId];
         if (!collectionId) continue;
+        // Add the specimen information to the specimenLookup dictionary
+        // so that later loops over the bags listed within a box
+        // can readily find the matching specimen
+        specimenLookup[collectionId] = specimen;
+
 
         const tubeDataObject = {};
         tubeLoop: for (const tubeKey of specimenCollection.tubeCidList) {
@@ -2565,21 +2572,22 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
     }
 
     // Now build the package data and the data for individual specimens within each box
-    let modifiedTransitResults = [];
     let boxesInTransitResults = [];
     sortedPackages.forEach((shippedBox) => {
-        // const bagKeys = getBagList(shippedBox); // store specimenBagId in an array
         const bagKeys = Object.keys(shippedBox)
             .filter(key => bagConceptIdList.includes(parseInt(key, 10)))
             .sort((a, b) => {
                 return bagConceptIdList.indexOf(parseInt(a, 10)) < bagConceptIdList.indexOf(parseInt(b, 10)) ? -1 : 1
             });
 
-        // const specimenBags = getBags(shippedBox); // store bag content in an array
         let specimenBags = {};
         bagKeys.forEach((bagId) => {
             specimenBags[bagId] = Object.assign({}, shippedBox[bagId]);
         });
+
+        const specimenBagsArr = bagKeys
+            .map((bagKey) => shippedBox[bagKey][fieldMapping.tubesCollected])
+            .flat();
 
         // Box info used for CSVs
         const locationConceptID = shippedBox[fieldMapping.shippingLocation];
@@ -2590,37 +2598,81 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
             shippedSite: locationConceptIDToLocationMap[locationConceptID]?.siteAcronym || '',
             shippedLocation: conceptIdToSiteSpecificLocation[shippedBox[fieldMapping.shippingLocation]] || "",
             shipDateTime: shippedBox[fieldMapping.boxLastModifiedTimestamp] || "",
-            numSamples: specimenBags.length || 0,
+            numSamples: specimenBagsArr.length || 0,
             tempMonitor: shippedBox[fieldMapping.temperatureProbeInBox] === fieldMapping.yes ? "Yes" : "No",
             BoxId: shippedBox[fieldMapping.shippingBoxId] || "",
             biospecimens: []
         };
 
-        let dataHolder;
-
         bagKeys.forEach((bagId, index) => {
             const specimenBag = specimenBags[bagId];
-            specimenBag[fieldMapping.samplesWithinBag]?.forEach((fullSpecimenIds, j, specimenBagSize) => {
+            specimenBag[fieldMapping.samplesWithinBag]?.forEach((fullSpecimenId, j, specimenBagSize) => {
                 // grab fullSpecimenIds & loop thru content
+                
+                let errors = '';
 
-                if (Object.prototype.hasOwnProperty.call(replacementTubeLabelObj,fullSpecimenIds)) {
-                    fullSpecimenIds = replacementTubeLabelObj[fullSpecimenIds];
+                if (Object.prototype.hasOwnProperty.call(replacementTubeLabelObj,fullSpecimenId)) {
+                    console.log('Changing fullSpecimenId from %s to %s', fullSpecimenId, replacementTubeLabelObj[fullSpecimenId]);
+                    fullSpecimenId = replacementTubeLabelObj[fullSpecimenId];
                 }
 
-                dataHolder = {
+                // Get information from the biospecimen record for this collection ID
+                // (Note that in dev and stage, data issues mean some boxes in the system
+                // include specimen IDs for specimens which have been deleted.)
+                const [collectionId, tubeId] = fullSpecimenId.split(' '); // Get the collection ID to look up the specimen info
+                let matchingSpecimen = specimenLookup[collectionId];
+                if(!matchingSpecimen) {
+                    errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
+                    matchingSpecimen = {};
+                }
+                const healthcareProvider = matchingSpecimen[fieldMapping.healthcareProvider] || "default";
+                const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
+                const collectionType = collectionTypeValue === fieldMapping.clinical ? 'clinical' : 'research';
+                const sampleCollectionCenter =
+                    collectionTypeValue === fieldMapping.clinical
+                        ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthcareProvider]] || ""
+                        : researchCollectionLocationNameLookup[matchingSpecimen[fieldMapping.collectionLocation]] || "";
+                // Dummy date for clinical files requested in issue 936
+                const dateDrawn = collectionTypeValue === fieldMapping.clinical
+                    ? "01/01/1999 12:00:00 PM"
+                    : matchingSpecimen[fieldMapping.collectionDateTimeStamp] || "";
+
+                const vialMappings = getVialTypesMappings(tubeId, collectionTypeValue, healthcareProvider);
+                const vialType = vialMappings[0] || "";
+                const additivePreservative = vialMappings[1] || "";
+                const materialType = vialMappings[2] || "";
+                const volume = vialMappings[3] || "";
+
+                    
+                const dataHolder = {
+                    studyId: "Connect Study",
                     specimenBagId: getBagId(specimenBag),
-                    fullSpecimenIds: fullSpecimenIds,
-                    materialType: materialTypeMapping(fullSpecimenIds),
+                    fullSpecimenIds: fullSpecimenId, // This is the same as the BSI ID
+                    materialType: materialTypeMapping(fullSpecimenId),
+                    sampleCollectionCenter: sampleCollectionCenter || '[No collection center found]',
+                    sampleId: collectionId,
+                    sequence: tubeId || "",
+                    subjectId: matchingSpecimen["Connect_ID"] || "",
+                    dateDrawn,
+                    vialType,
+                    additivePreservative,
+                    volume,
+                    volumeEstimate: "Assumed",
+                    volumeUnit: "ml (cc)",
+                    vialWarnings: "",
+                    hemolyzed: getHemolyzedStatus(materialType),
+                    "Label Status": "Barcoded",
+                    Visit: "BL",
+                    errors
                 };
                 boxData.biospecimens.push(dataHolder);
-                modifiedTransitResults.push(dataHolder);
             });
         });
 
         boxesInTransitResults.push(boxData);
     });
 
-    return boxesInTransitResults;
+    return {data: boxesInTransitResults};
 }
 
 const getSpecimenCollections = async (token, siteCode) => {
