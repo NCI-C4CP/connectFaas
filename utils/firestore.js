@@ -2597,10 +2597,11 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
             trackingNumber: shippedBox[fieldMapping.boxTrackingNumberScan] || "",
             shippedSite: locationConceptIDToLocationMap[locationConceptID]?.siteAcronym || '',
             shippedLocation: conceptIdToSiteSpecificLocation[shippedBox[fieldMapping.shippingLocation]] || "",
+            siteCode: locationConceptID,
             shipDateTime: shippedBox[fieldMapping.boxLastModifiedTimestamp] || "",
             numSamples: specimenBagsArr.length || 0,
             tempMonitor: shippedBox[fieldMapping.temperatureProbeInBox] === fieldMapping.yes ? "Yes" : "No",
-            BoxId: shippedBox[fieldMapping.shippingBoxId] || "",
+            boxId: shippedBox[fieldMapping.shippingBoxId] || "",
             biospecimens: []
         };
 
@@ -2628,6 +2629,9 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                 const healthcareProvider = matchingSpecimen[fieldMapping.healthcareProvider] || "default";
                 const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
                 const collectionType = collectionTypeValue === fieldMapping.clinical ? 'clinical' : 'research';
+                const sampleCollectionCenterCode = collectionTypeValue === fieldMapping.clinical
+                        ? matchingSpecimen[fieldMapping.healthcareProvider] || ""
+                        : matchingSpecimen[fieldMapping.collectionLocation] || "";
                 const sampleCollectionCenter =
                     collectionTypeValue === fieldMapping.clinical
                         ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthcareProvider]] || ""
@@ -2650,6 +2654,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                     fullSpecimenIds: fullSpecimenId, // This is the same as the BSI ID
                     materialType: materialTypeMapping(fullSpecimenId),
                     sampleCollectionCenter: sampleCollectionCenter || '[No collection center found]',
+                    sampleCollectionCenterCode,
                     sampleId: collectionId,
                     sequence: tubeId || "",
                     subjectId: matchingSpecimen["Connect_ID"] || "",
@@ -2661,8 +2666,8 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                     volumeUnit: "ml (cc)",
                     vialWarnings: "",
                     hemolyzed: getHemolyzedStatus(materialType),
-                    "Label Status": "Barcoded",
-                    Visit: "BL",
+                    labelStatus: "Barcoded",
+                    visit: "BL",
                     errors
                 };
                 boxData.biospecimens.push(dataHolder);
