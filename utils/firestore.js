@@ -2585,6 +2585,10 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
             specimenBags[bagId] = Object.assign({}, shippedBox[bagId]);
         });
 
+        const specimenBagsArr = bagKeys
+            .map((bagKey) => shippedBox[bagKey][fieldMapping.tubesCollected])
+            .flat();
+
         // Box info used for CSVs
         const locationConceptID = shippedBox[fieldMapping.shippingLocation];
 
@@ -2594,7 +2598,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
             shippedSite: locationConceptIDToLocationMap[locationConceptID]?.siteAcronym || '',
             shippedLocation: conceptIdToSiteSpecificLocation[shippedBox[fieldMapping.shippingLocation]] || "",
             shipDateTime: shippedBox[fieldMapping.boxLastModifiedTimestamp] || "",
-            numSamples: Object.keys(specimenBags).length || 0,
+            numSamples: specimenBagsArr.length || 0,
             tempMonitor: shippedBox[fieldMapping.temperatureProbeInBox] === fieldMapping.yes ? "Yes" : "No",
             BoxId: shippedBox[fieldMapping.shippingBoxId] || "",
             biospecimens: []
@@ -2618,7 +2622,6 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                 const [collectionId, tubeId] = fullSpecimenId.split(' '); // Get the collection ID to look up the specimen info
                 let matchingSpecimen = specimenLookup[collectionId];
                 if(!matchingSpecimen) {
-                    console.warn('Missing specimen for collection ID %s', collectionId);
                     errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
                     matchingSpecimen = {};
                 }
@@ -2634,7 +2637,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                     ? "01/01/1999 12:00:00 PM"
                     : matchingSpecimen[fieldMapping.collectionDateTimeStamp] || "";
 
-                const vialMappings = getVialTypesMappings(tubeId, collectionType, healthcareProvider);
+                const vialMappings = getVialTypesMappings(tubeId, collectionTypeValue, healthcareProvider);
                 const vialType = vialMappings[0] || "";
                 const additivePreservative = vialMappings[1] || "";
                 const materialType = vialMappings[2] || "";
