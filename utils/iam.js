@@ -68,7 +68,7 @@ const validateKeyCreation = (activeKeys) => {
         const timeRemaining = new Date(key.expiresAt) - new Date();
         if (timeRemaining > TWO_WEEKS_MS) {
             const expiresDate = new Date(key.expiresAt).toISOString().split('T')[0];
-            return { allowed: false, reason: `An active key still has more than 2 weeks before expiration (expires ${expiresDate}). New keys can only be created within 2 weeks of all existing keys expiring.` };
+            return { allowed: false, reason: `An active key still has more than 2 weeks before expiration (expires ${expiresDate}). New keys can only be created within 2 weeks of an existing non-legacy key expiring.` };
         }
     }
 

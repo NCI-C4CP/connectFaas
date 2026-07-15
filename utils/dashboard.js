@@ -328,6 +328,7 @@ const dashboard = async (req, res) => {
         try {
             const { listServiceAccountKeys } = require('./iam');
             const keys = await listServiceAccountKeys(saEmail);
+            res.header('Cache-Control', 'no-store');
             return res.status(200).json({ data: { keys }, code: 200 });
         } catch (err) {
             console.error('Error listing service account keys', err);
@@ -346,6 +347,7 @@ const dashboard = async (req, res) => {
 
         try {
             const { createServiceAccountKey, listServiceAccountKeys, validateKeyCreation } = require('./iam');
+            res.header('Cache-Control', 'no-store');
 
             const activeKeys = await listServiceAccountKeys(saEmail);
             const validation = validateKeyCreation(activeKeys);
@@ -377,7 +379,6 @@ const dashboard = async (req, res) => {
                 console.error('CCC key creation notification failed (non-fatal)', notifyErr);
             }
 
-            res.header('Cache-Control', 'no-store');
             return res.status(200).json({ data: { keyData, keys: updatedKeys }, code: 200 });
         } catch (err) {
             console.error('Error generating service account key', err);
