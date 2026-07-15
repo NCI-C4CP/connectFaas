@@ -35,6 +35,6 @@ substitutions:
   _MEMORY: 1024Mi
   _REGION: us-central1
   _ROLE: roles/run.invoker
-  _SERVICE: getCgrPackagesInTransit
+  _SERVICE: getcgrpackagesintransit
   _SOURCE: .
   _TIMEOUT: 240s
