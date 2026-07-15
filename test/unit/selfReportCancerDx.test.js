@@ -432,7 +432,9 @@ describe('submitSelfReportCancerDx — validation matrix', () => {
 
     it('The full treatment-type group must be present as explicit Yes/No (no omitted No flags)', async () => {
         const partial = breastSubmit();
-        delete partial.D_388069854.D_293873603; delete partial.D_388069854.D_555019890; delete partial.D_388069854.D_459406752; // only chemo flag present
+        delete partial.D_388069854.D_293873603; // only chemo flag present
+        delete partial.D_388069854.D_555019890;
+        delete partial.D_388069854.D_459406752;
         await expect400(partial, 'treatment type');
     });
 
