@@ -315,6 +315,25 @@ const dashboard = async (req, res) => {
         await updateMySamples(payload, action, userEmail);
         return res.status(200).json(getResponseJSON('Success!', 200));
 
+    } else if (api === 'listServiceAccountKeys') {
+        if (req.method !== 'GET') {
+            return res.status(405).json(getResponseJSON('Only GET requests are accepted!', 405));
+        }
+
+        const saEmail = siteDetails.saEmail;
+        if (!saEmail) {
+            return res.status(400).json(getResponseJSON('No service account email configured for this site.', 400));
+        }
+
+        try {
+            const { listServiceAccountKeys } = require('./iam');
+            const keys = await listServiceAccountKeys(saEmail);
+            return res.status(200).json({ data: { keys }, code: 200 });
+        } catch (err) {
+            console.error('Error listing service account keys', err);
+            return res.status(500).json(getResponseJSON('Failed to list service account keys.', 500));
+        }
+
     } else if (api === 'generateServiceAccountKey') {
         if (req.method !== 'POST') {
             return res.status(405).json(getResponseJSON('Only POST requests are accepted!', 405));
@@ -325,9 +344,45 @@ const dashboard = async (req, res) => {
             return res.status(400).json(getResponseJSON('No service account email configured for this site.', 400));
         }
 
-        const { createServiceAccountKey } = require('./iam');
-        const keyData = await createServiceAccountKey(saEmail);
-        return res.status(200).json({ data: keyData, code: 200 });
+        try {
+            const { createServiceAccountKey, listServiceAccountKeys, validateKeyCreation } = require('./iam');
+
+            const activeKeys = await listServiceAccountKeys(saEmail);
+            const validation = validateKeyCreation(activeKeys);
+            if (!validation.allowed) {
+                return res.status(409).json({ message: validation.reason, code: 409, data: { keys: activeKeys } });
+            }
+
+            const keyData = await createServiceAccountKey(saEmail);
+            const updatedKeys = await listServiceAccountKeys(saEmail);
+
+            try {
+                const { sendEmail } = require('./notifications');
+                const { getCoordinatingCenterEmail } = require('./firestore');
+                const { developmentTier } = require('./shared');
+                const cccEmail = await getCoordinatingCenterEmail();
+                if (cccEmail) {
+                    const siteAcronym = siteDetails.acronym || 'Unknown';
+                    const html = `<p>A new service account key was generated.</p>
+                        <ul>
+                            <li><strong>Tier:</strong> ${developmentTier}</li>
+                            <li><strong>Site:</strong> ${siteAcronym}</li>
+                            <li><strong>User:</strong> ${userEmail}</li>
+                            <li><strong>Service Account:</strong> ${saEmail}</li>
+                            <li><strong>Time:</strong> ${new Date().toISOString()}</li>
+                        </ul>`;
+                    await sendEmail(cccEmail, `[${developmentTier}] Service Account Key Created — ${siteAcronym}`, html);
+                }
+            } catch (notifyErr) {
+                console.error('CCC key creation notification failed (non-fatal)', notifyErr);
+            }
+
+            res.header('Cache-Control', 'no-store');
+            return res.status(200).json({ data: { keyData, keys: updatedKeys }, code: 200 });
+        } catch (err) {
+            console.error('Error generating service account key', err);
+            return res.status(500).json(getResponseJSON('Failed to generate service account key.', 500));
+        }
 
     } else {
         return res.status(404).json(getResponseJSON('API not found!', 404));
