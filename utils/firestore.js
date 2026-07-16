@@ -2626,15 +2626,15 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                     errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
                     matchingSpecimen = {};
                 }
-                const healthcareProvider = matchingSpecimen[fieldMapping.healthcareProvider] || "default";
+                const healthcareProvider = matchingSpecimen[fieldMapping.healthCareProvider] || "default";
                 const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
                 const collectionType = collectionTypeValue === fieldMapping.clinical ? 'clinical' : 'research';
                 const sampleCollectionCenterCode = collectionTypeValue === fieldMapping.clinical
-                        ? matchingSpecimen[fieldMapping.healthcareProvider] || ""
+                        ? matchingSpecimen[fieldMapping.healthCareProvider] || ""
                         : matchingSpecimen[fieldMapping.collectionLocation] || "";
                 const sampleCollectionCenter =
                     collectionTypeValue === fieldMapping.clinical
-                        ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthcareProvider]] || ""
+                        ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthCareProvider]] || ""
                         : researchCollectionLocationNameLookup[matchingSpecimen[fieldMapping.collectionLocation]] || "";
                 // Dummy date for clinical files requested in issue 936
                 const dateDrawn = collectionTypeValue === fieldMapping.clinical
