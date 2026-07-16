@@ -2419,7 +2419,7 @@ const searchBoxesByLocation = async (institute, location) => {
             ]
         },]
  */
-const cgrPackagesInTransit = async (startDate, endDate) => {
+const cgrPackagesInTransit = async (startDate, endDate, getLostPackages = 'exclude') => {
 
     // Get helper methods
     const {
@@ -2434,6 +2434,10 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
     let boxQuery = db.collection('boxes')
         .where(fieldMapping.submitShipmentFlag.toString(), "==", fieldMapping.yes)
         .where(fieldMapping.siteShipmentReceived.toString(), "==", fieldMapping.no);
+
+    if(getLostPackages === 'only') {
+        boxQuery = boxQuery.where(fieldMapping.packageLost.toString(), '==', fieldMapping.yes);
+    }
     
 
     // Accepts any timestamp which is of a valid form for new Date(), including ISO timestamp, UTC string, Unix epoch, and locale string in UTC
@@ -2453,14 +2457,17 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
 
     const packages = pkgSnapshot.docs?.map(doc => doc.data()) || [];
 
-    // Filter out lost boxes to reflect the packages in transit
-    // Not included in the query because it excludes records where the field does not exist
-    const notLostBoxes = packages.filter(
-      (box) => box[fieldMapping.packageLost] !== fieldMapping.yes
-    );
+    let inTransitBoxes = packages;
+
+    if(getLostPackages === 'exclude') {
+        // Filter out lost boxes to reflect the packages in transit
+        // Not included in the query because it excludes records where the field does not exist
+        inTransitBoxes = packages.filter((box) => box[fieldMapping.packageLost] !== fieldMapping.yes);
+    }
+    
 
     // Sort the packages (getRecentBoxesShippedBySiteNotReceived in biospecimen)
-    const sortedPackages = notLostBoxes.sort((a,b) => {
+    const sortedPackages = inTransitBoxes.sort((a,b) => {
         const shipDateA = a[fieldMapping.submitShipmentTimestamp];
         const shipDateB = b[fieldMapping.submitShipmentTimestamp];
         return (shipDateA < shipDateB) ? 1 : -1;
@@ -2470,7 +2477,7 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
 
     const tubeIdSet = new Set();
     const collectionIdSet = new Set();
-    notLostBoxes.forEach(box => {
+    inTransitBoxes.forEach(box => {
         const bagKeys = Object.keys(box)
             .filter(key => bagConceptIdList.includes(parseInt(key, 10)))
             .sort((a, b) => {
@@ -2605,6 +2612,10 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
             biospecimens: []
         };
 
+        if(getLostPackages !== 'exclude' && shippedBox[fieldMapping.packageLost] === fieldMapping.yes) {
+            boxData.datePackageLost = shippedBox[fieldMapping.datePackageLost];
+        }
+
         bagKeys.forEach((bagId, index) => {
             const specimenBag = specimenBags[bagId];
             specimenBag[fieldMapping.samplesWithinBag]?.forEach((fullSpecimenId, j, specimenBagSize) => {
@@ -2613,7 +2624,6 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                 let errors = '';
 
                 if (Object.prototype.hasOwnProperty.call(replacementTubeLabelObj,fullSpecimenId)) {
-                    console.log('Changing fullSpecimenId from %s to %s', fullSpecimenId, replacementTubeLabelObj[fullSpecimenId]);
                     fullSpecimenId = replacementTubeLabelObj[fullSpecimenId];
                 }
 
@@ -2626,15 +2636,29 @@ const cgrPackagesInTransit = async (startDate, endDate) => {
                     errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
                     matchingSpecimen = {};
                 }
+                
                 const healthcareProvider = matchingSpecimen[fieldMapping.healthcareProvider] || "default";
                 const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
+                if(collectionId === 'CXA071508') {
+                    console.log('Matching specimen for %s', collectionId, JSON.stringify(matchingSpecimen, null, '\t'));
+                    console.log('collectionTypeValue for specimen %s', collectionId, collectionTypeValue);
+                }
                 const collectionType = collectionTypeValue === fieldMapping.clinical ? 'clinical' : 'research';
+                if(collectionId === 'CXA071508') {
+                    console.log('collectionType for specimen %s', collectionId, collectionTypeValue);
+                }
+                if(collectionId === 'CXA071508') {
+                    console.log('collectionTypeValue === %s for specimen %s', fieldMapping.clinical, collectionId, collectionTypeValue === fieldMapping.clinical);
+                }
+                if(collectionId === 'CXA071508') {
+                    console.log('healthcareProvider for specimen %s', collectionId, matchingSpecimen[fieldMapping.healthCareProvider]);
+                }
                 const sampleCollectionCenterCode = collectionTypeValue === fieldMapping.clinical
-                        ? matchingSpecimen[fieldMapping.healthcareProvider] || ""
+                        ? matchingSpecimen[fieldMapping.healthCareProvider] || ""
                         : matchingSpecimen[fieldMapping.collectionLocation] || "";
                 const sampleCollectionCenter =
                     collectionTypeValue === fieldMapping.clinical
-                        ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthcareProvider]] || ""
+                        ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthCareProvider]] || ""
                         : researchCollectionLocationNameLookup[matchingSpecimen[fieldMapping.collectionLocation]] || "";
                 // Dummy date for clinical files requested in issue 936
                 const dateDrawn = collectionTypeValue === fieldMapping.clinical
@@ -5331,7 +5355,7 @@ const storeKitReceipt = async (pkg) => {
             }
             if (
                 participantDocData[fieldMapping.withdrawConsent] == fieldMapping.yes ||
-                participantDocData[fieldMapping.destroyData] == fieldMapping.yes ||
+                participantDocData[fieldMapping.participantMap.destroyData] == fieldMapping.yes ||
                 participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.baselineMouthwashSample] === fieldMapping.yes ||
                 participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.allFutureSamples] === fieldMapping.yes ||
                 participantDocData?.[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes
