@@ -2636,6 +2636,7 @@ const cgrPackagesInTransit = async (startDate, endDate, getLostPackages = 'exclu
                     errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
                     matchingSpecimen = {};
                 }
+                const healthcareProvider = matchingSpecimen[fieldMapping.healthCareProvider] || "default";
                 
                 const healthcareProvider = matchingSpecimen[fieldMapping.healthcareProvider] || "default";
                 const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
