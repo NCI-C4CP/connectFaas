@@ -2945,6 +2945,401 @@ const locationConceptIDToLocationMap = {
     },
 };
 
+// Use clinicalCollectionLocationNameLookup for clinical collections
+const clinicalCollectionLocationNameLookup = {
+    452412599 : "Kaiser Permanente NW RRL",
+    531629870 : "HealthPartners Clinical",
+    657167265 : "Sanford Clinical",
+    548392715 : "Henry Ford Clinical",
+    303349821 : "Marshfield Clinical",
+    125001209 : "Kaiser Permanente Colorado RRL",
+    809703864 : "University of Chicago Clinical",
+    13 : "National Cancer Institute",
+    300267574 : "Kaiser Permanente Hawaii RRL",
+    327912200 : "Kaiser Permanente GA RRL",
+    472940358: "Baylor Scott & White Health"
+}
+// Use for research collections
+const researchCollectionLocationNameLookup = 
+{
+    777644826: "UC-DCAM",
+    692275326: "Marshfield",
+    567969985: "MF Pop-Up",
+    698283667: "Lake Hallie",
+    834825425: "HP Research Clinic",
+    [fieldMapping.nameToKeyObj.hpPN] : "HP Park Nicollet",
+    736183094: "HFH K-13 Research Clinic",
+    886364332: "Henry Ford Health Pavilion",
+    706927479: "HFH Livonia Research Clinic",
+    [fieldMapping.nameToKeyObj.hfhPU] : "HFH Pop-Up",
+    755034888 : "HFH Jackson",
+    852689772 : "In-Home collection",
+    911683679 : "HFH Detroit Northwest",
+    813701399: "Weston",
+    145191545: "Ingalls Harvey",
+    489380324: "River East",
+    120264574: "South Loop",
+    319518299: "UCM Pop-Up",
+    940329442: "Orland Park",
+    691714762: "Rice Lake",
+    487512085: "Wisconsin Rapids",
+    983848564: "Colby Abbotsford",
+    261931804: "Minocqua",
+    665277300: "Merrill",
+    255636184 : "Stevens Point",
+    813412950 : "Neillsville",
+    467088902: "Fargo South University",
+    589224449: "Sioux Falls Imagenetics",
+    [fieldMapping.nameToKeyObj.sfBM] : "Bismarck Medical Center",
+    [fieldMapping.nameToKeyObj.sfSC] : "Sioux Falls Sanford Center",
+    433070901 : "Sioux Falls Edith Center",
+    769594361 : "Fargo Amber Valley",
+    246153539 : "Bemidji Clinic",
+    723351427: "BCC- HWC",
+    807443231: "FW All Saints",
+    288564244: "BCC- Fort Worth",
+    475614532: "BCC- Plano",
+    809370237: "BCC- Worth St",
+    856158129: "BCC- Irving",
+    436956777: "NTX Biorepository",
+    483909879: "North Garland",
+    962830330: "Waco - MacArthur",
+    [fieldMapping.nameToKeyObj.irving]: "Irving",
+    [fieldMapping.nameToKeyObj.templeCDM]: "Temple CDM",
+    [fieldMapping.nameToKeyObj.templeRoney]: "Temple Roney",
+    [fieldMapping.nameToKeyObj.templeWestfield]: "Temple Westfield",
+    [fieldMapping.nameToKeyObj.killeenMain]: "Killeen Main",
+    [fieldMapping.nameToKeyObj.wacoFishpond]: "Waco Fishpond",
+    111111111: "NIH",
+    13: "NCI"
+
+}
+
+// Vial type mapping (date-dependent due to changeover)
+
+const vialMappingHistory = [
+    { //mapping20251009
+        effectiveDate: "2025-10-30", // Note: This mapping will be shown in Production on 2025-10-29.
+        research: {
+            default: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0007": ["15ml Nalgene jar", "Crest Alcohol Free", "Saliva", "15"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+        },
+        clinical: {
+            henryFordHealth: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+            healthPartners: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+            kpCO: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["6 ml Vacutainer", "No Additive", "Urine", "6"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            kpGA: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4.5 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4.5"],
+                "0013": ["4.5 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4.5"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            kpHI: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0014": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0024": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            kpNW: {
+                "0001": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0002": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0011": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0012": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0021": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            sanfordHealth: {
+                "0001": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": [
+                    "4.5 ml Vacutainer",
+                    "Lithium Heparin Separator",
+                    "Plasma",
+                    "4.5",
+                ],
+                "0013": [
+                    "4.5 ml Vacutainer",
+                    "Lithium Heparin Separator",
+                    "Plasma",
+                    "4.5",
+                ],
+                "0004": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0014": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0024": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+            },
+            uOfChicagoMed: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+            },
+            default: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0021": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0024": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0007": ["15ml Nalgene jar", "Crest Alcohol Free", "Saliva", "15"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+        }
+    }
+]
+
+const conceptIdToHealthProviderAbbrObj = {
+  452412599: "kpNW",
+  531629870: "healthPartners",
+  657167265: "sanfordHealth",
+  548392715: "henryFordHealth",
+  303349821: "marshfieldClinic",
+  125001209: "kpCO",
+  809703864: "uOfChicagoMed",
+  13: "nci",
+  300267574: "kpHI",
+  327912200: "kpGA",
+  1000: "allResults",
+}
+
+const getVialTypesMappings = (tubeId, collectionType, healthcareProvider) => {
+    let vialMapping = {
+        research: {
+            default: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0007": ["15ml Nalgene jar", "Crest Alcohol Free", "Saliva", "15"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+        },
+        clinical: {
+            henryFordHealth: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+            healthPartners: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+            kpCO: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["6 ml Vacutainer", "No Additive", "Urine", "6"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            kpGA: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4.5 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4.5"],
+                "0013": ["4.5 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4.5"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            kpHI: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0014": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0024": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            kpNW: {
+                "0001": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0002": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0011": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0012": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0021": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+            sanfordHealth: {
+                "0001": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": [
+                    "4.5 ml Vacutainer",
+                    "Lithium Heparin Separator",
+                    "Plasma",
+                    "4.5",
+                ],
+                "0013": [
+                    "4.5 ml Vacutainer",
+                    "Lithium Heparin Separator",
+                    "Plasma",
+                    "4.5",
+                ],
+                "0004": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0014": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0024": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+            },
+            uOfChicagoMed: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+            },
+            default: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0021": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0024": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0007": ["15ml Nalgene jar", "Crest Alcohol Free", "Saliva", "15"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+        }
+    };
+  if (!collectionType || !tubeId) {
+    console.warn("collectionType or tubeId is missing");
+    return ["", "", "", ""];
+  }
+
+  const collectionTypeString =
+    collectionType === fieldMapping.research ? "research" : "clinical";
+  const healthcareProviderString =
+    conceptIdToHealthProviderAbbrObj[healthcareProvider] || "default";
+
+  if (collectionTypeString === "research") {
+    return (
+      vialMapping[collectionTypeString]?.default?.[tubeId] || ["", "", "", ""]
+    );
+  } else {
+    return (
+      vialMapping[collectionTypeString]?.[healthcareProviderString]?.[tubeId] ||
+      vialMapping[collectionTypeString]?.default?.[tubeId] || ["", "", "", ""]
+    );
+  }
+};
+
+/**
+ * Returns hemolyzed status based on material type using a predefined map.
+ * @param {string} materialType - Material type of the specimen (e.g., "Serum", "Plasma")
+ * @returns {string} Corresponding hemolyzed status, or an empty string if not found in the map
+ */
+const getHemolyzedStatus = (materialType) => {
+  const statusMap = {
+    Serum: "not hem (1)",
+    Plasma: "not hem (1)",
+  };
+
+  return statusMap[materialType] || "";
+};
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -3039,5 +3434,9 @@ module.exports = {
     conceptIdToSiteSpecificLocation,
     specimenCollection,
     tubeDeviationFlags,
-    locationConceptIDToLocationMap
+    locationConceptIDToLocationMap,
+    clinicalCollectionLocationNameLookup,
+    researchCollectionLocationNameLookup,
+    getVialTypesMappings,
+    getHemolyzedStatus
 };
