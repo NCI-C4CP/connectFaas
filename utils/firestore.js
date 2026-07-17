@@ -2402,22 +2402,41 @@ const searchBoxesByLocation = async (institute, location) => {
  * @param {String | Number} endDate Optional. Date in valid format to be passed into new Date(endDate).toISOString().
  * If provided, results are filtered to packages sent on or before this time.
  * @returns Array of form [{
-            "shipDate": "2026-06-22",
-            "trackingNumber": "665122232323",
-            "shippedSite": "NIH",
-            "shippedLocation": "Main Campus",
-            "shipDateTime": "2026-06-22T13:26:14.852Z",
-            "numSamples": 0,
+            "shipDate": "2026-07-15",
+            "trackingNumber": "774455511222",
+            "shippedSite": "HP",
+            "shippedLocation": "HP Park Nicollet",
+            "siteCode": 574368418,
+            "shipDateTime": "2026-07-15T22:31:50.212Z",
+            "numSamples": 1,
             "tempMonitor": "Yes",
-            "BoxId": "Box127",
+            "boxId": "Box8",
             "biospecimens": [
                 {
-                    "specimenBagId": "CXA088887 0008",
-                    "fullSpecimenIds": "CXA088887 0001",
-                    "materialType": "WHOLE BL"
-                },
-            ]
-        },]
+                    "studyId": "Connect Study",
+                    "specimenBagId": "CXA071510 0008",
+                    "fullSpecimenIds": "CXA071510 0001",
+                    "materialType": "WHOLE BL",
+                    "sampleCollectionCenter": "HealthPartners Clinical",
+                    "sampleCollectionCenterCode": 531629870,
+                    "sampleId": "CXA071510",
+                    "sequence": "0001",
+                    "subjectId": 2386926968,
+                    "dateDrawn": "01/01/1999 12:00:00 PM",
+                    "vialType": "5 ml Serum separator tube",
+                    "additivePreservative": "SST",
+                    "volume": "5",
+                    "volumeEstimate": "Assumed",
+                    "volumeUnit": "ml (cc)",
+                    "vialWarnings": "",
+                    "hemolyzed": "",
+                    "labelStatus": "Barcoded",
+                    "visit": "BL",
+                    "errors": ""
+                }, ...
+            ],
+            "datePackageLost": "2026-03-11T17:35:03.487Z" // Included only for packages which have been marked as lost
+        }, ...]
  */
 const cgrPackagesInTransit = async (startDate, endDate, getLostPackages = 'exclude') => {
 
@@ -2636,24 +2655,10 @@ const cgrPackagesInTransit = async (startDate, endDate, getLostPackages = 'exclu
                     errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
                     matchingSpecimen = {};
                 }
-                const healthcareProvider = matchingSpecimen[fieldMapping.healthCareProvider] || "default";
                 
-                const healthcareProvider = matchingSpecimen[fieldMapping.healthcareProvider] || "default";
+                const healthcareProvider = matchingSpecimen[fieldMapping.healthCareProvider] || "default";
                 const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
-                if(collectionId === 'CXA071508') {
-                    console.log('Matching specimen for %s', collectionId, JSON.stringify(matchingSpecimen, null, '\t'));
-                    console.log('collectionTypeValue for specimen %s', collectionId, collectionTypeValue);
-                }
                 const collectionType = collectionTypeValue === fieldMapping.clinical ? 'clinical' : 'research';
-                if(collectionId === 'CXA071508') {
-                    console.log('collectionType for specimen %s', collectionId, collectionTypeValue);
-                }
-                if(collectionId === 'CXA071508') {
-                    console.log('collectionTypeValue === %s for specimen %s', fieldMapping.clinical, collectionId, collectionTypeValue === fieldMapping.clinical);
-                }
-                if(collectionId === 'CXA071508') {
-                    console.log('healthcareProvider for specimen %s', collectionId, matchingSpecimen[fieldMapping.healthCareProvider]);
-                }
                 const sampleCollectionCenterCode = collectionTypeValue === fieldMapping.clinical
                         ? matchingSpecimen[fieldMapping.healthCareProvider] || ""
                         : matchingSpecimen[fieldMapping.collectionLocation] || "";
