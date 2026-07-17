@@ -559,6 +559,8 @@ module.exports = {
     dhq3ResponseProcessedTime: 262294850,
     dhq3ProcessedRespondentArray: 116442364,
 
+    dietScreenerSurveyStatus: 301686481,
+
     // Pathology Reports
     pathologyReportFilename: 488064292,
 

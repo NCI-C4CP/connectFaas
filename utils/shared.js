@@ -858,7 +858,7 @@ const cleanSurveyData = (data) => {
 const checkSurveyStatusesWhenVerified = (payloadData, docData) => {
     if (payloadData[fieldMapping.verificationStatus] !== fieldMapping.verified) return payloadData;
 
-    const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus];
+    const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus, fieldMapping.dietScreenerSurveyStatus];
 
     for (const statusKey of statusesToCheck) {
         if (!docData[statusKey]) {
