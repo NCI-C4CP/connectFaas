@@ -1,5 +1,4 @@
 const { getResponseJSON, setHeaders, logIPAddress, safeJSONParse } = require('./shared');
-const { validateIso8601Timestamp } = require('./validation');
 const fieldMapping = require('./fieldToConceptIdMapping');
 
 /**
@@ -33,7 +32,9 @@ const INTL_ONLY_CIDS = [hcsCIDs.facility.line4, hcsCIDs.facility.country];
 
 const TOP_LEVEL_D_KEY_RE = /^D_(\d{9})$/;
 // Strip server-owned metadata if sent by a client (lockedAttributes precedent — spoofs never reject).
-const SERVER_OWNED_KEYS = new Set([SUBMITTED_TIMESTAMP_KEY, 'uid', 'token', 'Connect_ID']);
+const SERVER_OWNED_KEYS = new Set([
+    SUBMITTED_TIMESTAMP_KEY, String(DOC_LAST_UPDATED), 'uid', 'token', 'Connect_ID',
+]);
 
 const MAX_D_VALUE_LENGTH = 800;   // spec write-in cap (additional-information textbox)
 const D_VALUE_MAX_LENGTH_BY_CID = new Map([
@@ -79,11 +80,6 @@ const validateSnapshotShape = (body) => {
             if (!LANGUAGE_CIDS.has(body[key])) errors.push(`${hcsCIDs.surveyLanguage} must be a valid survey language cid`);
             continue;
         }
-        if (key === String(DOC_LAST_UPDATED)) {
-            const validation = validateIso8601Timestamp(body[key]);
-            if (validation.error) errors.push(`${DOC_LAST_UPDATED} must be a canonical ISO timestamp (${validation.message})`);
-            continue;
-        }
         const match = TOP_LEVEL_D_KEY_RE.exec(key);
         if (!match || !SCALAR_CIDS.has(match[1])) { badKeys.push(key); continue; }
         const value = body[key];
@@ -103,7 +99,7 @@ const validateSubmission = (body) => {
     const fail = (message) => ({ error: true, message });
     const currentYear = new Date().getFullYear();
 
-    // Rule: facility name and change year are required. All other address fields areoptional.
+    // Rule: facility name and change year are required. All other address fields are optional.
     const facilityName = valueOf(body, hcsCIDs.facility.line1);
     if (typeof facilityName !== 'string' || !facilityName.trim()) {
         return fail(`Invalid or missing primary care facility name (${hcsCIDs.facility.line1}).`);

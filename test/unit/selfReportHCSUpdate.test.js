@@ -187,12 +187,14 @@ describe('storeSelfReportHCSUpdate (validation)', () => {
         const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', {
             ...minimalSubmit(),
             [SUBMITTED_TS_KEY]: '1999-01-01T00:00:00.000Z',
+            [String(fieldMapping.docLastUpdatedTimestamp)]: 'not-a-canonical-timestamp',
             uid: 'spoofed-uid',
             Connect_ID: 42,
         });
         expect(res.statusCode).toBe(200);
         expect(writtenDoc()[SUBMITTED_TS_KEY]).toMatch(ISO_RE);
         expect(writtenDoc()[SUBMITTED_TS_KEY]).not.toBe('1999-01-01T00:00:00.000Z');
+        expect(writtenDoc()[String(fieldMapping.docLastUpdatedTimestamp)]).toBe(writtenDoc()[SUBMITTED_TS_KEY]);
         expect(writtenDoc().uid).toBe(UID);
         expect(writtenDoc().Connect_ID).toBe(1234567890);
     });
