@@ -7,7 +7,7 @@ const { sendScheduledNotifications, processNotificationBatchBulkDefault, process
 const { connectApp } = require('./utils/connectApp');
 const { biospecimenAPIs } = require('./utils/biospecimen');
 const { incentiveCompleted, eligibleForIncentive } = require('./utils/incentive');
-const { getCgrPackagesInTransit } = require('./utils/cgrEndpoints');
+const { getCgrPackagesInTransit, getCgrPackagesLost } = require('./utils/cgrEndpoints');
 const { dashboard } = require('./utils/dashboard');
 const { importToBigQuery, firestoreExport, exportNotificationsToBucket } = require('./utils/events');
 const { participantDataCleanup } = require('./utils/participantDataCleanup');
@@ -29,6 +29,7 @@ exports.updateParticipantData = updateParticipantData;
 exports.getBigQueryData = getBigQueryData;
 exports.geocodedAddresses = geocodedAddresses;
 exports.getCgrPackagesInTransit = getCgrPackagesInTransit;
+exports.getCgrPackagesLost = getCgrPackagesLost;
 
 // End-Point for Site Manager Dashboard
 exports.dashboard = dashboard;
