@@ -2630,12 +2630,12 @@ const cgrPackagesInTransit = async (startDate, endDate, getLostPackages = 'exclu
         const locationConceptID = shippedBox[fieldMapping.shippingLocation];
 
         const boxData = {
-            shipDate: shippedBox[fieldMapping.boxLastModifiedTimestamp]?.split("T")[0] || "",
+            shipDate: shippedBox[fieldMapping.submitShipmentTimestamp]?.split("T")[0] || "",
             trackingNumber: shippedBox[fieldMapping.boxTrackingNumberScan] || "",
             shippedSite: locationConceptIDToLocationMap[locationConceptID]?.siteAcronym || '',
             shippedLocation: conceptIdToSiteSpecificLocation[shippedBox[fieldMapping.shippingLocation]] || "",
             siteCode: locationConceptID,
-            shipDateTime: shippedBox[fieldMapping.boxLastModifiedTimestamp] || "",
+            shipDateTime: shippedBox[fieldMapping.submitShipmentTimestamp] || "",
             numSamples: specimenBagsArr.length || 0,
             tempMonitor: shippedBox[fieldMapping.temperatureProbeInBox] === fieldMapping.yes ? "Yes" : "No",
             boxId: shippedBox[fieldMapping.shippingBoxId] || "",
