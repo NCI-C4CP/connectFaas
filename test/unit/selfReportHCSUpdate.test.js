@@ -23,7 +23,7 @@ beforeAll(() => {
     mod = require('../../utils/selfReportHCSUpdate');
     fieldMapping = require('../../utils/fieldToConceptIdMapping');
     hcsCIDs = fieldMapping.selfReportHCSUpdate;
-    monthCIDs = hcsCIDs.monthResponses.map(String);
+    monthCIDs = fieldMapping.selfReportMonthValues.map(String);
     YES = String(fieldMapping.yes);
     NO = String(fieldMapping.no);
 });
@@ -63,7 +63,7 @@ const domesticSubmit = () => ({
     [dKey(hcsCIDs.facility.googleValidated)]: YES,
     [dKey(hcsCIDs.changeMonth)]: monthCIDs[10],
     [dKey(hcsCIDs.additionalInfo)]: 'I moved across town.',
-    784119588: fieldMapping.english,
+    [fieldMapping.surveyLanguage]: fieldMapping.english,
 });
 
 // Full valid international submit.
@@ -171,7 +171,7 @@ describe('storeSelfReportHCSUpdate (validation)', () => {
     });
 
     it('rejects an invalid survey language cid', async () => {
-        const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', { ...minimalSubmit(), 784119588: 123 });
+        const res = await invoke(mod.storeSelfReportHCSUpdate, 'POST', { ...minimalSubmit(), [fieldMapping.surveyLanguage]: 123 });
         expect(res.statusCode).toBe(400);
     });
 

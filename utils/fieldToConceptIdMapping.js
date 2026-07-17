@@ -404,6 +404,7 @@ module.exports = {
     preferredLanguage: 255077064,
     english: 163149180,
     spanish: 773342525,
+    surveyLanguage: 784119588,
     dhq3Username: 148184166,
     dhq3UUID: 808755658,
     dhq3StudyID: 196723965,
@@ -457,10 +458,13 @@ module.exports = {
         unavailableUnknown: 178420302,
     },
 
+    // Shared month response cids for self-report modules (January through December).
+    selfReportMonthValues: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
+        574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
+
     // Self-Report Cancer Diagnosis survey ("Share New Health Information")
     selfReportCancerDx: {
         dxNumber: 480939157,            // computed at submission time
-        surveyLanguage: 784119588,
         sourceQuestions: {
             primarySite: 176158861,
             treatmentType: 388069854,
@@ -472,8 +476,6 @@ module.exports = {
         dxMonth: 299768751,
         dxYear: 908235757,
         txReceived: 874288004,
-        monthResponses: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
-            574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
         // The 24 valid survey site response cids. NOT the cancerSites block above
         siteResponses: [939782495, 135725957, 518416174, 847945207, 283025574, 942970912,
             596122041, 489400183, 863246236, 607793249, 532172400, 754745617, 665036297,
@@ -528,9 +530,6 @@ module.exports = {
 
     // Self-Report Health Care System Update ("Share New Health Information", issue #1658).
     selfReportHCSUpdate: {
-        surveyLanguage: 784119588,
-        monthResponses: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
-            574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
         facility: {
             line1: 624974556,  // Line 1 = name of primary care facility
             line2: 655907949, // Line 2 = main address

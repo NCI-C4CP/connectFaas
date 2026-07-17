@@ -18,7 +18,7 @@ const YES = String(fieldMapping.yes);
 const NO = String(fieldMapping.no);
 const YES_NO = new Set([YES, NO]);
 
-const MONTH_CIDS = new Set(hcsCIDs.monthResponses.map(String));
+const MONTH_CIDS = new Set(fieldMapping.selfReportMonthValues.map(String));
 const LANGUAGE_CIDS = new Set([fieldMapping.english, fieldMapping.spanish]);
 
 // Every storable question is a flat top-level scalar.
@@ -76,8 +76,8 @@ const validateSnapshotShape = (body) => {
 
     const badKeys = [];
     for (const key of keys) {
-        if (key === String(hcsCIDs.surveyLanguage)) {
-            if (!LANGUAGE_CIDS.has(body[key])) errors.push(`${hcsCIDs.surveyLanguage} must be a valid survey language cid`);
+        if (key === String(fieldMapping.surveyLanguage)) {
+            if (!LANGUAGE_CIDS.has(body[key])) errors.push(`${fieldMapping.surveyLanguage} must be a valid survey language cid`);
             continue;
         }
         const match = TOP_LEVEL_D_KEY_RE.exec(key);
