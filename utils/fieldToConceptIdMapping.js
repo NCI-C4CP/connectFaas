@@ -404,6 +404,7 @@ module.exports = {
     preferredLanguage: 255077064,
     english: 163149180,
     spanish: 773342525,
+    surveyLanguage: 784119588,
     dhq3Username: 148184166,
     dhq3UUID: 808755658,
     dhq3StudyID: 196723965,
@@ -457,10 +458,13 @@ module.exports = {
         unavailableUnknown: 178420302,
     },
 
+    // Shared month response cids for self-report modules (January through December).
+    selfReportMonthValues: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
+        574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
+
     // Self-Report Cancer Diagnosis survey ("Share New Health Information")
     selfReportCancerDx: {
         dxNumber: 480939157,            // computed at submission time
-        surveyLanguage: 784119588,
         sourceQuestions: {
             primarySite: 176158861,
             treatmentType: 388069854,
@@ -472,8 +476,6 @@ module.exports = {
         dxMonth: 299768751,
         dxYear: 908235757,
         txReceived: 874288004,
-        monthResponses: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
-            574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
         // The 24 valid survey site response cids. NOT the cancerSites block above
         siteResponses: [939782495, 135725957, 518416174, 847945207, 283025574, 942970912,
             596122041, 489400183, 863246236, 607793249, 532172400, 754745617, 665036297,
@@ -524,6 +526,26 @@ module.exports = {
             603181162: 390590842, 482225200: 130360374, 295976386: 199928758, 764891959: 602773386,
             248374037: 494409539, 139822395: 982594729, 723614811: 382789932, 807835037: 252291829,
         },
+    },
+
+    // Self-Report Health Care System Update ("Share New Health Information", issue #1658).
+    selfReportHCSUpdate: {
+        facility: {
+            line1: 624974556,  // Line 1 = name of primary care facility
+            line2: 655907949, // Line 2 = main address
+            line3: 858545898, 
+            line4: 134439170,
+            city: 973363047,
+            state: 783801971 /* merged state/region */,
+            zip: 734087990 /* merged zip/postal */,
+            intlFlag: 892107008,
+            googleValidated: 771921322,
+            country: 111301575,
+        },
+        changeMonth: 994200497,
+        changeYear: 353158944,
+        additionalInfo: 519981637,
+        submittedTimestamp: 223569179, // Server-stamped at submit (ISO8601 string).
     },
 
     // SSN Variables

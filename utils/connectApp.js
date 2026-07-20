@@ -6,6 +6,7 @@ const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentic
 const { addressValidation } = require('./usps');
 const { searchNPIRegistry } = require('./npiRegistry');
 const { storeSelfReportCancerDx, getSelfReportCancerDx } = require('./selfReportCancerDx');
+const { storeSelfReportHCSUpdate, getSelfReportHCSUpdate } = require('./selfReportHCSUpdate');
 const { getMySamples } = require("./firestore");
 
 const connectApp = async (req, res) => {
@@ -128,6 +129,10 @@ const connectApp = async (req, res) => {
     else if (api === 'storeSelfReportCancerDx') return await storeSelfReportCancerDx(req, res, uid);
 
     else if (api === 'getSelfReportCancerDx') return await getSelfReportCancerDx(req, res, uid);
+
+    else if (api === 'storeSelfReportHCSUpdate') return await storeSelfReportHCSUpdate(req, res, uid);
+
+    else if (api === 'getSelfReportHCSUpdate') return await getSelfReportHCSUpdate(req, res, uid);
 
     else if (api === 'retrievePhysicalActivityReport') return await retrievePhysicalActivityReport(req, res, uid);
 

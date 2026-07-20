@@ -299,6 +299,7 @@ const listOfCollectionsRelatedToDataDestruction = [
     "dhqRawAnswers",
     "cancerOccurrence",
     "selfReportCancerDx",
+    "selfReportHCSUpdates",
     "preference2026"
 ];
 

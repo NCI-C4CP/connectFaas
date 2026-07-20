@@ -28,7 +28,7 @@ const YES = String(fieldMapping.yes);
 const NO = String(fieldMapping.no);
 const YES_NO = new Set([YES, NO]);
 
-const MONTH_CIDS = new Set(selfReportCancerCIDs.monthResponses.map(String));
+const MONTH_CIDS = new Set(fieldMapping.selfReportMonthValues.map(String));
 const SITE_CIDS = new Set(selfReportCancerCIDs.siteResponses.map(String));
 const ELIGIBLE_SITE_CIDS = new Set(selfReportCancerCIDs.screeningEligibleSiteCids.map(String));
 const OTHER_SITE_CID = String(fieldMapping.cancerSites.other);
@@ -168,8 +168,8 @@ const validateSnapshotShape = (body) => {
     };
 
     for (const key of keys) {
-        if (key === String(selfReportCancerCIDs.surveyLanguage)) {
-            if (!LANGUAGE_CIDS.has(body[key])) errors.push(`${selfReportCancerCIDs.surveyLanguage} must be a valid survey language cid`);
+        if (key === String(fieldMapping.surveyLanguage)) {
+            if (!LANGUAGE_CIDS.has(body[key])) errors.push(`${fieldMapping.surveyLanguage} must be a valid survey language cid`);
             continue;
         }
         if (OP_KEYS.has(key)) continue;
