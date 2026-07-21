@@ -60,7 +60,8 @@
     "picomatch": "4.0.4 for CVE-2026-33671 (GHSA-c2c7-rcm5-vvqj), CVE-2026-33672 (GHSA-3v7f-55p6-f55p)",
     "axios": "1.13.5 for GHSA-43fc-jf86-j433 (DoS via __proto__ in mergeConfig)",
     "path-to-regexp": "0.1.13 for CVE-2026-4867 / GHSA-37ch-88jc-xwx2 (ReDoS via 3+ route params)",
-    "ajv": "8.18.0 for CVE-2025-69873 / GHSA-2g4f-4pwh-qvx6 (ReDoS with $data option)"
+    "ajv": "8.18.0 for CVE-2025-69873 / GHSA-2g4f-4pwh-qvx6 (ReDoS with $data option)",
+    "protobufjs": "7.5.6 for CVE-2026-44291 / GHSA-75px-5xx7-5xc7 (code execution following prototype pollution)"
   },
   "overrides": {
     "diff": "8.0.3",
@@ -73,6 +74,7 @@
     "node-forge": "1.4.0",
     "path-to-regexp": "0.1.13",
     "ajv": "8.18.0",
+    "protobufjs": "7.5.6",
     "@google-cloud/bigquery": {
       "form-data": "2.5.5"
     },
