@@ -72,10 +72,10 @@ describe("dataDestructionPolicy — V0 baseline (named)", () => {
 
 describe("dataDestructionPolicy — V0 immutable snapshot lock-in", () => {
     it("V0_DATA_DESTRUCTION_STUB_VARS has the expected entry count and CID sum", () => {
-        expect(Object.keys(V0_DATA_DESTRUCTION_STUB_VARS)).toHaveLength(136);
+        expect(Object.keys(V0_DATA_DESTRUCTION_STUB_VARS)).toHaveLength(138);
         const cidSum = Object.values(V0_DATA_DESTRUCTION_STUB_VARS)
             .reduce((acc, cid) => acc + cid, 0);
-        expect(cidSum).toBe(72519393025);
+        expect(cidSum).toBe(73497176671);
     });
 
     it("V0_DATA_DESTRUCTION_STUB_VARS matches the locked-in name -> CID snapshot exactly", () => {
