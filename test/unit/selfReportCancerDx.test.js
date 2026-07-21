@@ -25,7 +25,7 @@ beforeAll(() => {
     fieldMapping = require('../../utils/fieldToConceptIdMapping');
     selfReportCancerCIDs = fieldMapping.selfReportCancerDx;
     cancerSiteCIDs = fieldMapping.cancerSites;
-    monthCIDs = selfReportCancerCIDs.monthResponses.map(String);
+    monthCIDs = fieldMapping.selfReportMonthValues.map(String);
     YES = String(fieldMapping.yes);
     NO = String(fieldMapping.no);
 });
@@ -191,7 +191,7 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
                 [dKey(selfReportCancerCIDs.treatment.startYear)]: '2024',
                 [treatmentRepeatKey(selfReportCancerCIDs.treatment.physFirstName, 10)]: 'Maya',
             },
-            [selfReportCancerCIDs.surveyLanguage]: fieldMapping.english, // surveyLanguage: numeric value allowed
+            [fieldMapping.surveyLanguage]: fieldMapping.english, // surveyLanguage: numeric value allowed
             [fieldMapping.docLastUpdatedTimestamp]: '2026-06-12T00:00:00.000Z', // lastUpdated: ISO string
         });
         expect(res.statusCode).toBe(200);
@@ -200,16 +200,16 @@ describe('saveSelfReportCancerDxProgress — guards & shape', () => {
     it('allows only known survey-language cids when survey language is supplied', async () => {
         const english = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', {
             ...minimalSubmit(),
-            [selfReportCancerCIDs.surveyLanguage]: fieldMapping.english,
+            [fieldMapping.surveyLanguage]: fieldMapping.english,
         });
         expect(english.statusCode).toBe(200);
 
         const bad = await invoke(mod.saveSelfReportCancerDxProgress, 'POST', {
             ...minimalSubmit(),
-            [selfReportCancerCIDs.surveyLanguage]: 999999999,
+            [fieldMapping.surveyLanguage]: 999999999,
         });
         expect(bad.statusCode).toBe(400);
-        expect(bad._getJSONData().message).toContain(String(selfReportCancerCIDs.surveyLanguage));
+        expect(bad._getJSONData().message).toContain(String(fieldMapping.surveyLanguage));
     });
 
     it('rejects non-string D_ values and oversized values', async () => {
