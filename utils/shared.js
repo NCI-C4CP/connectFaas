@@ -255,7 +255,8 @@ const moduleConceptsToCollections = {
     "D_506648060" :     "experience2024",
     "D_369168474":      "cancerScreeningHistorySurvey",
     "D_497020618" :     "dhq3Survey",
-    "D_312845734" :     "preference2026"
+    "D_312845734" :     "preference2026",
+    "D_515124081" :     "dietScreener" 
 };
 
 const moduleStatusConcepts = {
@@ -273,7 +274,8 @@ const moduleStatusConcepts = {
     "956490759" :       "experience2024",
     "176068627" :       "cancerScreeningHistorySurvey",
     "692560814" :       "dhq3Survey",
-    "278023676" :       "preference2026"
+    "278023676" :       "preference2026",
+    "301686481" :       "dietScreener"
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -300,7 +302,8 @@ const listOfCollectionsRelatedToDataDestruction = [
     "cancerOccurrence",
     "selfReportCancerDx",
     "selfReportHCSUpdates",
-    "preference2026"
+    "preference2026",
+    "dietScreener"
 ];
 
 const incentiveConcepts = {
