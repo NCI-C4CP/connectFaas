@@ -146,6 +146,8 @@ const V0_DATA_DESTRUCTION_STUB_VARS = {
     dhq3HEIReportStatusInternal: 542983589,
     dhq3HEIReportStatusExternal: 892697201,
     dhq3HEIReportFirstViewedISOTime: 600958089,
+    dietScreenerSurveyStatus: 301686481,
+    dietScreenerSurveyCompletionTime: 676097165,
     numberOfAvailableReports: 794047378,
     physicalActivity: 686238347,
     flagForReportUnreadViewedDeclined: 446235715,
