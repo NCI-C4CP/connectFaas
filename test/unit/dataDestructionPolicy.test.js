@@ -72,10 +72,10 @@ describe("dataDestructionPolicy — V0 baseline (named)", () => {
 
 describe("dataDestructionPolicy — V0 immutable snapshot lock-in", () => {
     it("V0_DATA_DESTRUCTION_STUB_VARS has the expected entry count and CID sum", () => {
-        expect(Object.keys(V0_DATA_DESTRUCTION_STUB_VARS)).toHaveLength(138);
+        expect(Object.keys(V0_DATA_DESTRUCTION_STUB_VARS)).toHaveLength(136);
         const cidSum = Object.values(V0_DATA_DESTRUCTION_STUB_VARS)
             .reduce((acc, cid) => acc + cid, 0);
-        expect(cidSum).toBe(73497176671);
+        expect(cidSum).toBe(72519393025);
     });
 
     it("V0_DATA_DESTRUCTION_STUB_VARS matches the locked-in name -> CID snapshot exactly", () => {
@@ -210,8 +210,6 @@ describe("dataDestructionPolicy — V0 immutable snapshot lock-in", () => {
             dhq3HEIReportStatusInternal: 542983589,
             dhq3HEIReportStatusExternal: 892697201,
             dhq3HEIReportFirstViewedISOTime: 600958089,
-            dietScreenerSurveyStatus: 301686481,
-            dietScreenerSurveyCompletionTime: 676097165,
             numberOfAvailableReports: 794047378,
             physicalActivity: 686238347,
             flagForReportUnreadViewedDeclined: 446235715,
@@ -240,6 +238,27 @@ describe("dataDestructionPolicy — V1 delta (named)", () => {
             DEV:   "2026-05-18T04:00:00.000Z",
             STAGE: "2026-05-25T04:00:00.000Z",
             PROD:  "2026-05-28T02:00:00.000Z",
+        });
+    });
+});
+
+describe("dataDestructionPolicy — V2 delta (named)", () => {
+    it("adds dietScreenerSurveyStatus and dietScreenerSurveyCompletionTime by name", () => {
+        const v2 = DATA_DESTRUCTION_POLICY_DELTAS.find((d) => d.version === "v2");
+        expect(v2).toBeDefined();
+        expect(v2.retainedFieldsNamed.add).toEqual({ dietScreenerSurveyStatus: 301686481, dietScreenerSurveyCompletionTime: 676097165 });
+        expect(v2.retainedFieldsNamed.remove).toEqual({});
+        expect(v2.nestedRetainedFieldsNamed).toEqual({ add: {}, remove: {} });
+        expect(v2.requiredAfterDestructionNamed).toBeUndefined();
+        expect(v2.rationale).toMatch(/dietScreenerSurveyStatus/);
+    });
+
+    it("has per-tier effective dates pinned to the July 2026 rollout", () => {
+        const v2 = DATA_DESTRUCTION_POLICY_DELTAS.find((d) => d.version === "v2");
+        expect(v2.effectiveFrom).toEqual({
+            DEV:   "2026-07-20T04:00:00.000Z",
+            STAGE: "2026-07-27T04:00:00.000Z",
+            PROD:  "2026-08-01T02:00:00.000Z",
         });
     });
 });
