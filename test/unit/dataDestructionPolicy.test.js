@@ -404,7 +404,7 @@ describe("dataDestructionPolicy — describeStubVariables", () => {
         // After V1's tier effectiveFrom is in the past, the current policy is V1.
         // The exact version this returns depends on developmentTier and clock,
         // so we just assert it's one of the known versions and has a name→CID map.
-        expect(["v0", "v1"]).toContain(description.version);
+        expect(["v0", "v1", "v2"]).toContain(description.version);
         expect(typeof description.retainedTopLevel).toBe("object");
     });
 });
@@ -412,7 +412,7 @@ describe("dataDestructionPolicy — describeStubVariables", () => {
 describe("dataDestructionPolicy — getCurrentPolicy", () => {
     it("returns a known policy version for the active tier", () => {
         const view = getCurrentPolicy();
-        expect(["v0", "v1"]).toContain(view.version);
+        expect(["v0", "v1", "v2"]).toContain(view.version);
         // Whichever version is current, the retained CIDs should be a non-empty array.
         expect(Array.isArray(view.retainedTopLevelFields)).toBe(true);
         expect(view.retainedTopLevelFields.length).toBeGreaterThan(0);
