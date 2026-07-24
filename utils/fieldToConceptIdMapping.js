@@ -12,6 +12,61 @@ module.exports = {
         nationalInstitutesOfHealth: 13,
         baylorScottAndWhiteHealth: 472940358,
     },
+    nameToKeyObj: {
+        ucDcam: 777644826,
+        marshfield: 692275326,
+        weston: 813701399,
+        lakeHallie: 698283667,
+        hpRC: 834825425,
+        hpPN: 574368418,
+        hfhKRC: 736183094,
+        hfhLRC: 706927479,
+        hfhPRC: 886364332,
+        hfhPU: 322059622,
+        hfhJackson: 755034888,
+        hfhDetroitNorthwest: 911683679,
+        inHomeCollection: 852689772,
+        bemidjiClinic: 246153539,
+        siouxFallsEdithCenter: 433070901,
+        fargoAmberValley: 769594361,
+        sfImag: 589224449,
+        sfFargo: 467088902,
+        sfBM : 127626388,
+        sfSC : 246137578,
+        ingHar: 145191545,
+        rivEas: 489380324,
+        soLo: 120264574,
+        riLa: 691714762,
+        wisRapids: 487512085,
+        colAbb: 983848564,
+        mino: 261931804,
+        merr: 665277300,
+        stevensPoint: 255636184,
+        neillsville: 813412950,
+        ucmPopUp: 319518299,
+        orPark: 940329442,
+        mfPopUp: 567969985,
+        bccHwc: 723351427,
+        fwAllSaints: 807443231,
+        bccFortWorth: 288564244,
+        bccPlano: 475614532,
+        bccWorthSt: 809370237,
+        bccIrving: 856158129,
+        ntxBiorepo: 436956777,
+        northGarland: 483909879,
+        wacoMacArthur: 962830330,
+        irving: 397883980,
+        templeCDM: 117840593,
+        templeRoney: 574104518,
+        templeWestfield: 749199085,
+        killeenMain: 603989030,
+        wacoFishpond: 471260082,
+        kpHawaii: 531313956,
+        nci: 111111111,
+        nciFrederick: 222222222,
+        other: 807835037,
+        all: 1000
+    },
 
     yes: 353358909,
     no: 104430631,
@@ -69,6 +124,7 @@ module.exports = {
     notBoxed: 657483796,
     partiallyBoxed: 775512390,
     boxed: 210720511,
+    shippingLocation: 560975149,
     samplesWithinBag: 234868461,
     strayTubesList: 742186726,
     objectId: 825582494,
@@ -348,6 +404,7 @@ module.exports = {
     preferredLanguage: 255077064,
     english: 163149180,
     spanish: 773342525,
+    surveyLanguage: 784119588,
     dhq3Username: 148184166,
     dhq3UUID: 808755658,
     dhq3StudyID: 196723965,
@@ -401,17 +458,24 @@ module.exports = {
         unavailableUnknown: 178420302,
     },
 
+    // Shared month response cids for self-report modules (January through December).
+    selfReportMonthValues: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
+        574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
+
     // Self-Report Cancer Diagnosis survey ("Share New Health Information")
     selfReportCancerDx: {
         dxNumber: 480939157,            // computed at submission time
-        surveyLanguage: 784119588,
+        sourceQuestions: {
+            primarySite: 176158861,
+            treatmentType: 388069854,
+            treatmentOngoingEnd: 566057154,
+            screeningType: 130601750,
+        },
         primarySite: 181737942,
         primarySiteOther: 546976551,    // required if primarySite === cancerSites.other (807835037)
         dxMonth: 299768751,
         dxYear: 908235757,
         txReceived: 874288004,
-        monthResponses: [286592124, 802747980, 676299940, 463502254, 526483288, 842005720,
-            574954852, 887495026, 181090983, 259643910, 615680906, 840678879],
         // The 24 valid survey site response cids. NOT the cancerSites block above
         siteResponses: [939782495, 135725957, 518416174, 847945207, 283025574, 942970912,
             596122041, 489400183, 863246236, 607793249, 532172400, 754745617, 665036297,
@@ -420,22 +484,22 @@ module.exports = {
         screeningEligibleSiteCids: [847945207, 942970912, 754745617], // breast, colon/rectal, lung
         treatment: {
             chemo: 244216107, surgery: 293873603, radiation: 555019890, other: 459406752,
-            otherDescribe: 420392069, // FLAT — no loop suffix
+            otherDescribe: 420392069, // treatment-type source child; no loop suffix
             startMonth: 742710886, startYear: 281136649,
             endMonth: 625530863, endYear: 729162012, ongoing: 735592270,
             physFirstName: 964819753, physLastName: 740626474,
-            physNpi: "TODO_TxPhysNPI", // no cid yet
+            physNpi: 609996916,
             facility: {
                 line1: 165350319, line2: 456014563, line3: 783145717, line4: 460490909,
                 city: 493041638, state: 215797578,
-                zip: 385095107, intlFlag: 539812906, country: 785016438,
+                zip: 385095107, intlFlag: 539812906, googleValidated: 568499390, country: 785016438,
             },
         },
         screening: {
             detected: 944065539,
             month: 853862770, year: 858052564,
-            phyFirstName: 239126548, phyLastName: 130343311,
-            phyNpi: "TODO_ScrnPhyNPI", // no cid yet
+            physFirstName: 239126548, physLastName: 130343311,
+            physNpi: 879021105,
             optionValues: {
                 breast2D: 425815239, breastCEM: 759642936, breastMRI: 528508094,
                 breastUS: 502929020, breastCBE: 412252588, lungCT: 633630015,
@@ -450,7 +514,7 @@ module.exports = {
             facility: {
                 line1: 977505777, line2: 632951008, line3: 693368144, line4: 939355635,
                 city: 591687168, state: 513329248 /* merged state/region */,
-                zip: 404892571 /* merged zip/postal */, intlFlag: 501859375, country: 874199876,
+                zip: 404892571 /* merged zip/postal */, intlFlag: 501859375, googleValidated: 803865514, country: 874199876,
             },
         },
         // Per-site submitted-timestamp cid, keyed by the site response cid (ISO8601 strings).
@@ -462,6 +526,26 @@ module.exports = {
             603181162: 390590842, 482225200: 130360374, 295976386: 199928758, 764891959: 602773386,
             248374037: 494409539, 139822395: 982594729, 723614811: 382789932, 807835037: 252291829,
         },
+    },
+
+    // Self-Report Health Care System Update ("Share New Health Information", issue #1658).
+    selfReportHCSUpdate: {
+        facility: {
+            line1: 624974556,  // Line 1 = name of primary care facility
+            line2: 655907949, // Line 2 = main address
+            line3: 858545898, 
+            line4: 134439170,
+            city: 973363047,
+            state: 783801971 /* merged state/region */,
+            zip: 734087990 /* merged zip/postal */,
+            intlFlag: 892107008,
+            googleValidated: 771921322,
+            country: 111301575,
+        },
+        changeMonth: 994200497,
+        changeYear: 353158944,
+        additionalInfo: 519981637,
+        submittedTimestamp: 223569179, // Server-stamped at submit (ISO8601 string).
     },
 
     // SSN Variables
@@ -496,6 +580,9 @@ module.exports = {
     dhq3SurveyCompletionTime: 610227793,
     dhq3ResponseProcessedTime: 262294850,
     dhq3ProcessedRespondentArray: 116442364,
+
+    dietScreenerSurveyStatus: 301686481,
+    dietScreenerSurveyCompletionTime: 676097165,
 
     // Pathology Reports
     pathologyReportFilename: 488064292,

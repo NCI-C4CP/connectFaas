@@ -216,11 +216,35 @@ const V1_DATA_DESTRUCTION_STUB_VARS = {
         "(664453818) so HIPAA revocation traceability is retained.",
 };
 
+const V2_DATA_DESTRUCTION_STUB_VARS = {
+    version: "v2",
+    effectiveFrom: {
+        DEV:   "2026-07-20T04:00:00.000Z", // 2026-07-20 00:00 ET
+        STAGE: "2026-07-27T04:00:00.000Z", // 2026-07-27 00:00 ET
+        PROD:  "2026-08-01T02:00:00.000Z", // 2026-07-31 22:00 ET
+    },
+    retainedFieldsNamed: {
+        add: {
+            dietScreenerSurveyStatus: 301686481,
+            dietScreenerSurveyCompletionTime: 676097165
+        },
+        remove: {},
+    },
+    nestedRetainedFieldsNamed: {
+        add: {},
+        remove: {},
+    },
+    rationale:
+        "Retain dietScreenerSurveyStatus (301686481) and dietScreenerSurveyCompletionTime " +
+        "(676097165) after participant data destruction.",
+};
+
 // Append future versions to this list. Each delta is applied to the running
 // view in declared order if its tier-specific effectiveFrom is <= the
 // participant's dateTimeDataDestroyed.
 const DATA_DESTRUCTION_POLICY_DELTAS = [
     V1_DATA_DESTRUCTION_STUB_VARS,
+    V2_DATA_DESTRUCTION_STUB_VARS
 ];
 
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -475,6 +499,7 @@ module.exports = {
     V0_DATA_DESTRUCTION_BASELINE,
     V0_DATA_DESTRUCTION_STUB_VARS,
     V1_DATA_DESTRUCTION_STUB_VARS,
+    V2_DATA_DESTRUCTION_STUB_VARS,
     DATA_DESTRUCTION_POLICY_DELTAS,
     NESTED_PARENT_CID_MAP,
     resolvePolicyForDestruction,

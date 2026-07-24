@@ -498,7 +498,18 @@ const resetParticipantHelper = async (uid, saveToDb) => {
             }
         });
 
-        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise, selfReportCancerDxPromise]);
+        const selfReportHCSUpdatesPromise = new Promise(async (resolve, reject) => {
+            try {
+                const selfReportHCSUpdatesQuery = db.collection('selfReportHCSUpdates').where('token', '==', token);
+                const selfReportHCSUpdatesSnapshot = await transaction.get(selfReportHCSUpdatesQuery);
+                toDelete.selfReportHCSUpdates = selfReportHCSUpdatesSnapshot.docs.map(doc => doc.id);
+                return resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+
+        await Promise.all([Promise.all(userSurveyPromises), userNotificationsPromise, userBiospecimenPromise, userCancerOccurrencesPromise, kitAssemblyPromise, selfReportCancerDxPromise, selfReportHCSUpdatesPromise]);
 
         if (saveToDb) {
             const participantDoc = db.collection('participants').doc(userId);
@@ -2395,6 +2406,321 @@ const searchBoxesByLocation = async (institute, location) => {
     
 }
 
+/**
+ * 
+ * @param {String | Number} startDate Optional. Date in valid format to be passed into new Date(startDate).toISOString().
+ * If provided, results are filtered to packages sent on or after this time.
+ * @param {String | Number} endDate Optional. Date in valid format to be passed into new Date(endDate).toISOString().
+ * If provided, results are filtered to packages sent on or before this time.
+ * @returns Array of form [{
+            "shipDate": "2026-07-15",
+            "trackingNumber": "774455511222",
+            "shippedSite": "HP",
+            "shippedLocation": "HP Park Nicollet",
+            "siteCode": 574368418,
+            "shipDateTime": "2026-07-15T22:31:50.212Z",
+            "numSamples": 1,
+            "tempMonitor": "Yes",
+            "boxId": "Box8",
+            "biospecimens": [
+                {
+                    "studyId": "Connect Study",
+                    "specimenBagId": "CXA071510 0008",
+                    "fullSpecimenIds": "CXA071510 0001",
+                    "materialType": "WHOLE BL",
+                    "sampleCollectionCenter": "HealthPartners Clinical",
+                    "sampleCollectionCenterCode": 531629870,
+                    "sampleId": "CXA071510",
+                    "sequence": "0001",
+                    "subjectId": 2386926968,
+                    "dateDrawn": "01/01/1999 12:00:00 PM",
+                    "vialType": "5 ml Serum separator tube",
+                    "additivePreservative": "SST",
+                    "volume": "5",
+                    "volumeEstimate": "Assumed",
+                    "volumeUnit": "ml (cc)",
+                    "vialWarnings": "",
+                    "hemolyzed": "",
+                    "labelStatus": "Barcoded",
+                    "visit": "BL",
+                    "errors": ""
+                }, ...
+            ],
+            "datePackageLost": "2026-03-11T17:35:03.487Z" // Included only for packages which have been marked as lost
+        }, ...]
+ */
+const cgrPackagesInTransit = async (startDate, endDate, getLostPackages = 'exclude') => {
+
+    // Get helper methods
+    const {
+        getBagId, materialTypeMapping, 
+        conceptIdToSiteSpecificLocation, specimenCollection, tubeDeviationFlags, locationConceptIDToLocationMap,
+        clinicalCollectionLocationNameLookup, researchCollectionLocationNameLookup, getVialTypesMappings, getHemolyzedStatus
+    } = require('./shared');
+
+    const bagConceptIdList = Object.values(fieldMapping.bagContainerCids);
+
+    // Get the boxes which have been submitted but not received.
+    let boxQuery = db.collection('boxes')
+        .where(fieldMapping.submitShipmentFlag.toString(), "==", fieldMapping.yes)
+        .where(fieldMapping.siteShipmentReceived.toString(), "==", fieldMapping.no);
+
+    if(getLostPackages === 'only') {
+        boxQuery = boxQuery.where(fieldMapping.packageLost.toString(), '==', fieldMapping.yes);
+    }
+    
+
+    // Accepts any timestamp which is of a valid form for new Date(), including ISO timestamp, UTC string, Unix epoch, and locale string in UTC
+    // (Date stored at submission time as new Date().toISOString(), so it is always in UTC)
+    if (startDate) {
+        // Start date can be a Unix epoch timestamp, so check for that
+        startDate = isNaN(startDate) ? startDate : +startDate;
+        boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '>=', new Date(startDate).toISOString());
+    }
+    if (endDate) {
+        // End date can be a Unix epoch timestamp, so check for that
+        endDate = isNaN(endDate) ? endDate : +endDate;
+        boxQuery = boxQuery.where(fieldMapping.submitShipmentTimestamp.toString(), '<=', new Date(endDate).toISOString());
+    }
+
+    const pkgSnapshot = await boxQuery.get();
+
+    const packages = pkgSnapshot.docs?.map(doc => doc.data()) || [];
+
+    let inTransitBoxes = packages;
+
+    if(getLostPackages === 'exclude') {
+        // Filter out lost boxes to reflect the packages in transit
+        // Not included in the query because it excludes records where the field does not exist
+        inTransitBoxes = packages.filter((box) => box[fieldMapping.packageLost] !== fieldMapping.yes);
+    }
+    
+
+    // Sort the packages (getRecentBoxesShippedBySiteNotReceived in biospecimen)
+    const sortedPackages = inTransitBoxes.sort((a,b) => {
+        const shipDateA = a[fieldMapping.submitShipmentTimestamp];
+        const shipDateB = b[fieldMapping.submitShipmentTimestamp];
+        return (shipDateA < shipDateB) ? 1 : -1;
+    });
+
+    // Get the specimens in each box
+
+    const tubeIdSet = new Set();
+    const collectionIdSet = new Set();
+    inTransitBoxes.forEach(box => {
+        const bagKeys = Object.keys(box)
+            .filter(key => bagConceptIdList.includes(parseInt(key, 10)))
+            .sort((a, b) => {
+                return bagConceptIdList.indexOf(parseInt(a, 10)) < bagConceptIdList.indexOf(parseInt(b, 10)) ? -1 : 1
+            });
+
+        bagKeys.forEach(key => {
+            const tubes = box[key]?.[fieldMapping.samplesWithinBag];
+            if (tubes && tubes.length) {
+                if (key === 'unlabelled') {
+                    tubes.forEach(tube => {
+                        tubeIdSet.add(tube);
+                        const [collectionId] = tube.split(' ');
+                        collectionId && collectionIdSet.add(collectionId);
+                    });
+                } else {
+                    const [collectionId] = tubes[0].split(' ');
+                    collectionId && collectionIdSet.add(collectionId);
+                    tubes.forEach(tube => {
+                        tubeIdSet.add(tube);
+                    });
+                }
+            }
+        });
+    });
+
+    // Now call getSpecimensByCollectionIds with the collectionIdSet and other information
+    const collectionIdsArray = Array.from(collectionIdSet);
+    const specimens = await getSpecimensByCollectionIds(collectionIdsArray, 'siteCode', true);
+
+    // Now isolate the specimens to those in the current boxes
+    const specimensInBoxes = [];
+    const specimenLookup = {};
+
+    for (const specimen of specimens) {
+        for (const tubeId of tubeIdSet) {
+            if (!specimen.data[tubeId]) continue;
+            if (!specimen.data[tubeId][fieldMapping.objectId] || !tubeIdSet.has(specimen.data[tubeId][fieldMapping.objectId])) {
+                delete specimen.data[tubeId];
+            }    
+        }
+        specimensInBoxes.push(specimen.data);
+    }
+
+    // Now find the replacementTubeLabelObj and the modifiedTransitResults
+    const replacementTubeLabelObj = {};
+    const replacementLabelRegExp = new RegExp('005[0-4]$');
+    for (let specimen of specimensInBoxes) {
+        const collectionId = specimen[fieldMapping.collectionId];
+        if (!collectionId) continue;
+        // Add the specimen information to the specimenLookup dictionary
+        // so that later loops over the bags listed within a box
+        // can readily find the matching specimen
+        specimenLookup[collectionId] = specimen;
+
+
+        const tubeDataObject = {};
+        tubeLoop: for (const tubeKey of specimenCollection.tubeCidList) {
+            const tube = specimen[tubeKey];
+
+            if (!tube || !tube[fieldMapping.scannedId]) {
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            if (tube[fieldMapping.tubeDiscardFlag] === fieldMapping.yes) {
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            if (tube[fieldMapping.tubeIsMissing] === fieldMapping.yes) {
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            if (tube[fieldMapping.tubeIsCollected] === fieldMapping.no) {
+                // If the tube is not even marked as collected, it should also be removed as unusable
+                // (Issues 1388 and 1316)
+                delete specimen[tubeKey];
+                continue;
+            }
+
+            // This is a sanity check, but hasn't been needed in testing. All applicable tubes have been filtered by the discard flag.
+            const tubeDeviation = tube[fieldMapping.tubeDeviationObject];
+            for (const deviationFlag of tubeDeviationFlags) {
+                if (tubeDeviation?.[deviationFlag] === fieldMapping.yes) {
+                    delete specimen[tubeKey];
+                    continue tubeLoop;
+                }
+            }
+            tubeDataObject[tubeKey] = tube[fieldMapping.objectId];  
+        };
+        Object.keys(tubeDataObject).forEach(tubeCid => {
+            let scannedTubeLabel = tubeDataObject[tubeCid];
+            if (replacementLabelRegExp.test(scannedTubeLabel)) {
+                replacementTubeLabelObj[scannedTubeLabel] = collectionId + ' ' + specimenCollection.cidToNum[tubeCid];
+            }
+        });
+    }
+
+    // Now build the package data and the data for individual specimens within each box
+    let boxesInTransitResults = [];
+    sortedPackages.forEach((shippedBox) => {
+        const bagKeys = Object.keys(shippedBox)
+            .filter(key => bagConceptIdList.includes(parseInt(key, 10)))
+            .sort((a, b) => {
+                return bagConceptIdList.indexOf(parseInt(a, 10)) < bagConceptIdList.indexOf(parseInt(b, 10)) ? -1 : 1
+            });
+
+        let specimenBags = {};
+        bagKeys.forEach((bagId) => {
+            specimenBags[bagId] = Object.assign({}, shippedBox[bagId]);
+        });
+
+        const specimenBagsArr = bagKeys
+            .map((bagKey) => shippedBox[bagKey][fieldMapping.tubesCollected])
+            .flat();
+
+        // Box info used for CSVs
+        const locationConceptID = shippedBox[fieldMapping.shippingLocation];
+
+        const boxData = {
+            shipDate: shippedBox[fieldMapping.submitShipmentTimestamp]?.split("T")[0] || "",
+            trackingNumber: shippedBox[fieldMapping.boxTrackingNumberScan] || "",
+            shippedSite: locationConceptIDToLocationMap[locationConceptID]?.siteAcronym || '',
+            shippedLocation: conceptIdToSiteSpecificLocation[shippedBox[fieldMapping.shippingLocation]] || "",
+            siteCode: locationConceptID,
+            shipDateTime: shippedBox[fieldMapping.submitShipmentTimestamp] || "",
+            numSamples: specimenBagsArr.length || 0,
+            tempMonitor: shippedBox[fieldMapping.temperatureProbeInBox] === fieldMapping.yes ? "Yes" : "No",
+            boxId: shippedBox[fieldMapping.shippingBoxId] || "",
+            biospecimens: []
+        };
+
+        if(getLostPackages !== 'exclude' && shippedBox[fieldMapping.packageLost] === fieldMapping.yes) {
+            boxData.datePackageLost = shippedBox[fieldMapping.datePackageLost];
+        }
+
+        bagKeys.forEach((bagId, index) => {
+            const specimenBag = specimenBags[bagId];
+            specimenBag[fieldMapping.samplesWithinBag]?.forEach((fullSpecimenId, j, specimenBagSize) => {
+                // grab fullSpecimenIds & loop thru content
+                
+                let errors = '';
+
+                if (Object.prototype.hasOwnProperty.call(replacementTubeLabelObj,fullSpecimenId)) {
+                    fullSpecimenId = replacementTubeLabelObj[fullSpecimenId];
+                }
+
+                // Get information from the biospecimen record for this collection ID
+                // (Note that in dev and stage, data issues mean some boxes in the system
+                // include specimen IDs for specimens which have been deleted.)
+                const [collectionId, tubeId] = fullSpecimenId.split(' '); // Get the collection ID to look up the specimen info
+                let matchingSpecimen = specimenLookup[collectionId];
+                if(!matchingSpecimen) {
+                    errors = `Could not find specimens for collection id ${collectionId}. This may happen when a specimen is deleted without removing it from the box. This is known to happen in dev and test environments, but should be reported if found in prod.`;
+                    matchingSpecimen = {};
+                }
+                
+                const healthcareProvider = matchingSpecimen[fieldMapping.healthCareProvider] || "default";
+                const collectionTypeValue = matchingSpecimen[fieldMapping.collectionSetting];
+                const collectionType = collectionTypeValue === fieldMapping.clinical ? 'clinical' : 'research';
+                const sampleCollectionCenterCode = collectionTypeValue === fieldMapping.clinical
+                        ? matchingSpecimen[fieldMapping.healthCareProvider] || ""
+                        : matchingSpecimen[fieldMapping.collectionLocation] || "";
+                const sampleCollectionCenter =
+                    collectionTypeValue === fieldMapping.clinical
+                        ? clinicalCollectionLocationNameLookup[matchingSpecimen[fieldMapping.healthCareProvider]] || ""
+                        : researchCollectionLocationNameLookup[matchingSpecimen[fieldMapping.collectionLocation]] || "";
+                // Dummy date for clinical files requested in issue 936
+                const dateDrawn = collectionTypeValue === fieldMapping.clinical
+                    ? "01/01/1999 12:00:00 PM"
+                    : matchingSpecimen[fieldMapping.collectionDateTimeStamp] || "";
+
+                const vialMappings = getVialTypesMappings(tubeId, collectionTypeValue, healthcareProvider);
+                const vialType = vialMappings[0] || "";
+                const additivePreservative = vialMappings[1] || "";
+                const materialType = vialMappings[2] || "";
+                const volume = vialMappings[3] || "";
+
+                    
+                const dataHolder = {
+                    studyId: "Connect Study",
+                    specimenBagId: getBagId(specimenBag),
+                    fullSpecimenIds: fullSpecimenId, // This is the same as the BSI ID
+                    materialType: materialTypeMapping(fullSpecimenId),
+                    sampleCollectionCenter: sampleCollectionCenter || '[No collection center found]',
+                    sampleCollectionCenterCode,
+                    sampleId: collectionId,
+                    sequence: tubeId || "",
+                    subjectId: matchingSpecimen["Connect_ID"] || "",
+                    dateDrawn,
+                    vialType,
+                    additivePreservative,
+                    volume,
+                    volumeEstimate: "Assumed",
+                    volumeUnit: "ml (cc)",
+                    vialWarnings: "",
+                    hemolyzed: getHemolyzedStatus(materialType),
+                    labelStatus: "Barcoded",
+                    visit: "BL",
+                    errors
+                };
+                boxData.biospecimens.push(dataHolder);
+            });
+        });
+
+        boxesInTransitResults.push(boxData);
+    });
+
+    return {data: boxesInTransitResults};
+}
+
 const getSpecimenCollections = async (token, siteCode) => {
     const snapshot = await db.collection('biospecimen').where('token', '==', token).where('827220437', '==', siteCode).get();
     printDocsCount(snapshot, "getSpecimenCollections");
@@ -3277,9 +3603,12 @@ const processRequestAKitConditions = async (updateDb, docId) => {
             const runTimestamp = new Date().toISOString();
 
             do {
+                const participantsInThisBatch = participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length));
+                // If the count is a multiple of maxSize, there may be an extra final loop with an empty array, which will break if we try to run the query with it
+                if(!participantsInThisBatch.length) break;
                 batch = db.batch();
                 let query = db.collection('participants')
-                    .where('token', 'in', participantsToUpdate.slice(start, Math.min(start + maxSize, participantsToUpdate.length)))
+                    .where('token', 'in', participantsInThisBatch)
                     .select(`${collectionDetails}`);
 
                 
@@ -5043,7 +5372,7 @@ const storeKitReceipt = async (pkg) => {
             }
             if (
                 participantDocData[fieldMapping.withdrawConsent] == fieldMapping.yes ||
-                participantDocData[fieldMapping.destroyData] == fieldMapping.yes ||
+                participantDocData[fieldMapping.participantMap.destroyData] == fieldMapping.yes ||
                 participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.baselineMouthwashSample] === fieldMapping.yes ||
                 participantDocData?.[fieldMapping.activityParticipantRefusal]?.[fieldMapping.allFutureSamples] === fieldMapping.yes ||
                 participantDocData?.[fieldMapping.refusedAllFutureActivities] === fieldMapping.yes
@@ -6556,6 +6885,33 @@ const submitSelfReportCancerDxTransaction = async (uid, buildFinalDoc) => {
 };
 
 /**
+ * Self-Report Health Care System Update documents for one participant (issue #1658).
+ * All docs are submitted (append-only); the module has no in-progress state.
+ * @param {string} uid - Firebase auth uid (verified by the router).
+ * @returns {Promise<object[]>} document data, unsorted (the endpoint sorts by submitted timestamp).
+ */
+const getSelfReportHCSUpdateDocs = async (uid) => {
+    const snapshot = await db.collection('selfReportHCSUpdates').where('uid', '==', uid).get();
+    printDocsCount(snapshot, 'getSelfReportHCSUpdateDocs');
+    return snapshot.docs.map((doc) => doc.data());
+};
+
+/**
+ * Append one finalized Self-Report Health Care System Update doc. No transaction needed:
+ * the module has no participant-wide counters and docs are never edited after creation.
+ * @param {object} data - the full document.
+ */
+const addSelfReportHCSUpdateDoc = async (data) => {
+    const write = async () => { await db.collection('selfReportHCSUpdates').add(data); };
+    try {
+        await firestoreWriteWithAutoRetry(write, 'addSelfReportHCSUpdateDoc');
+    } catch (error) {
+        console.error('Error in addSelfReportHCSUpdateDoc:', error);
+        throw new Error(`Write Self-Report HCS Update failed: ${error.message}`);
+    }
+};
+
+/**
  * Occasionally, birthday card data needs to be updated based on return data from the post office.
  * Check for duplicate birthday card data before writing to Firestore.
  * An existing birthday card is one with the same token, mailDate, and cardVersion.
@@ -7370,6 +7726,7 @@ module.exports = {
     shipBox,
     getLocations,
     searchBoxesByLocation,
+    cgrPackagesInTransit,
     removeBag,
     reportMissingSpecimen,
     updateTempCheckDate,
@@ -7482,6 +7839,8 @@ module.exports = {
     getSelfReportCancerDxDocs,
     writeSelfReportCancerDxDoc,
     submitSelfReportCancerDxTransaction,
+    getSelfReportHCSUpdateDocs,
+    addSelfReportHCSUpdateDoc,
     writeBirthdayCard,
     getExistingBirthdayCard,
     updateParticipantCorrection,

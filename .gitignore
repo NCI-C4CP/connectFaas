@@ -15,3 +15,6 @@ ui-debug.log
 scratch.json
 scratch1.json
 /coverage
+apphosting.emulator.yaml
+firestore.indexes.json
+firestore.rules

@@ -6,15 +6,8 @@ const { validatePin, createParticipantRecord, updateParticipantFirebaseAuthentic
 const { addressValidation } = require('./usps');
 const { searchNPIRegistry } = require('./npiRegistry');
 const { storeSelfReportCancerDx, getSelfReportCancerDx } = require('./selfReportCancerDx');
+const { storeSelfReportHCSUpdate, getSelfReportHCSUpdate } = require('./selfReportHCSUpdate');
 const { getMySamples } = require("./firestore");
-
-// TODO(#1295): Re-enable after Self-Report Cancer Diagnosis passes Ops validation.
-const SELF_REPORT_CANCER_DX_ENABLED = false;
-const SELF_REPORT_CANCER_DX_APIS = new Set([
-    'searchNPIRegistry',
-    'storeSelfReportCancerDx',
-    'getSelfReportCancerDx',
-]);
 
 const connectApp = async (req, res) => {
     setHeadersDomainRestricted(req, res);
@@ -47,10 +40,6 @@ const connectApp = async (req, res) => {
     const api = query.api;
 
     console.log(`PWA API: ${api}, called from uid: ${uid}`);
-
-    if (!SELF_REPORT_CANCER_DX_ENABLED && SELF_REPORT_CANCER_DX_APIS.has(api)) {
-        return res.status(403).json(getResponseJSON('Self-Report Cancer Diagnosis is disabled for this release.', 403));
-    }
 
   try {
     if (api === 'submit') {
@@ -140,6 +129,10 @@ const connectApp = async (req, res) => {
     else if (api === 'storeSelfReportCancerDx') return await storeSelfReportCancerDx(req, res, uid);
 
     else if (api === 'getSelfReportCancerDx') return await getSelfReportCancerDx(req, res, uid);
+
+    else if (api === 'storeSelfReportHCSUpdate') return await storeSelfReportHCSUpdate(req, res, uid);
+
+    else if (api === 'getSelfReportHCSUpdate') return await getSelfReportHCSUpdate(req, res, uid);
 
     else if (api === 'retrievePhysicalActivityReport') return await retrievePhysicalActivityReport(req, res, uid);
 

@@ -95,6 +95,25 @@ describe("Firestore export to BigQuery sync", () => {
     }));
   });
 
+  it("includes selfReportHCSUpdates in the scheduled Firestore export", async () => {
+    await events.runFirestoreExport();
+
+    expect(mocks.exportDocuments).toHaveBeenCalledWith(expect.objectContaining({
+      collectionIds: expect.arrayContaining(["selfReportHCSUpdates"]),
+    }));
+  });
+
+  it("imports selfReportHCSUpdates Firestore exports into the matching BigQuery table", async () => {
+    await events.importToBigQuery({
+      body: {
+        id: "test-bucket/2026-07-28T00:00:00/all_namespaces/kind_selfReportHCSUpdates/all_namespaces_kind_selfReportHCSUpdates.export_metadata",
+      },
+    });
+
+    expect(mocks.dataset).toHaveBeenCalledWith("Connect");
+    expect(mocks.table).toHaveBeenCalledWith("selfReportHCSUpdates");
+  });
+
   it("imports selfReportCancerDx Firestore exports into the matching BigQuery table", async () => {
     await events.importToBigQuery({
       body: {

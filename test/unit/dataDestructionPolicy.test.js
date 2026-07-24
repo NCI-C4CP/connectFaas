@@ -242,6 +242,27 @@ describe("dataDestructionPolicy — V1 delta (named)", () => {
     });
 });
 
+describe("dataDestructionPolicy — V2 delta (named)", () => {
+    it("adds dietScreenerSurveyStatus and dietScreenerSurveyCompletionTime by name", () => {
+        const v2 = DATA_DESTRUCTION_POLICY_DELTAS.find((d) => d.version === "v2");
+        expect(v2).toBeDefined();
+        expect(v2.retainedFieldsNamed.add).toEqual({ dietScreenerSurveyStatus: 301686481, dietScreenerSurveyCompletionTime: 676097165 });
+        expect(v2.retainedFieldsNamed.remove).toEqual({});
+        expect(v2.nestedRetainedFieldsNamed).toEqual({ add: {}, remove: {} });
+        expect(v2.requiredAfterDestructionNamed).toBeUndefined();
+        expect(v2.rationale).toMatch(/dietScreenerSurveyStatus/);
+    });
+
+    it("has per-tier effective dates pinned to the July 2026 rollout", () => {
+        const v2 = DATA_DESTRUCTION_POLICY_DELTAS.find((d) => d.version === "v2");
+        expect(v2.effectiveFrom).toEqual({
+            DEV:   "2026-07-20T04:00:00.000Z",
+            STAGE: "2026-07-27T04:00:00.000Z",
+            PROD:  "2026-08-01T02:00:00.000Z",
+        });
+    });
+});
+
 describe("dataDestructionPolicy — resolver", () => {
     const versions = [syntheticV1];
 
@@ -383,7 +404,7 @@ describe("dataDestructionPolicy — describeStubVariables", () => {
         // After V1's tier effectiveFrom is in the past, the current policy is V1.
         // The exact version this returns depends on developmentTier and clock,
         // so we just assert it's one of the known versions and has a name→CID map.
-        expect(["v0", "v1"]).toContain(description.version);
+        expect(["v0", "v1", "v2"]).toContain(description.version);
         expect(typeof description.retainedTopLevel).toBe("object");
     });
 });
@@ -391,7 +412,7 @@ describe("dataDestructionPolicy — describeStubVariables", () => {
 describe("dataDestructionPolicy — getCurrentPolicy", () => {
     it("returns a known policy version for the active tier", () => {
         const view = getCurrentPolicy();
-        expect(["v0", "v1"]).toContain(view.version);
+        expect(["v0", "v1", "v2"]).toContain(view.version);
         // Whichever version is current, the retained CIDs should be a non-empty array.
         expect(Array.isArray(view.retainedTopLevelFields)).toBe(true);
         expect(view.retainedTopLevelFields.length).toBeGreaterThan(0);

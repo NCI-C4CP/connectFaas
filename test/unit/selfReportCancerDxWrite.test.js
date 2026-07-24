@@ -7,15 +7,23 @@ let mocks;
 let firestore;
 let fieldMapping;
 let cancerSiteCIDs;
+let selfReportCancerCIDs;
 const DX_NUMBER_KEY = 'D_480939157';
 const PROSTATE_DXDT_KEY = 'D_199928758';
 const responseCid = (cid) => String(cid);
+const dKey = (cid) => `D_${cid}`;
+const primarySitePayload = (siteCid) => ({
+    [dKey(selfReportCancerCIDs.sourceQuestions.primarySite)]: {
+        [dKey(selfReportCancerCIDs.primarySite)]: responseCid(siteCid),
+    },
+});
 
 beforeAll(() => {
     const mockSystem = setupTestSuite({ setupConsole: false, setupModuleMocks: true });
     mocks = mockSystem.mocks;
     firestore = require('../../utils/firestore');
     fieldMapping = require('../../utils/fieldToConceptIdMapping');
+    selfReportCancerCIDs = fieldMapping.selfReportCancerDx;
     cancerSiteCIDs = fieldMapping.cancerSites;
 });
 
@@ -39,13 +47,13 @@ const wireGuarded = (existing) => {
 describe('writeSelfReportCancerDxDoc: submitted-guard (save/submit race backstop)', () => {
     it('guardSubmitted skips the write when the target doc is already submitted (finalized)', async () => {
         const { setSpy } = wireGuarded({ [DX_NUMBER_KEY]: '1' });
-        await firestore.writeSelfReportCancerDxDoc('doc-1', { D_181737942: responseCid(cancerSiteCIDs.prostate) }, { guardSubmitted: true });
+        await firestore.writeSelfReportCancerDxDoc('doc-1', primarySitePayload(cancerSiteCIDs.prostate), { guardSubmitted: true });
         expect(setSpy).not.toHaveBeenCalled();
     });
 
     it('guardSubmitted writes when the target doc is still in-progress', async () => {
         const { setSpy, ref } = wireGuarded({ startedAt: '2026-06-01T00:00:00.000Z' });
-        const data = { D_181737942: responseCid(cancerSiteCIDs.prostate) };
+        const data = primarySitePayload(cancerSiteCIDs.prostate);
         await firestore.writeSelfReportCancerDxDoc('doc-1', data, { guardSubmitted: true });
         expect(setSpy).toHaveBeenCalledWith(ref, data);
     });
@@ -60,7 +68,7 @@ describe('writeSelfReportCancerDxDoc: submitted-guard (save/submit race backstop
     it('creates (add) a new doc when docId is null, regardless of guardSubmitted', async () => {
         const addSpy = vi.fn().mockResolvedValue(undefined);
         mocks.firestore.collection.mockReturnValue({ doc: vi.fn(), add: addSpy });
-        await firestore.writeSelfReportCancerDxDoc(null, { D_181737942: responseCid(cancerSiteCIDs.prostate) }, { guardSubmitted: true });
+        await firestore.writeSelfReportCancerDxDoc(null, primarySitePayload(cancerSiteCIDs.prostate), { guardSubmitted: true });
         expect(addSpy).toHaveBeenCalled();
     });
 });
@@ -85,12 +93,12 @@ describe('submitSelfReportCancerDxTransaction: atomic DxNumber', () => {
     it('builds the finalized doc from docs read INSIDE the txn and reuses the in-progress doc', async () => {
         const { setSpy } = wireSubmit([
             { docId: 'ip', data: { startedAt: 't0' } },
-            { docId: 's1', data: { [DX_NUMBER_KEY]: '1', D_181737942: responseCid(cancerSiteCIDs.prostate), [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' } },
+            { docId: 's1', data: { [DX_NUMBER_KEY]: '1', ...primarySitePayload(cancerSiteCIDs.prostate), [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' } },
         ]);
         let seen;
         await firestore.submitSelfReportCancerDxTransaction('uid-1', (ctx) => { seen = ctx; return { ok: 1 }; });
         expect(seen.inProgressDoc.docId).toBe('ip');
-        expect(seen.submittedDiagnoses).toEqual([{ [DX_NUMBER_KEY]: '1', D_181737942: responseCid(cancerSiteCIDs.prostate), [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' }]); // submitted diagnoses, read in-txn
+        expect(seen.submittedDiagnoses).toEqual([{ [DX_NUMBER_KEY]: '1', ...primarySitePayload(cancerSiteCIDs.prostate), [PROSTATE_DXDT_KEY]: '2026-06-01T00:00:00.000Z' }]); // submitted diagnoses, read in-txn
         expect(setSpy).toHaveBeenCalledWith({ __ref: 'ip' }, { ok: 1 });                  // reused the in-progress doc
     });
 

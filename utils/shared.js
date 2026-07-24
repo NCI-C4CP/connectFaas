@@ -255,7 +255,8 @@ const moduleConceptsToCollections = {
     "D_506648060" :     "experience2024",
     "D_369168474":      "cancerScreeningHistorySurvey",
     "D_497020618" :     "dhq3Survey",
-    "D_312845734" :     "preference2026"
+    "D_312845734" :     "preference2026",
+    "D_515124081" :     "dietScreener" 
 };
 
 const moduleStatusConcepts = {
@@ -273,7 +274,8 @@ const moduleStatusConcepts = {
     "956490759" :       "experience2024",
     "176068627" :       "cancerScreeningHistorySurvey",
     "692560814" :       "dhq3Survey",
-    "278023676" :       "preference2026"
+    "278023676" :       "preference2026",
+    "301686481" :       "dietScreener"
 };
 
 const listOfCollectionsRelatedToDataDestruction = [
@@ -299,7 +301,9 @@ const listOfCollectionsRelatedToDataDestruction = [
     "dhqRawAnswers",
     "cancerOccurrence",
     "selfReportCancerDx",
-    "preference2026"
+    "selfReportHCSUpdates",
+    "preference2026",
+    "dietScreener"
 ];
 
 const incentiveConcepts = {
@@ -858,7 +862,7 @@ const cleanSurveyData = (data) => {
 const checkSurveyStatusesWhenVerified = (payloadData, docData) => {
     if (payloadData[fieldMapping.verificationStatus] !== fieldMapping.verified) return payloadData;
 
-    const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus];
+    const statusesToCheck = [fieldMapping.cancerScreeningHistorySurveyStatus, fieldMapping.dhq3SurveyStatus, fieldMapping.dietScreenerSurveyStatus];
 
     for (const statusKey of statusesToCheck) {
         if (!docData[statusKey]) {
@@ -2489,6 +2493,742 @@ const VALID_TIERS = Object.freeze([...new Set(Object.values(PROJECT_TIER_MAP))])
 
 const developmentTier = PROJECT_TIER_MAP[process.env.GCLOUD_PROJECT] || DEFAULT_TIER;
 
+// Helper methods and constants for CGR packages in transit
+const getBagId = (bag) => {
+    let bagId = '';
+    if (bag[fieldMapping.orphanBagFlag] === fieldMapping.yes || bag[fieldMapping.tubesBagsCids.orphanScan]) {
+        bagId = 'unlabelled';
+    } else {
+        bagId = bag[fieldMapping.tubesBagsCids.biohazardBagScan] || bag[fieldMapping.tubesBagsCids.biohazardMouthwashBagScan] || '';
+    }
+
+    return bagId;
+}
+
+/**
+ * Maps specimen id to material type based on last 4 digits
+ * @param {string} specimenId - Specimen id from each specimen bag
+ * @returns {string} Returns material type
+ */
+
+const materialTypeMapping = (specimenId) => {
+  const tubeId = specimenId.split(" ")[1];
+  const materialTypeObject = {
+    "0001": "WHOLE BL",
+    "0002": "WHOLE BL",
+    "0011": "WHOLE BL",
+    "0012": "WHOLE BL",
+    "0021": "WHOLE BL",
+    "0003": "WHOLE BL",
+    "0004": "WHOLE BL",
+    "0005": "WHOLE BL",
+    "0013": "WHOLE BL",
+    "0014": "WHOLE BL",
+    "0024": "WHOLE BL",
+    "0006": "Urine",
+    "0007": "Saliva",
+    "0060": "WHOLE BL",
+  };
+  return materialTypeObject[tubeId] ?? "";
+};
+
+// Dictionary to match site IDs to readable location names.
+// Used for returning the shipped location for each package.
+const conceptIdToSiteSpecificLocation = {
+    834825425: "HP Research Clinic",
+    752948709: "Henry Ford Main Campus",
+    570271641: "Henry Ford West Bloomfield Hospital",
+    838480167: "Henry Ford Medical Center- Fairlane",
+    706927479: "HFH Livonia Research Clinic",
+    755034888: "HFH Jackson",
+    852689772: "In-Home collection",
+    911683679: "HFH Detroit Northwest",
+    763273112: "KPCO RRL",
+    767775934: "KPGA RRL",
+    531313956: "KPHI RRL",
+    715632875: "KPNW RRL",
+    692275326: "Marshfield",
+    698283667: "Lake Hallie",
+    813701399: "Weston",
+    145191545: "Ingalls Harvey",
+    489380324: "River East",
+    120264574: "South Loop",
+    567969985: 'MF Pop-Up',
+    940329442: "Orland Park",
+    255636184: "Stevens Point",
+    813412950: "Neillsville",
+    691714762: "Rice Lake",
+    487512085: "Wisconsin Rapids",
+    983848564: "Colby Abbotsford",
+    261931804: "Minocqua",
+    665277300: "Merrill",
+    467088902: "Fargo South University",
+    589224449: "Sioux Falls Imagenetics",
+    433070901: "Sioux Falls Edith Center",
+    769594361: "Fargo Amber Valley",
+    246153539: "Bemidji Clinic",
+    777644826: "DCAM",
+    111111111: "Main Campus",
+    222222222: "Frederick",
+    574368418: "HP Park Nicollet",
+    322059622: "HFH Pop-Up",
+    127626388: "Bismarck Medical Center",
+    246137578: "Sioux Falls Sanford Center",
+    723351427: "BCC- HWC",
+    807443231: "FW All Saints",
+    288564244: "BCC- Fort Worth",
+    475614532: "BCC- Plano",
+    809370237: "BCC- Worth St",
+    856158129: "BCC- Irving",
+    436956777: "NTX Biorepository",
+    483909879: "North Garland",
+    962830330: "Waco - MacArthur",
+    397883980: "Irving",
+    117840593: "Temple CDM",
+    574104518: "Temple Roney",
+    749199085: "Temple Westfield",
+    603989030: "Killeen Main",
+    471260082: "Waco Fishpond",
+}
+
+// Used to match specimen tube IDs to concept IDS and vice-versa,
+// as well as to identify valid tubes within a collection
+const specimenCollection = {
+    numToCid: {
+        '0001': '299553921',
+        '0002': '703954371',
+        '0003': '838567176',
+        '0004': '454453939',
+        '0005': '652357376',
+        '0006': '973670172',
+        '0007': '143615646',
+        '0008': '787237543',
+        '0009': '223999569',
+        '0011': '376960806',
+        '0012': '232343615',
+        '0021': '589588440',
+        '0013': '958646668',
+        '0014': '677469051',
+        '0024': '683613884',
+        '0060': '505347689',
+    },
+    cidToNum: {
+        299553921: '0001',
+        703954371: '0002',
+        838567176: '0003',
+        454453939: '0004',
+        652357376: '0005',
+        973670172: '0006',
+        143615646: '0007',
+        787237543: '0008',
+        223999569: '0009',
+        376960806: '0011',
+        232343615: '0012',
+        589588440: '0021',
+        958646668: '0013',
+        677469051: '0014',
+        683613884: '0024',
+        505347689: '0060',
+    },
+    tubeNumList: [
+        '0001',
+        '0002',
+        '0003',
+        '0004',
+        '0005',
+        '0006',
+        '0007',
+        // '0008' and '0009' are used as containers for tubes
+        '0011',
+        '0012',
+        '0021',
+        '0013',
+        '0014',
+        '0024',
+        '0060',
+    ],
+    tubeCidList: [
+        '299553921',
+        '703954371',
+        '838567176',
+        '454453939',
+        '652357376',
+        '973670172',
+        '143615646',
+        // '787237543' and '223999569' are used as containers for tubes
+        '376960806',
+        '232343615',
+        '589588440',
+        '958646668',
+        '677469051',
+        '683613884',
+        '505347689',
+    ],
+};
+
+const tubeDeviationFlags = [
+    fieldMapping.tubeBrokenDeviation,
+    fieldMapping.tubeDiscardDeviation,
+    fieldMapping.tubeInsufficientVolumeDeviation,
+    fieldMapping.tubeMislabelledDeviation,
+    fieldMapping.tubeNotFoundDeviation
+];
+
+// All we need is site acronym currently, but the rest is left in just in case
+const locationConceptIDToLocationMap = {
+    834825425: {
+        siteSpecificLocation: 'HP Research Clinic',
+        siteAcronym: 'HP',
+        siteCode: '531629870'
+    },
+    574368418: {
+        siteSpecificLocation: 'HP Park Nicollet',
+        siteAcronym: 'HP',
+        siteCode: '531629870'
+    },
+    752948709: {
+        siteSpecificLocation: 'Henry Ford Main Campus',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    570271641: {
+        siteSpecificLocation: 'Henry Ford West Bloomfield Hospital',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    838480167: {
+        siteSpecificLocation: 'Henry Ford Medical Center- Fairlane',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    706927479: {
+        siteSpecificLocation: 'HFH Livonia Research Clinic',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    322059622: {
+        siteSpecificLocation: 'HFH Pop-Up"',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    755034888: {
+        siteSpecificLocation: 'HFH Jackson',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    911683679: {
+        siteSpecificLocation: 'HFH Detroit Northwest',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    852689772: {
+        siteSpecificLocation: 'In-Home Collection',
+        siteAcronym: 'HFHS',
+        siteCode: '548392715'
+    },
+    763273112: {
+        siteSpecificLocation: 'KPCO RRL',
+        siteAcronym: 'KPCO',
+        siteCode: '125001209'
+    },
+    767775934: {
+        siteSpecificLocation: 'KPGA RRL',
+        siteAcronym: 'KPGA',
+        siteCode: '327912200'
+    },
+    531313956: {
+        siteSpecificLocation: 'KPHI RRL',
+        siteAcronym: 'KPHI',
+        siteCode: '300267574'
+    },
+    715632875: {
+        siteSpecificLocation: 'KPNW RRL',
+        siteAcronym: 'KPNW',
+        siteCode: '452412599'
+    },
+    692275326: {
+        siteSpecificLocation: 'Marshfield',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    698283667:{
+        siteSpecificLocation: 'Lake Hallie',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    813701399:{
+        siteSpecificLocation: 'Weston',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    691714762:{
+        siteSpecificLocation: 'Rice Lake',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    487512085:{
+        siteSpecificLocation: 'Wisconsin Rapids',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    983848564:{
+        siteSpecificLocation: 'Colby Abbotsford',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    261931804:{
+        siteSpecificLocation: 'Minocqua',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    665277300:{
+        siteSpecificLocation: 'Merrill',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    567969985:{
+        siteSpecificLocation: 'MF Pop-Up',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    255636184:{
+        siteSpecificLocation: 'Stevens Point',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    813412950:{
+        siteSpecificLocation: 'Neillsville',
+        siteAcronym: 'MFC',
+        siteCode: '303349821'
+    },
+    589224449: {
+        siteSpecificLocation: 'Sioux Falls Imagenetics',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    127626388: {
+        siteSpecificLocation: 'Bismarck Medical Center',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    246137578: {
+        siteSpecificLocation: 'Sioux Falls Sanford Center',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    433070901: {
+        siteSpecificLocation: 'Sioux Falls Edith Center',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    769594361: {
+        siteSpecificLocation: 'Fargo Amber Valley',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    246153539: {
+        siteSpecificLocation: 'Bemidji Clinic',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    467088902: {
+        siteSpecificLocation: 'Fargo South University',
+        siteAcronym: 'SFH',
+        siteCode: '657167265'
+    },
+    777644826: {
+        siteSpecificLocation: 'DCAM',
+        siteAcronym: 'UCM',
+        siteCode: '809703864'
+    },
+    145191545: {
+        siteSpecificLocation: 'Ingalls Harvey',
+        siteAcronym: 'UCM',
+        siteCode: '809703864'
+    },
+    489380324: {
+        siteSpecificLocation: 'River East',
+        siteAcronym: 'UCM',
+        siteCode: '809703864'
+    },
+    120264574: {
+        siteSpecificLocation: 'South Loop',
+        siteAcronym: 'UCM',
+        siteCode: '809703864'
+
+    },
+    940329442: {
+        siteSpecificLocation: 'Orland Park',
+        siteAcronym: 'UCM',
+        siteCode: '809703864'
+    },
+    723351427: {
+        siteSpecificLocation: 'BCC- HWC',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    807443231: {
+        siteSpecificLocation: 'FW All Saints',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    288564244: {
+        siteSpecificLocation: 'BCC- Fort Worth',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    475614532: {
+        siteSpecificLocation: 'BCC- Plano',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    809370237: {
+        siteSpecificLocation: 'BCC- Worth St',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    856158129: {
+        siteSpecificLocation: 'BCC- Irving',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    436956777: {
+        siteSpecificLocation: 'NTX Biorepository',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    483909879: {
+        siteSpecificLocation: 'North Garland',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    962830330: {
+        siteSpecificLocation: 'Waco - MacArthur',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    397883980: {
+        siteSpecificLocation: 'Irving',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    117840593: {
+        siteSpecificLocation: 'Temple CDM',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    574104518: {
+        siteSpecificLocation: 'Temple Roney',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    749199085: {
+        siteSpecificLocation: 'Temple Westfield',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    603989030: {
+        siteSpecificLocation: 'Killeen Main',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    471260082: {
+        siteSpecificLocation: 'Waco Fishpond',
+        siteAcronym: 'BSWH',
+        siteCode: '472940358'
+    },
+    111111111: {
+        siteSpecificLocation: 'Main Campus',
+        siteAcronym: 'NIH',
+        siteCode: '13'
+    },
+    222222222: { 
+        siteSpecificLocation: 'Frederick',
+        siteAcronym: 'NIH',
+        siteCode: '13'
+    },
+};
+
+// Use clinicalCollectionLocationNameLookup for clinical collections
+const clinicalCollectionLocationNameLookup = {
+    452412599 : "Kaiser Permanente NW RRL",
+    531629870 : "HealthPartners Clinical",
+    657167265 : "Sanford Clinical",
+    548392715 : "Henry Ford Clinical",
+    303349821 : "Marshfield Clinical",
+    125001209 : "Kaiser Permanente Colorado RRL",
+    809703864 : "University of Chicago Clinical",
+    13 : "National Cancer Institute",
+    300267574 : "Kaiser Permanente Hawaii RRL",
+    327912200 : "Kaiser Permanente GA RRL",
+    472940358: "Baylor Scott & White Health"
+}
+// Use for research collections
+const researchCollectionLocationNameLookup = 
+{
+    777644826: "UC-DCAM",
+    692275326: "Marshfield",
+    567969985: "MF Pop-Up",
+    698283667: "Lake Hallie",
+    834825425: "HP Research Clinic",
+    [fieldMapping.nameToKeyObj.hpPN] : "HP Park Nicollet",
+    736183094: "HFH K-13 Research Clinic",
+    886364332: "Henry Ford Health Pavilion",
+    706927479: "HFH Livonia Research Clinic",
+    [fieldMapping.nameToKeyObj.hfhPU] : "HFH Pop-Up",
+    755034888 : "HFH Jackson",
+    852689772 : "In-Home collection",
+    911683679 : "HFH Detroit Northwest",
+    813701399: "Weston",
+    145191545: "Ingalls Harvey",
+    489380324: "River East",
+    120264574: "South Loop",
+    319518299: "UCM Pop-Up",
+    940329442: "Orland Park",
+    691714762: "Rice Lake",
+    487512085: "Wisconsin Rapids",
+    983848564: "Colby Abbotsford",
+    261931804: "Minocqua",
+    665277300: "Merrill",
+    255636184 : "Stevens Point",
+    813412950 : "Neillsville",
+    467088902: "Fargo South University",
+    589224449: "Sioux Falls Imagenetics",
+    [fieldMapping.nameToKeyObj.sfBM] : "Bismarck Medical Center",
+    [fieldMapping.nameToKeyObj.sfSC] : "Sioux Falls Sanford Center",
+    433070901 : "Sioux Falls Edith Center",
+    769594361 : "Fargo Amber Valley",
+    246153539 : "Bemidji Clinic",
+    723351427: "BCC- HWC",
+    807443231: "FW All Saints",
+    288564244: "BCC- Fort Worth",
+    475614532: "BCC- Plano",
+    809370237: "BCC- Worth St",
+    856158129: "BCC- Irving",
+    436956777: "NTX Biorepository",
+    483909879: "North Garland",
+    962830330: "Waco - MacArthur",
+    [fieldMapping.nameToKeyObj.irving]: "Irving",
+    [fieldMapping.nameToKeyObj.templeCDM]: "Temple CDM",
+    [fieldMapping.nameToKeyObj.templeRoney]: "Temple Roney",
+    [fieldMapping.nameToKeyObj.templeWestfield]: "Temple Westfield",
+    [fieldMapping.nameToKeyObj.killeenMain]: "Killeen Main",
+    [fieldMapping.nameToKeyObj.wacoFishpond]: "Waco Fishpond",
+    111111111: "NIH",
+    222222222: "NIH-2", // This is a dev-only location, but is included for dev testing purposes
+    13: "NCI",
+
+}
+
+const conceptIdToHealthProviderAbbrObj = {
+  452412599: "kpNW",
+  531629870: "healthPartners",
+  657167265: "sanfordHealth",
+  548392715: "henryFordHealth",
+  303349821: "marshfieldClinic",
+  125001209: "kpCO",
+  809703864: "uOfChicagoMed",
+  13: "nci",
+  300267574: "kpHI",
+  327912200: "kpGA",
+  1000: "allResults",
+}
+
+const getVialTypesMappings = (tubeId, collectionType, healthcareProvider) => {
+    let vialMapping = {
+        research: {
+            default: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0007": ["15ml Nalgene jar", "Crest Alcohol Free", "Saliva", "15"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+            },
+        },
+        clinical: {
+            henryFordHealth: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0011": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0012": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0021": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0014": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0024": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"]
+            },
+            healthPartners: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck Nucleic Acid", "WHOLE BL", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0011": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0012": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0021": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0014": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0024": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"]
+            },
+            kpCO: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["6 ml Vacutainer", "No Additive", "Urine", "6"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0021": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0024": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+            },
+            kpGA: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4.5 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4.5"],
+                "0013": ["4.5 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4.5"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0021": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0024": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+            },
+            kpHI: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0014": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0024": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0021": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+            },
+            kpNW: {
+                "0001": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0002": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0011": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0012": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0021": ["3.5 ml Serum separator tube", "SST", "WHOLE BL", "3.5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0024": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+            },
+            sanfordHealth: {
+                "0001": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": [
+                    "4.5 ml Vacutainer",
+                    "Lithium Heparin Separator",
+                    "Plasma",
+                    "4.5",
+                ],
+                "0013": [
+                    "4.5 ml Vacutainer",
+                    "Lithium Heparin Separator",
+                    "Plasma",
+                    "4.5",
+                ],
+                "0004": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0014": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0024": ["3 ml Vacutainer", "EDTA = K2", "WHOLE BL", "3"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                // These tubes are not usually collected by this site, but are included for thoroughness
+                "0021": ["5 mL Serum separator tube", "SST", "WHOLE BL", "5"],
+            },
+            uOfChicagoMed: {
+                "0001": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0002": ["10 ml Serum separator tube", "SST", "WHOLE BL", "10"],
+                "0003": ["10 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "10"],
+                "0004": ["10 ml Vacutainer", "EDTA = K2", "WHOLE BL", "10"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+            },
+            default: {
+                "0001": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0002": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0011": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0012": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0021": ["5 ml Serum separator tube", "SST", "WHOLE BL", "5"],
+                "0003": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0013": ["4 ml Vacutainer", "Lithium Heparin", "WHOLE BL", "4"],
+                "0004": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0014": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0024": ["4 ml Vacutainer", "EDTA = K2", "WHOLE BL", "4"],
+                "0005": ["6 ml Vacutainer", "ACD", "WHOLE BL", "6"],
+                "0006": ["10 ml Vacutainer", "No Additive", "Urine", "10"],
+                "0007": ["15ml Nalgene jar", "Crest Alcohol Free", "Saliva", "15"],
+                "0060": ["Streck Tube", "Streck DNA", "WHOLE BL", "10"],
+            },
+        }
+    };
+  if (!collectionType || !tubeId) {
+    console.warn("collectionType or tubeId is missing");
+    return ["", "", "", ""];
+  }
+
+  const collectionTypeString =
+    collectionType === fieldMapping.research ? "research" : "clinical";
+  const healthcareProviderString =
+    conceptIdToHealthProviderAbbrObj[healthcareProvider] || "default";
+
+  if (collectionTypeString === "research") {
+    return (
+      vialMapping[collectionTypeString]?.default?.[tubeId] || ["", "", "", ""]
+    );
+  } else {
+    return (
+      vialMapping[collectionTypeString]?.[healthcareProviderString]?.[tubeId] ||
+      vialMapping[collectionTypeString]?.default?.[tubeId] || ["", "", "", ""]
+    );
+  }
+};
+
+/**
+ * Returns hemolyzed status based on material type using a predefined map.
+ * @param {string} materialType - Material type of the specimen (e.g., "Serum", "Plasma")
+ * @returns {string} Corresponding hemolyzed status, or an empty string if not found in the map
+ */
+const getHemolyzedStatus = (materialType) => {
+  const statusMap = {
+    Serum: "not hem (1)",
+    Plasma: "not hem (1)",
+  };
+
+  return statusMap[materialType] || "";
+};
+
 module.exports = {
     getResponseJSON,
     setHeaders,
@@ -2578,4 +3318,14 @@ module.exports = {
     developmentTier,
     VALID_TIERS,
     PROJECT_TIER_MAP,
+    getBagId,
+    materialTypeMapping,
+    conceptIdToSiteSpecificLocation,
+    specimenCollection,
+    tubeDeviationFlags,
+    locationConceptIDToLocationMap,
+    clinicalCollectionLocationNameLookup,
+    researchCollectionLocationNameLookup,
+    getVialTypesMappings,
+    getHemolyzedStatus
 };
